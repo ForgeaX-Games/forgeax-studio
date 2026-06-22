@@ -1,0 +1,162 @@
+{
+  "_comment": "Studio-side curation SSOT for the website live-demo gallery. The engine is read-only (ubpa), so which apps/hello/* to showcase + their copy/order/flags live HERE, not in the engine. build-examples.mjs reads this. `dir` is relative to <engine>/apps/hello. `coi` injects coi-serviceworker (COOP/COEP shim) for threaded-wasm examples on header-less static hosting (github.io).",
+  "examples": [
+    {
+      "id": "triangle",
+      "dir": "triangle",
+      "order": 10,
+      "title": {
+        "en": "Hello Triangle",
+        "zh": "你好,三角形"
+      },
+      "blurb": {
+        "en": "The minimal WebGPU/WebGL2 pipeline — one triangle, shader-compiled WGSL.",
+        "zh": "最小的 WebGPU/WebGL2 管线 —— 一个三角形,WGSL 编译着色。"
+      },
+      "tags": [
+        "webgpu",
+        "basics",
+        "wgsl"
+      ]
+    },
+    {
+      "id": "transform-hierarchy",
+      "dir": "transform-hierarchy",
+      "order": 30,
+      "title": {
+        "en": "Transform Hierarchy",
+        "zh": "层级变换"
+      },
+      "blurb": {
+        "en": "Parent/child transforms — orbiting nodes driven by a scene graph.",
+        "zh": "父子变换 —— 由场景图驱动的公转节点。"
+      },
+      "tags": [
+        "transform",
+        "scene-graph"
+      ]
+    },
+    {
+      "id": "gltf",
+      "dir": "gltf",
+      "order": 40,
+      "title": {
+        "en": "glTF Model",
+        "zh": "glTF 模型"
+      },
+      "blurb": {
+        "en": "Load and render a glTF 2.0 asset with PBR materials.",
+        "zh": "加载并渲染带 PBR 材质的 glTF 2.0 资产。"
+      },
+      "tags": [
+        "gltf",
+        "mesh",
+        "pbr"
+      ]
+    },
+    {
+      "id": "sprite",
+      "dir": "sprite",
+      "order": 50,
+      "title": {
+        "en": "Sprites",
+        "zh": "精灵"
+      },
+      "blurb": {
+        "en": "2D sprite rendering — batched quads with a texture atlas.",
+        "zh": "2D 精灵渲染 —— 图集纹理的批量四边形。"
+      },
+      "tags": [
+        "2d",
+        "sprite"
+      ]
+    },
+    {
+      "id": "picking",
+      "dir": "picking",
+      "order": 70,
+      "title": {
+        "en": "GPU Picking",
+        "zh": "GPU 拾取"
+      },
+      "blurb": {
+        "en": "Click to select — per-pixel object id read back from the GPU.",
+        "zh": "点击选择 —— 从 GPU 回读逐像素对象 id。"
+      },
+      "tags": [
+        "picking",
+        "interaction"
+      ]
+    },
+    {
+      "id": "fxaa",
+      "dir": "fxaa",
+      "order": 80,
+      "title": {
+        "en": "FXAA",
+        "zh": "FXAA 抗锯齿"
+      },
+      "blurb": {
+        "en": "Fast approximate anti-aliasing as a post-process pass.",
+        "zh": "作为后处理通道的快速近似抗锯齿。"
+      },
+      "tags": [
+        "post-processing",
+        "anti-aliasing"
+      ]
+    },
+    {
+      "id": "bloom",
+      "dir": "bloom",
+      "order": 90,
+      "title": {
+        "en": "Bloom",
+        "zh": "泛光"
+      },
+      "blurb": {
+        "en": "HDR bloom — bright-pass + separable blur + composite.",
+        "zh": "HDR 泛光 —— 亮部提取 + 可分离模糊 + 合成。"
+      },
+      "tags": [
+        "post-processing",
+        "bloom",
+        "hdr"
+      ]
+    },
+    {
+      "id": "tonemap",
+      "dir": "tonemap",
+      "order": 100,
+      "title": {
+        "en": "Tonemap",
+        "zh": "色调映射"
+      },
+      "blurb": {
+        "en": "HDR to display — ACES / Reinhard tone mapping operators.",
+        "zh": "HDR 到显示 —— ACES / Reinhard 色调映射算子。"
+      },
+      "tags": [
+        "hdr",
+        "tonemap"
+      ]
+    },
+    {
+      "id": "physics",
+      "dir": "physics",
+      "order": 110,
+      "coi": true,
+      "title": {
+        "en": "Physics",
+        "zh": "物理"
+      },
+      "blurb": {
+        "en": "Rigid-body physics via Rapier (wasm) driving ECS transforms.",
+        "zh": "Rapier(wasm)刚体物理驱动 ECS 变换。"
+      },
+      "tags": [
+        "physics",
+        "rapier"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/ForgeaX-Games/forgeax-studio/brand/schema.json",
+  "title": "BrandConfig",
+  "description": "Brand pack manifest. See docs/decisions/0006-rebrand-to-forgeax.md and docs/features/full-rebrand-to-forgeax.md §5.",
+  "type": "object",
+  "required": ["id", "schemaVersion", "product", "assistant", "splash", "providers", "links"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Brand pack id. Default is 'forgeax'. Used as localStorage key prefix, env namespace suffix.",
+      "pattern": "^[a-z][a-z0-9-]{1,31}$"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "$schema": { "type": "string" },
+    "product": {
+      "type": "object",
+      "required": ["name", "shortName", "tagline"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Display name, e.g. 'ForgeaX Studio'." },
+        "shortName": { "type": "string", "description": "Lowercase short id used in chips/badges, e.g. 'forgeax'." },
+        "tagline": { "type": "string" }
+      }
+    },
+    "assistant": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Assistant short name, e.g. 'Forge'." },
+        "avatarSrc": { "type": ["string", "null"] },
+        "personaOverride": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "zh": { "type": ["string", "null"] },
+            "en": { "type": ["string", "null"] }
+          }
+        },
+        "cardName": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "zh": { "type": "string" },
+            "en": { "type": "string" }
+          }
+        }
+      }
+    },
+    "splash": {
+      "type": "object",
+      "required": ["title", "subtitle", "theme"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "theme": { "type": "string", "enum": ["classic-lime", "neon-pulse"] }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "required": ["native"],
+      "additionalProperties": false,
+      "properties": {
+        "native": {
+          "type": "object",
+          "required": ["id", "label", "title"],
+          "additionalProperties": false,
+          "properties": {
+            "id": { "type": "string" },
+            "label": { "type": "string" },
+            "title": { "type": "string" }
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "required": ["repoUrl", "communityUrl"],
+      "additionalProperties": false,
+      "properties": {
+        "repoUrl": { "type": "string", "format": "uri" },
+        "communityUrl": { "type": "string", "format": "uri" },
+        "docsUrl": { "type": ["string", "null"], "format": "uri" },
+        "issuesUrl": { "type": ["string", "null"], "format": "uri" }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "favicon": { "type": ["string", "null"], "description": "Relative path inside the pack assets/ dir." },
+        "logo": { "type": ["string", "null"] },
+        "appleTouchIcon": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

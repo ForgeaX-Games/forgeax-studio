@@ -1,0 +1,148 @@
+{
+  "grid": {
+    "root": {
+      "type": "branch",
+      "data": [
+        {
+          "type": "branch",
+          "data": [
+            {
+              "type": "leaf",
+              "data": {
+                "views": [
+                  "ep:hierarchy"
+                ],
+                "activeView": "ep:hierarchy",
+                "id": "1"
+              },
+              "size": 529
+            },
+            {
+              "type": "leaf",
+              "data": {
+                "views": [
+                  "ep:assets"
+                ],
+                "activeView": "ep:assets",
+                "id": "4"
+              },
+              "size": 260
+            }
+          ],
+          "size": 240
+        },
+        {
+          "type": "branch",
+          "data": [
+            {
+              "type": "leaf",
+              "data": {
+                "views": [
+                  "edit"
+                ],
+                "activeView": "edit",
+                "id": "2"
+              },
+              "size": 534
+            },
+            {
+              "type": "leaf",
+              "data": {
+                "views": [
+                  "ep:history",
+                  "ep:timeline",
+                  "ep:capabilities"
+                ],
+                "activeView": "ep:history",
+                "id": "5"
+              },
+              "size": 255
+            }
+          ],
+          "size": 860
+        },
+        {
+          "type": "branch",
+          "data": [
+            {
+              "type": "leaf",
+              "data": {
+                "views": [
+                  "ep:inspector",
+                  "ep:material"
+                ],
+                "activeView": "ep:inspector",
+                "id": "3"
+              },
+              "size": 449
+            },
+            {
+              "type": "leaf",
+              "data": {
+                "views": [
+                  "chat"
+                ],
+                "activeView": "chat",
+                "id": "6"
+              },
+              "size": 340
+            }
+          ],
+          "size": 340
+        }
+      ],
+      "size": 789
+    },
+    "width": 1440,
+    "height": 789,
+    "orientation": "HORIZONTAL"
+  },
+  "panels": {
+    "ep:hierarchy": {
+      "id": "ep:hierarchy",
+      "contentComponent": "ep:hierarchy",
+      "title": "Hierarchy"
+    },
+    "ep:assets": {
+      "id": "ep:assets",
+      "contentComponent": "ep:assets",
+      "title": "Assets"
+    },
+    "edit": {
+      "id": "edit",
+      "contentComponent": "edit",
+      "title": "Edit"
+    },
+    "ep:history": {
+      "id": "ep:history",
+      "contentComponent": "ep:history",
+      "title": "History"
+    },
+    "ep:timeline": {
+      "id": "ep:timeline",
+      "contentComponent": "ep:timeline",
+      "title": "Timeline"
+    },
+    "ep:capabilities": {
+      "id": "ep:capabilities",
+      "contentComponent": "ep:capabilities",
+      "title": "Capabilities"
+    },
+    "ep:inspector": {
+      "id": "ep:inspector",
+      "contentComponent": "ep:inspector",
+      "title": "Inspector"
+    },
+    "ep:material": {
+      "id": "ep:material",
+      "contentComponent": "ep:material",
+      "title": "Material"
+    },
+    "chat": {
+      "id": "chat",
+      "contentComponent": "chat",
+      "title": "ForgeaX CLI"
+    }
+  },
+  "activeGroup": "6"
+}

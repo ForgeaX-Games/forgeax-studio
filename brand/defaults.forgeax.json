@@ -1,0 +1,45 @@
+{
+  "$schema": "./schema.json",
+  "id": "forgeax",
+  "schemaVersion": 1,
+  "product": {
+    "name": "ForgeaX Studio",
+    "shortName": "forgeax",
+    "tagline": "AI-first game dev shell — open desktop edition"
+  },
+  "assistant": {
+    "name": "Forge",
+    "avatarSrc": "assets/forge-avatar.png",
+    "personaOverride": {
+      "zh": "assets/persona-overlay.zh.md",
+      "en": "assets/persona-overlay.en.md"
+    },
+    "cardName": {
+      "zh": "主线制作人",
+      "en": "Lead Producer"
+    }
+  },
+  "splash": {
+    "title": "ForgeaX · Studio",
+    "subtitle": "booting shell…",
+    "theme": "classic-lime"
+  },
+  "providers": {
+    "native": {
+      "id": "forgeax",
+      "label": "forgeax",
+      "title": "ForgeaX native CLI provider"
+    }
+  },
+  "links": {
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-studio",
+    "communityUrl": "https://forge.games",
+    "docsUrl": null,
+    "issuesUrl": null
+  },
+  "assets": {
+    "favicon": "assets/favicon.svg",
+    "logo": "assets/logo.svg",
+    "appleTouchIcon": null
+  }
+}

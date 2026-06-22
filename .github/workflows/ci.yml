@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Lightweight, dependency-free hygiene gate that always runs fast and green on a
+# clean checkout. Heavy build/test of the full studio (engine wasm + bun sidecar)
+# is exercised by the desktop release workflow and locally via install.sh.
+jobs:
+  hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate package.json files
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" \
+              || { echo "::error file=$f::invalid JSON"; fail=1; }
+          done < <(find . -path ./node_modules -prune -o -name package.json -print)
+          exit $fail
+      - name: Required top-level files present
+        run: |
+          for f in README.md LICENSE; do
+            [ -e "$f" ] || { echo "::error::missing $f"; exit 1; }
+          done
+      - name: No secrets / internal references
+        run: |
+          if grep -rInE 'ghp_[A-Za-z0-9]{20,}|sk-ant-api03|-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+               --exclude-dir=.git --exclude-dir=node_modules . ; then
+            echo "::error::potential secret committed"; exit 1
+          fi
+          echo "clean"

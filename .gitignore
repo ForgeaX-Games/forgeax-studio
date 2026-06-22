@@ -1,0 +1,77 @@
+# Local scratch space (never tracked at parent level)
+_drafts/
+
+# Root apps/ was removed — ignore if tooling recreates it (e.g. stray Vite output).
+/apps/
+
+# Secrets — even though sub-repos have their own .gitignore, defense-in-depth
+.env
+.env.*
+!.env.example
+*.key
+key.txt
+llm_key.json
+github-info.txt
+
+# Build/runtime artifacts
+*.log
+node_modules/
+.forgeax/
+/projects/
+/state/
+/workspace.json
+# .forgeax-harness is a floating clone of forgeax-studio-harness (the studio
+# closed-loop state repo), NOT a submodule and NOT tracked here. Materialised
+# by scripts/sync-harness.mjs (npm run harness:sync / bootstrap.sh / deploy.sh).
+/.forgeax-harness/
+.self-evolve/
+.playwright-mcp/
+# playwright-cli session scratch (console logs, snapshot yml, screenshots).
+# Produced by forgeax-visual + forgeax-harness/playwright-cli when an agent
+# drives a browser. Per-session files (`console-<ts>.log`, `page-<ts>.yml`),
+# never useful across sessions.
+.playwright-cli/
+.forgeax.legacy-backup-*.tar.gz
+games/
+!packages/games/
+test-results/
+__pycache__/
+
+# Editor scratch
+.vscode/
+.idea/
+*.swp
+.DS_Store
+.worktrees/
+.claude/
+# Ad-hoc screenshots dropped at repo root during dev/debug
+/wb-*.png
+/agent-*.png
+/matrix-*.png
+MyFile
+# 3d-lowpoly agent runtime byproducts + TLS cert export (generated)
+/assets/
+/library/
+forgeax-studio-ca.crt
+# Local-only patches handed back to other submodule owners (never upstream)
+/.local-patches/
+.env8888
+/e1-day.png
+/e1-night.png
+/fix-ca-night.png
+/fix-ca.png
+/skills-demo.png
+/skills-discard.png
+/skills-fight.png
+/skills-fix.png
+/skills.png
+
+# studio-qa automated-test artifacts (screenshots + reports)
+/.forgeax-qa/
+
+# studio build output (regenerated)
+/packages/studio/dist/
+packages/editor
+packages/games
+packages/marketplace
+packages/server

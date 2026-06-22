@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "useDefineForClassFields": true,
+    "noEmit": true,
+    "types": ["bun"],
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["*"],
+      "@forgeax/types": ["../../types/src/index.ts"],
+      "@forgeax/types/*": ["../../types/src/*"]
+    }
+  },
+  "include": ["src", "test"]
+}

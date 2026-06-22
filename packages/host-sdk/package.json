@@ -1,0 +1,26 @@
+{
+  "name": "@forgeax/host-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "postMessage-based RPC bridge between forgeax-studio host (interface iframe-parent) and plugin (iframe-child). Built on @forgeax/types/host-sdk envelope schemas. Both sides share this code.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./host": "./src/host-side.ts",
+    "./plugin": "./src/plugin-side.ts",
+    "./transport-mock": "./src/transport-mock.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@forgeax/types": "*",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "typescript": "^5.6.3"
+  }
+}

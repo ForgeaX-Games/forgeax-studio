@@ -1,0 +1,32 @@
+[submodule "packages/engine"]
+	path = packages/engine
+	url = https://github.com/ForgeaX-Games/forgeax-engine.git
+	branch = main
+[submodule "packages/games"]
+	path = packages/games
+	url = https://github.com/ForgeaX-Games/forgeax-games.git
+	branch = main
+[submodule "packages/build"]
+	path = packages/build
+	url = https://github.com/ForgeaX-Games/forgeax-build.git
+	branch = main
+[submodule "packages/cli"]
+	path = packages/cli
+	url = https://github.com/ForgeaX-Games/forgeax-cli.git
+	branch = main
+[submodule "packages/server"]
+	path = packages/server
+	url = https://github.com/ForgeaX-Games/forgeax-server.git
+	branch = main
+[submodule "packages/interface"]
+	path = packages/interface
+	url = https://github.com/ForgeaX-Games/forgeax-interface.git
+	branch = main
+[submodule "packages/marketplace"]
+	path = packages/marketplace
+	url = https://github.com/ForgeaX-Games/forgeax-marketplace.git
+	branch = main
+[submodule "packages/editor"]
+	path = packages/editor
+	url = https://github.com/ForgeaX-Games/forgeax-editor.git
+	branch = main

@@ -4,8 +4,6 @@
 
 **English** · [简体中文](./README.zh-CN.md)
 
-### 🌐 [forgeax.github.io](https://forgeax.github.io) — homepage · live examples · docs
-
 ### Chat your way to a running game.
 
 Describe what you want in plain language — an AI agent writes **real engine

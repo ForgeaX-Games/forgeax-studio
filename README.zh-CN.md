@@ -4,6 +4,8 @@
 
 [English](./README.md) · **简体中文**
 
+### 🌐 [forgeax.github.io](https://forgeax.github.io) — 官网 · 在线示例 · 文档
+
 ### 用对话,做出能跑的游戏。
 
 用大白话描述你想要什么 —— AI agent 写出**真实引擎代码**,游戏在**实时 WebGPU 预览**里热重载,

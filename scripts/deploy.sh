@@ -198,23 +198,6 @@ else
   printf '\033[33m  ⚠ harness sync failed — continuing\033[0m\n'
 fi
 
-# engine + editor each carry their OWN floating harness clone (forgeax-engine-
-# harness / forgeax-editor-harness), wired to their postinstall. Our install
-# path never runs those postinstalls (pnpm --frozen-lockfile in the engine
-# build, bun workspace install skips sub-package lifecycle scripts), so the
-# clones never materialise unless we sync them here explicitly. Same non-fatal
-# policy as studio's: each sub-repo's sync-harness.mjs owns offline/divergence.
-for _sub in engine editor; do
-  _sync="$ROOT/packages/$_sub/scripts/sync-harness.mjs"
-  [ -f "$_sync" ] || continue
-  printf '  → packages/%s/scripts/sync-harness.mjs (.forgeax-harness floating clone)\n' "$_sub"
-  if (cd "$ROOT/packages/$_sub" && node scripts/sync-harness.mjs); then
-    ok "packages/$_sub/.forgeax-harness floating clone synced"
-  else
-    printf '\033[33m  ⚠ %s harness sync failed — continuing\033[0m\n' "$_sub"
-  fi
-done
-
 # Helper: bun install with automatic recovery from a known-broken state.
 # `bun install` occasionally lands in a half-installed state where its own
 # node_modules/.bun cache has stale shims, then the next install crashes

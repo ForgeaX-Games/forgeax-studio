@@ -478,7 +478,9 @@ mkdir -p "$INSTANCE_ROOT/.forgeax/games"
 # canonical `ln -snf`.
 _FX_SYMLINK="$ENGINE_SRC_DIR/.forgeax"
 if [ -L "$_FX_SYMLINK" ] || [ ! -e "$_FX_SYMLINK" ]; then
-  ln -snf "$INSTANCE_ROOT/.forgeax" "$_FX_SYMLINK"
+  # Windows: EPERM when using 'ln -snf' on non-elevated Git Bash. We'll handle via powershell manually
+  # ln -snf "$INSTANCE_ROOT/.forgeax" "$_FX_SYMLINK"
+  true
 elif [ -d "$_FX_SYMLINK" ] && [ -z "$(ls -A "$_FX_SYMLINK" 2>/dev/null)" ]; then
   rmdir "$_FX_SYMLINK" 2>/dev/null || rm -rf "$_FX_SYMLINK"
   ln -snf "$INSTANCE_ROOT/.forgeax" "$_FX_SYMLINK"

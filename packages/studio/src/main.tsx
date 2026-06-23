@@ -29,7 +29,14 @@ import { decodeSurfaceFromLocation, getWindowManager, surfaceKey } from '@forgea
 import { DetachedSurface } from '@forgeax/interface/components/DetachedSurface';
 import { PanelRenderersProvider } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { installHealthBridge } from '@forgeax/interface/components/StatusBar/healthBridge';
+import { initAegis } from '@forgeax/interface/lib/aegis';
 import { editorRenderers } from './panels/editorRenderers';
+
+// Boot Aegis (Galileo) front-end monitoring first, before any heavy boot work,
+// so early throws are captured. Inert unless VITE_AEGIS_* is configured (PROD,
+// or dev with VITE_AEGIS_DEV=1). studio is the default served package (STUDIO=1)
+// so the .env* it reads live in packages/studio, not interface.
+initAegis();
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('#root missing');

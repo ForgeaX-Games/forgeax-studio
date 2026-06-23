@@ -3,7 +3,7 @@
  *
  * Phase C1 establishes the contract surface every cli-provider driver
  * speaks: a Driver maps a Session (thread+agent+persona) onto a
- * concrete LLM backend (claude-code / codex / cursor / forgeax-native).
+ * concrete LLM backend (codex / cursor / forgeax-native).
  *
  * The daemon implementation behind these contracts lives in
  * `packages/cli/` today and migrates here in follow-up PRs (split into
@@ -13,3 +13,5 @@
  */
 export * from './driver';
 export * from './session';
+export * from './contract';
+export * from './noop-kernel';

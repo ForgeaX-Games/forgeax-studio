@@ -37,11 +37,20 @@ fx_startlock_acquire() {
   if ! mkdir "$FX_LOCK_DIR" 2>/dev/null; then
     local pid=""
     [ -f "$FX_LOCK_DIR/pid" ] && pid="$(cat "$FX_LOCK_DIR/pid" 2>/dev/null)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      echo "  ✗ another run.sh is already starting the stack (pid $pid)." >&2
-      echo "    Refusing to start a second time — that would crash half the stack" >&2
-      echo "    on strictPort EADDRINUSE. Wait for it, or: bash scripts/stop.sh --force" >&2
-      exit 1
+    if [ -n "$pid" ]; then
+      local is_alive=0
+      if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+        tasklist /FI "PID eq $pid" 2>/dev/null | grep -q "$pid" && is_alive=1
+      else
+        kill -0 "$pid" 2>/dev/null && is_alive=1
+      fi
+
+      if [ "$is_alive" = "1" ]; then
+        echo "  ✗ another run.sh is already starting the stack (pid $pid)." >&2
+        echo "    Refusing to start a second time — that would crash half the stack" >&2
+        echo "    on strictPort EADDRINUSE. Wait for it, or: bash scripts/stop.sh --force" >&2
+        exit 1
+      fi
     fi
     # Stale lock — previous holder is gone. Reclaim it.
     echo "  · reclaiming stale start lock (holder pid ${pid:-?} is dead)" >&2

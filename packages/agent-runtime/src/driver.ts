@@ -1,6 +1,6 @@
 /**
- * Driver contract — each cli-provider implementation (claude-code /
- * codex / cursor / forgeax-native) ships one. The runtime owns the
+ * Driver contract — each cli-provider implementation (codex / cursor /
+ * forgeax-native) ships one. The runtime owns the
  * Session lifecycle; the driver owns "send these messages, stream
  * tokens back, surface tool calls."
  *
@@ -40,7 +40,7 @@ export interface DriverHealth {
   /** `name` matches the Driver's `id`. */
   name: string;
   /** Free-form details for the SettingsPanel `CLI Providers` row.
-   *  Examples: "claude version 2.1.4", "litellm proxy reachable". */
+   *  Examples: "cli version 2.1.4", "litellm proxy reachable". */
   detail?: string;
 }
 
@@ -50,7 +50,7 @@ export interface Driver {
   /** Display label for the SettingsPanel · CLI Providers list. */
   name: string;
   /** True if the driver can run without any external CLI binary. The
-   *  forgeax-native driver returns true; claude-code/codex/cursor false. */
+   *  forgeax-native driver returns true; codex/cursor false. */
   selfContained: boolean;
   /** Doc 05 §7 — optional one-shot init. Called once at registration via
    *  `bootDriver()`; throwing/rejecting marks the driver `broken`, the

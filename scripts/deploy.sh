@@ -128,6 +128,18 @@ ok "git=$(git --version | awk '{print $3}') bun=$(bun --version) node=$(node -v)
 # ─── 2. submodule init ────────────────────────────────────────────────────
 bold "[2/6] Initialising submodules"
 
+# Make `git pull` / `git checkout` in this repo auto-recurse into submodules.
+# Without this, pulling the superproject only moves the recorded submodule
+# pointers (the 160000-mode gitlink entries) but leaves each submodule's actual
+# checkout where it was — so `git status` immediately reports "modified:
+# packages/<sub>" pointer drift after every pull. Setting submodule.recurse=true
+# (local to this clone, not global) makes pull/checkout run with
+# --recurse-submodules, keeping working trees aligned to the pins automatically.
+# (It can't override genuine blockers — untracked/uncommitted junk inside a
+# submodule still stops the auto-checkout; that needs manual cleanup first.)
+git config submodule.recurse true
+ok "git submodule.recurse=true (pull/checkout auto-align submodule working trees)"
+
 # SSH fallback for private submodules.
 # The .gitmodules URLs are HTTPS (https://github.com/ForgeaX-Games/...), but the
 # repos are private. GitHub disabled password auth in 2021, and accounts with
@@ -196,6 +208,31 @@ if node "$ROOT/scripts/sync-harness.mjs"; then
   ok ".forgeax-harness floating clone synced"
 else
   printf '\033[33m  ⚠ harness sync failed — continuing\033[0m\n'
+fi
+
+# Install harness skills/rules into $ROOT via forgeax-install. The IR
+# (packages/harness/.../examples/forgeax-studio.json) is machine-independent —
+# it declares WHAT to install; we pass WHERE (--target-root "$ROOT") at runtime.
+# Manifest + vendored files land under .forgeax-harness/ (materialised above), so
+# this must run after the floating-clone sync. install_harness.py is pure stdlib
+# (no harness .venv needed). Mount parents (.cursor/skills, .claude/rules, …) must
+# exist before linking — a fresh clone only ships .cursor with content, so create
+# all 12 here. Non-fatal, same policy as the sync above: the stack runs without
+# the harness skills, they just aren't visible to the CLI front-ends.
+_install_py="$ROOT/packages/harness/skills/forgeax-install/scripts/install_harness.py"
+_install_ir="$ROOT/packages/harness/skills/forgeax-install/examples/forgeax-studio.json"
+if [ -f "$_install_py" ] && [ -f "$_install_ir" ] && command -v python3 >/dev/null 2>&1; then
+  for _mount in .codebuddy .cursor .agents .claude .claude-internal .workbuddy; do
+    mkdir -p "$ROOT/$_mount/skills" "$ROOT/$_mount/rules"
+  done
+  printf '  → forgeax-install (harness skills/rules → %s)\n' "$ROOT"
+  if python3 "$_install_py" --spec "$_install_ir" --target-root "$ROOT"; then
+    ok "harness skills/rules installed (mount symlinks + vendor)"
+  else
+    printf '\033[33m  ⚠ forgeax-install failed — continuing\033[0m\n'
+  fi
+else
+  printf '\033[33m  ⚠ forgeax-install IR or python3 missing — skipping\033[0m\n'
 fi
 
 # engine + editor each carry their OWN floating harness clone (forgeax-engine-
@@ -411,7 +448,7 @@ fi
 #
 # 2026-05-21: dropped packages/cli — the forgeax cli daemon (:3700, docker-
 # based instance provisioning) is fully superseded by forgeax-server's
-# built-in cli-providers (claude-code / codex / cursor / forgeax). Skipping
+# built-in cli-providers (bc / codex / cursor / forgeax). Skipping
 # `bun install` here also avoids macOS users hitting the docker / sshfs
 # postinstall toolchain that lived in packages/cli/.
 bold "[4/6] Installing workspace dependencies"

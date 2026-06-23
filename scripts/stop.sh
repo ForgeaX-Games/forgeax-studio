@@ -175,7 +175,13 @@ find_listen_pids() {
 # `kill -0` works on all unix-like; on Windows git-bash it's also
 # supported (returns 0 for alive process owned by current user).
 is_pid_alive() {
-  kill -0 "$1" 2>/dev/null
+  if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+    # On Windows Git Bash, kill -0 might not work reliably for non-bash processes.
+    # Use tasklist to check if the process actually exists.
+    tasklist /FI "PID eq $1" 2>/dev/null | grep -q "$1"
+  else
+    kill -0 "$1" 2>/dev/null
+  fi
 }
 
 # pid_cmd <pid> → human-readable command line (or empty)

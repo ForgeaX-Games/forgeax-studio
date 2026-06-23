@@ -21,6 +21,8 @@ import { bootStageEntry } from '@forgeax/interface/boot/driver';
 import { subscribeSessionStream } from '@forgeax/interface/lib/session-stream';
 import { subscribeNarrativeCopilot } from '@forgeax/interface/lib/narrative-copilot';
 import { subscribeFileActivityStream } from '@forgeax/interface/lib/file-activity-stream';
+import { subscribePermissionStream } from '@forgeax/interface/lib/permission-stream';
+import { subscribePerceptionStream } from '@forgeax/interface/lib/perception-stream';
 import { syncBrowserPrefsFromServer, startBrowserPrefsSync } from '@forgeax/interface/lib/browser-prefs-sync';
 import { useAppStore } from '@forgeax/interface/store';
 import { decodeSurfaceFromLocation, getWindowManager, surfaceKey } from '@forgeax/interface/lib/platform';
@@ -81,6 +83,8 @@ function bootStore() {
   // 直到管线进终态 → 投系统提示唤醒 Kotone 做完成总结。需在 session-stream 之后挂。
   subscribeNarrativeCopilot();
   subscribeFileActivityStream();
+  subscribePermissionStream(); // 权限审批卡订阅(此前 studio bootStore 漏挂 → 默认内核 ask 卡从不渲染)
+  subscribePerceptionStream();
   void useAppStore.getState().initSessions();
 }
 

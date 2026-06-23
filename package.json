@@ -5,15 +5,22 @@
   "type": "module",
   "description": "ForgeaX Studio — AI-native game development environment",
   "scripts": {
-    "harness:sync": "node scripts/sync-harness.mjs"
+    "harness:sync": "node scripts/sync-harness.mjs",
+    "lint:boundaries": "bun run lint:boundaries:core && bun run lint:boundaries:cli && bun run lint:boundaries:agent-host",
+    "lint:boundaries:core": "cd packages/core && bun run lint:boundaries",
+    "lint:boundaries:cli": "cd packages/cli && bun run lint:boundaries",
+    "lint:boundaries:agent-host": "cd packages/agent-host && bun run lint:boundaries"
   },
   "workspaces": [
     "packages/agent-runtime",
+    "packages/agent-host",
+    "packages/core",
     "packages/host-sdk",
     "packages/interface",
     "packages/interface/packages/design",
     "packages/studio",
     "packages/server",
+    "packages/cli",
     "packages/types",
     "packages/editor",
     "packages/editor/packages/editor-core",
@@ -26,5 +33,8 @@
   "comment_dependencies": "react-dom 19 declares scheduler as a peer dep, but bun (≥1.3) does not auto-install peer deps the way npm/pnpm do. Without an explicit dependency here, esbuild fails resolving 'scheduler' from inside react-dom-client.development.js on Windows + bun (Windows GAP-13). Pinning it at the workspace root hoists it where every consumer can find it.",
   "dependencies": {
     "scheduler": "^0.27.0"
+  },
+  "patchedDependencies": {
+    "ink@6.8.0": "patches/ink@6.8.0.patch"
   }
 }

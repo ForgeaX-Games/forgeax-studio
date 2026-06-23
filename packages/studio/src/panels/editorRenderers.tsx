@@ -52,6 +52,15 @@ function useActiveSlug(): string | null {
   // spurious null flash on boot). Once we know the list, gate on membership.
   if (liveSlugs === null) return resolved;
   if (resolved && liveSlugs.includes(resolved)) return resolved;
+  // `resolved` isn't in the live list. Before falling back, trust autoSlug:
+  // /api/workbench/active-slug resolves it via getActiveGame, which only returns
+  // a slug whose .forgeax/games/<slug>/ dir actually exists — so it's a real,
+  // mountable game even when the /games list is momentarily incomplete (e.g. a
+  // dangling symlink truncated the enumeration). Without this, a single bad
+  // games-list response would silently switch the preview to games[0] (the
+  // "wrong game in the viewport" bug). Only drop to games[0]/null when even the
+  // server has no authoritative active game (fresh workspace / everything deleted).
+  if (autoSlug) return autoSlug;
   return liveSlugs[0] ?? null;
 }
 

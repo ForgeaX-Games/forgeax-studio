@@ -170,12 +170,12 @@
     },
     "experimental": false,
     "name": {
-      "zh": "Claude Code 默认助手",
-      "en": "Claude Code Default"
+      "zh": "the reference agent CLI 默认助手",
+      "en": "the reference agent CLI Default"
     },
     "desc": {
-      "zh": "Claude Code CLI 的开箱即用 persona · 通用编程助手, 偏好 anthropic-messages key。新用户点 'use claude-code' 时拿到这个,不用先写 PERSONA.md。",
-      "en": "Out-of-the-box persona for the Claude Code CLI provider. Generic coding assistant; users get this on first 'use claude-code' click without authoring a PERSONA.md."
+      "zh": "the reference agent CLI CLI 的开箱即用 persona · 通用编程助手, 偏好 anthropic-messages key。新用户点 'use claude-code' 时拿到这个,不用先写 PERSONA.md。",
+      "en": "Out-of-the-box persona for the the reference agent CLI CLI provider. Generic coding assistant; users get this on first 'use claude-code' click without authoring a PERSONA.md."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -906,8 +906,8 @@
     },
     "experimental": true,
     "name": {
-      "zh": "Claude Code",
-      "en": "Claude Code CLI"
+      "zh": "the reference agent CLI",
+      "en": "the reference agent CLI CLI"
     },
     "desc": {
       "zh": "Anthropic claude-code CLI 适配 · spawn `claude --mode stream` 子进程,把 ChatEvent 流桥接到 Bus。实际 runner 在 server/src/cli-providers/claude-code/,本 plugin 声明 metadata + Bus 入口。",

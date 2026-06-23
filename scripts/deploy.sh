@@ -448,7 +448,7 @@ fi
 #
 # 2026-05-21: dropped packages/cli — the forgeax cli daemon (:3700, docker-
 # based instance provisioning) is fully superseded by forgeax-server's
-# built-in cli-providers (claude-code / codex / cursor / forgeax). Skipping
+# built-in cli-providers (bc / codex / cursor / forgeax). Skipping
 # `bun install` here also avoids macOS users hitting the docker / sshfs
 # postinstall toolchain that lived in packages/cli/.
 bold "[4/6] Installing workspace dependencies"

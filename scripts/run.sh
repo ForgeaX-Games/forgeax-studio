@@ -11,7 +11,7 @@
 # forgeax/engine. Run `./scripts/build.sh release-source` to refresh it.
 #
 # 2026-05-21: forgeax cli daemon (:3700) + docker-based instance pre-warm
-# removed — forgeax-server's built-in cli-providers (claude-code / codex /
+# removed — forgeax-server's built-in cli-providers (bc / codex /
 # cursor / forgeax) fully subsume that role. The old daemon was a docker-only
 # path that broke on macOS for users without Docker Desktop.
 
@@ -548,9 +548,26 @@ PLUGIN_DEV_PORTS_FILE="$RUNTIME_DIR/plugin-dev-ports.json"
 RUN_STACK_FILE="$RUNTIME_DIR/dev-stack.env"
 mkdir -p "$RUNTIME_DIR"
 
+# Plugin port offset — added to every standalone-plugin seed port BEFORE the
+# busy-probe/+1 bump. The fixed services honour FORGEAX_*_PORT overrides, but
+# plugin ports are seeded from each manifest's sa.port and are otherwise SHARED
+# across stacks. The lsof-based _alloc_port bump only avoids a collision when the
+# OTHER stack is already bound — a race when two stacks start near-simultaneously
+# (e.g. dev-local.sh alongside start.sh). A non-zero offset moves a whole stack's
+# plugin ports into a disjoint band deterministically. dev-local.sh sets 10000.
+FORGEAX_PLUGIN_PORT_OFFSET="${FORGEAX_PLUGIN_PORT_OFFSET:-0}"
 ALLOCATED_PORTS=" ${FORGEAX_SERVER_PORT:-18900} ${FORGEAX_INTERFACE_PORT:-18920} ${FORGEAX_ENGINE_PORT:-15173} ${FORGEAX_EDITOR_PORT:-15280} "
 _port_is_busy() {
   local port="$1"
+  # lsof sees listeners on ANY address family (IPv4 + IPv6). The bash
+  # /dev/tcp/127.0.0.1 probe is IPv4-only and silently MISSES an IPv6-bound
+  # listener — e.g. a parallel `forgeax-studio` running `vite --host` (binds
+  # IPv6 *:PORT). That miss made _alloc_port hand out an already-taken port
+  # (wb-reel :15175), and the plugin's vite then crashed with EADDRINUSE.
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+    return 1
+  fi
   (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null
 }
 _port_already_allocated() {
@@ -596,6 +613,8 @@ PLUGIN_DIRS=(); PLUGIN_IDS=(); PLUGIN_SHORTIDS=()
 PLUGIN_FPORTS=(); PLUGIN_BPORTS=(); PLUGIN_PROOTS=(); PLUGIN_PIDS=()
 while IFS=$'\t' read -r _dir _id _sid _fseed; do
   [ -n "$_dir" ] || continue
+  # Apply the per-stack offset to the manifest seed, then probe/bump from there.
+  _fseed=$((_fseed + FORGEAX_PLUGIN_PORT_OFFSET))
   _alloc_port _fp "$_fseed"
   _alloc_port _bp "$((_fseed + 2))"
   # Per-plugin workspace root (gitignored). Each backend owns its own projects/

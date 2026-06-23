@@ -46,10 +46,11 @@ fx_startlock_acquire() {
       fi
 
       if [ "$is_alive" = "1" ]; then
-      echo "  ✗ another run.sh is already starting the stack (pid $pid)." >&2
-      echo "    Refusing to start a second time — that would crash half the stack" >&2
-      echo "    on strictPort EADDRINUSE. Wait for it, or: bash scripts/stop.sh --force" >&2
-      exit 1
+        echo "  ✗ another run.sh is already starting the stack (pid $pid)." >&2
+        echo "    Refusing to start a second time — that would crash half the stack" >&2
+        echo "    on strictPort EADDRINUSE. Wait for it, or: bash scripts/stop.sh --force" >&2
+        exit 1
+      fi
     fi
     # Stale lock — previous holder is gone. Reclaim it.
     echo "  · reclaiming stale start lock (holder pid ${pid:-?} is dead)" >&2

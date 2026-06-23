@@ -321,6 +321,40 @@ if [ -n "$ENGINE_MISSING" ]; then
 fi
 echo "[engine] dist found for entry packages:$ENGINE_ENTRY_PKGS" | sed 's/  */ /g'
 
+# ---- 2.x.a engine dist FRESHNESS precondition ----
+# dist existing is not enough: after switching the engine pin (a `/main-merge`,
+# a manual submodule checkout) the gitignored dist is the PREVIOUS engine's
+# build, so the runtime loads STALE component schemas. The symptom is maddening
+# and far from the cause — e.g. engine #479 merged DirectionalLightShadow into
+# DirectionalLight, but a stale dist still rejects `castShadow` →
+# "[editor] native scene instantiate failed" / Play FALLBACK, with no hint that
+# the fix is "rebuild the engine dist". `git checkout` resets tracked src mtimes
+# to "now" while leaving the gitignored dist untouched, so `src newer than dist`
+# is a reliable post-checkout staleness signal (a fresh build always writes dist
+# AFTER reading src). Catch it here and hand the user the exact fix, mirroring
+# the wgpu-wasm guard below.
+if [ "${FORGEAX_SKIP_ENGINE_DIST_FRESHNESS:-}" != "1" ]; then
+  ENGINE_STALE=""
+  for p in $ENGINE_ENTRY_PKGS; do
+    pdir="$ENGINE_PKG_DIR/$p"
+    [ -d "$pdir/src" ] && [ -f "$pdir/dist/index.mjs" ] || continue
+    if [ -n "$(find "$pdir/src" -type f -newer "$pdir/dist/index.mjs" -print -quit 2>/dev/null)" ]; then
+      ENGINE_STALE="$ENGINE_STALE $p"
+    fi
+  done
+  if [ -n "$ENGINE_STALE" ]; then
+    echo "  ERROR: engine dist STALE (src newer than dist) for:$ENGINE_STALE" >&2
+    echo "  The engine pin changed but its TypeScript dist was not rebuilt, so the" >&2
+    echo "  runtime loads OLD component schemas → 'native scene instantiate failed'" >&2
+    echo "  / Play FALLBACK / spawn-data-unknown-field on edits that are actually valid." >&2
+    echo "  Rebuild the engine dist:" >&2
+    echo "    bash scripts/deploy.sh        # builds engine dist (+ wasm, + deps)" >&2
+    echo "  Override (not recommended): FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 bash scripts/run.sh" >&2
+    exit 1
+  fi
+  echo "[engine] dist fresh"
+fi
+
 # ---- 2.x.b wgpu_wasm freshness precondition ----
 # pkg/wgpu_wasm_bg.wasm is gitignored (zero-binary invariant); pkg/wgpu_wasm.js
 # (the wasm-bindgen JS glue) IS committed. When an engine bump rewrites a

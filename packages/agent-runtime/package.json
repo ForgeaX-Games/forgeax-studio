@@ -8,9 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./driver": "./src/driver.ts",
-    "./session": "./src/session.ts",
-    "./contract": "./src/contract.ts",
-    "./noop-kernel": "./src/noop-kernel.ts"
+    "./session": "./src/session.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

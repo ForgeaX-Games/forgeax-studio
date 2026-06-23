@@ -10,7 +10,7 @@
 # Override via FORGEAX_{SERVER,INTERFACE,ENGINE}_PORT in $ROOT/.env.
 #
 # 2026-05-21: 砍掉了 forgeax cli daemon (旧 :3700) + agenteam instance
-# provision 链路 —— server 的 cli-providers (bc / codex / cursor /
+# provision 链路 —— server 的 cli-providers (claude-code / codex / cursor /
 # forgeax) 已经完整接管该角色,旧 daemon 的 docker-based "instance" 抽象
 # 在 macOS 上是噪音源。docker 不再是 Studio 跑起来的硬依赖。
 #

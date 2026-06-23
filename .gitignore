@@ -43,7 +43,6 @@ __pycache__/
 *.swp
 .DS_Store
 .worktrees/
-.bc/
 .claude/
 # Ad-hoc screenshots dropped at repo root during dev/debug
 /wb-*.png

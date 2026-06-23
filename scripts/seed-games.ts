@@ -51,7 +51,7 @@ for (const name of readdirSync(src)) {
     const tst = lstatSync(target);
     if (tst.isSymbolicLink()) {
       if (readlinkSync(target) === dir) { console.log(`[seed-games] ${slug} ok`); continue; }
-      rmSync(target); symlinkSync(dir, target, 'junction'); console.log(`[seed-games] ${slug} relinked`);
+      rmSync(target); symlinkSync(dir, target); console.log(`[seed-games] ${slug} relinked`);
     } else {
       // Real dir at the same slug as a shared-library game: this is a stale
       // copy from before seed-games ran (or a manual cp from the source).
@@ -62,10 +62,10 @@ for (const name of readdirSync(src)) {
       const stamp = String(Math.floor(Date.now() / 1000));
       const backup = `${target}.bak-${stamp}`;
       renameSync(target, backup);
-      symlinkSync(dir, target, 'junction');
+      symlinkSync(dir, target);
       console.warn(`[seed-games] ${slug} was a real dir shadowing a shared-library game — moved to ${backup} and linked.`);
     }
   } catch {
-    symlinkSync(dir, target, 'junction'); console.log(`[seed-games] ${slug} linked`);
+    symlinkSync(dir, target); console.log(`[seed-games] ${slug} linked`);
   }
 }

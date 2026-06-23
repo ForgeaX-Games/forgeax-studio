@@ -198,6 +198,31 @@ else
   printf '\033[33m  ⚠ harness sync failed — continuing\033[0m\n'
 fi
 
+# Install harness skills/rules into $ROOT via forgeax-install. The IR
+# (packages/harness/.../examples/forgeax-studio.json) is machine-independent —
+# it declares WHAT to install; we pass WHERE (--target-root "$ROOT") at runtime.
+# Manifest + vendored files land under .forgeax-harness/ (materialised above), so
+# this must run after the floating-clone sync. install_harness.py is pure stdlib
+# (no harness .venv needed). Mount parents (.cursor/skills, .claude/rules, …) must
+# exist before linking — a fresh clone only ships .cursor with content, so create
+# all 12 here. Non-fatal, same policy as the sync above: the stack runs without
+# the harness skills, they just aren't visible to the CLI front-ends.
+_install_py="$ROOT/packages/harness/skills/forgeax-install/scripts/install_harness.py"
+_install_ir="$ROOT/packages/harness/skills/forgeax-install/examples/forgeax-studio.json"
+if [ -f "$_install_py" ] && [ -f "$_install_ir" ] && command -v python3 >/dev/null 2>&1; then
+  for _mount in .codebuddy .cursor .agents .claude .claude-internal .workbuddy; do
+    mkdir -p "$ROOT/$_mount/skills" "$ROOT/$_mount/rules"
+  done
+  printf '  → forgeax-install (harness skills/rules → %s)\n' "$ROOT"
+  if python3 "$_install_py" --spec "$_install_ir" --target-root "$ROOT"; then
+    ok "harness skills/rules installed (mount symlinks + vendor)"
+  else
+    printf '\033[33m  ⚠ forgeax-install failed — continuing\033[0m\n'
+  fi
+else
+  printf '\033[33m  ⚠ forgeax-install IR or python3 missing — skipping\033[0m\n'
+fi
+
 # engine + editor each carry their OWN floating harness clone (forgeax-engine-
 # harness / forgeax-editor-harness), wired to their postinstall. Our install
 # path never runs those postinstalls (pnpm --frozen-lockfile in the engine

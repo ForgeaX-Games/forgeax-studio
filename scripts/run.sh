@@ -478,17 +478,16 @@ mkdir -p "$INSTANCE_ROOT/.forgeax/games"
 # canonical `ln -snf`.
 _FX_SYMLINK="$ENGINE_SRC_DIR/.forgeax"
 if [ -L "$_FX_SYMLINK" ] || [ ! -e "$_FX_SYMLINK" ]; then
-  # Windows: EPERM when using 'ln -snf' on non-elevated Git Bash. We'll handle via powershell manually
-  # ln -snf "$INSTANCE_ROOT/.forgeax" "$_FX_SYMLINK"
-  true
+  # Use Node.js to create a 'junction' safely on Windows without Admin privileges, acts as normal symlink on Mac/Linux
+  node -e "const fs = require('fs'); try { fs.unlinkSync('$_FX_SYMLINK'); } catch(e){} fs.symlinkSync('$INSTANCE_ROOT/.forgeax', '$_FX_SYMLINK', 'junction');"
 elif [ -d "$_FX_SYMLINK" ] && [ -z "$(ls -A "$_FX_SYMLINK" 2>/dev/null)" ]; then
   rmdir "$_FX_SYMLINK" 2>/dev/null || rm -rf "$_FX_SYMLINK"
-  ln -snf "$INSTANCE_ROOT/.forgeax" "$_FX_SYMLINK"
+  node -e "const fs = require('fs'); fs.symlinkSync('$INSTANCE_ROOT/.forgeax', '$_FX_SYMLINK', 'junction');"
   echo "[run.sh] cleared empty real dir at $_FX_SYMLINK and replaced with symlink"
 elif [ -d "$_FX_SYMLINK" ]; then
   _FX_BAK="$_FX_SYMLINK.bak-$(date +%Y%m%d-%H%M%S)"
   mv "$_FX_SYMLINK" "$_FX_BAK"
-  ln -snf "$INSTANCE_ROOT/.forgeax" "$_FX_SYMLINK"
+  node -e "const fs = require('fs'); fs.symlinkSync('$INSTANCE_ROOT/.forgeax', '$_FX_SYMLINK', 'junction');"
   echo "  ⚠ $_FX_SYMLINK was a real directory; moved to $_FX_BAK and replaced with symlink." >&2
   echo "    If you had local state under it, rsync it into $INSTANCE_ROOT/.forgeax/ then delete the .bak." >&2
 else

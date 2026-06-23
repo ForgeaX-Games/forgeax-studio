@@ -128,6 +128,18 @@ ok "git=$(git --version | awk '{print $3}') bun=$(bun --version) node=$(node -v)
 # ─── 2. submodule init ────────────────────────────────────────────────────
 bold "[2/6] Initialising submodules"
 
+# Make `git pull` / `git checkout` in this repo auto-recurse into submodules.
+# Without this, pulling the superproject only moves the recorded submodule
+# pointers (the 160000-mode gitlink entries) but leaves each submodule's actual
+# checkout where it was — so `git status` immediately reports "modified:
+# packages/<sub>" pointer drift after every pull. Setting submodule.recurse=true
+# (local to this clone, not global) makes pull/checkout run with
+# --recurse-submodules, keeping working trees aligned to the pins automatically.
+# (It can't override genuine blockers — untracked/uncommitted junk inside a
+# submodule still stops the auto-checkout; that needs manual cleanup first.)
+git config submodule.recurse true
+ok "git submodule.recurse=true (pull/checkout auto-align submodule working trees)"
+
 # SSH fallback for private submodules.
 # The .gitmodules URLs are HTTPS (https://github.com/ForgeaX-Games/...), but the
 # repos are private. GitHub disabled password auth in 2021, and accounts with

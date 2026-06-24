@@ -699,7 +699,7 @@ _run_sh_cleanup() {
   fx_pg_reap_pidfiles TERM
   for _pid in "${SRV:-}" "${UI:-}" "${EN:-}" "${ED:-}" "${NARR:-}" "${FACE_MASK:-}" "${PLUGIN_PIDS[@]}"; do
     [ -n "$_pid" ] || continue
-    kill -TERM -- "-$_pid" 2>/dev/null || kill -TERM "$_pid" 2>/dev/null || true
+    fx_pg_kill TERM "$_pid"
   done
   fx_pg_clear
   fx_startlock_release

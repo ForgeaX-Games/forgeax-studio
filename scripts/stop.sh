@@ -171,22 +171,23 @@ find_listen_pids() {
   esac
 }
 
-# is_pid_alive <pid> → exit 0 if alive, non-0 if dead/missing.
-# `kill -0` works on all unix-like; on Windows git-bash it's also
-# supported (returns 0 for alive process owned by current user).
-is_pid_alive() {
-  if [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
-    # On Windows Git Bash, kill -0 might not work reliably for non-bash processes.
-    # Use tasklist to check if the process actually exists.
-    tasklist /FI "PID eq $1" 2>/dev/null | grep -q "$1"
-  else
-    kill -0 "$1" 2>/dev/null
-  fi
-}
+# Liveness check is now the platform-aware fx_pid_alive (scripts/lib/process-group.sh,
+# sourced above) — `kill -0` on POSIX, `tasklist` by WINPID on Windows. Kept as a
+# thin alias so existing call sites read naturally.
+is_pid_alive() { fx_pid_alive "$1"; }
 
-# pid_cmd <pid> → human-readable command line (or empty)
+# pid_cmd <pid> → human-readable command/name (or empty). Cosmetic only.
+# MSYS `ps` rejects `-o`, so on Windows ask tasklist for the image name by pid;
+# elsewhere use `ps -o command=`. Trailing `|| true` keeps it safe under set -e.
 pid_cmd() {
-  ps -p "$1" -o command= 2>/dev/null | sed 's/^[[:space:]]*//'
+  if [ "$FX_OS" = "win" ]; then
+    # CSV format → first field is the image name. /NH drops the header (valid for
+    # CSV/TABLE, not LIST). Single-slash + MSYS_NO_PATHCONV, same as taskkill.
+    MSYS_NO_PATHCONV=1 tasklist /FI "PID eq $(fx_winpid "$1")" /NH /FO CSV 2>/dev/null \
+      | awk -F'","' 'NR==1{gsub(/"/,"",$1); print $1; exit}' || true
+  else
+    ps -p "$1" -o command= 2>/dev/null | sed 's/^[[:space:]]*//' || true
+  fi
 }
 
 # is_port_listening <port> → 0 if anything LISTENs on it
@@ -194,27 +195,12 @@ is_port_listening() {
   [ -n "$(find_listen_pids "$1")" ]
 }
 
-# scripts/run.sh launches each service under `set -m`, so a service's parent and
-# its watcher grandchildren (pnpm → vite / `tsx --watch`) share ONE process
-# group whose leader pid we recorded. Killing that group reaps the whole tree —
-# the fix for watcher grandchildren orphaning to init and squatting ports.
-# pgid_of resolves a pid's group but never returns OUR OWN group, so we can
-# never accidentally group-kill stop.sh itself.
-SELF_PGID="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')"
-pgid_of() {
-  local g
-  g="$(ps -o pgid= -p "$1" 2>/dev/null | tr -d ' ')"
-  [ -n "$g" ] && [ "$g" != "$SELF_PGID" ] && printf '%s' "$g"
-}
-
-# kill_tree <SIG> <pid> → signal the pid's whole process group, then the bare
-# pid as a fallback for non-grouped/legacy stacks. Idempotent.
-kill_tree() {
-  local sig="$1" pid="$2" g=""
-  g="$(pgid_of "$pid")" || true
-  if [ -n "$g" ]; then kill -"$sig" -- "-$g" 2>/dev/null || true; fi
-  kill -"$sig" "$pid" 2>/dev/null || true
-}
+# Process teardown is delegated to the platform-aware fx_pg_kill SSOT primitive
+# (scripts/lib/process-group.sh, sourced above): POSIX process-group kill
+# (`kill -- -PGID`, reaping watcher grandchildren) on mac/linux, `taskkill //T //F`
+# on Windows. SELF_PGID is still computed here for the layer-3 pgrep guard below,
+# so we never target stop.sh's own process group.
+SELF_PGID="$(fx_pgid_raw $$)"
 
 echo "[stop.sh] scanning forgeax-studio dev stack (discovery=$DISCOVERY_TOOL):"
 for i in "${!PORTS[@]}"; do
@@ -289,8 +275,8 @@ if command -v pgrep >/dev/null 2>&1; then
       [ -n "$pid" ] || continue
       [ "$pid" = "$$" ] && continue
       # never include a pid in our own process group (the shell + node helpers)
-      _g="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
-      [ "$_g" = "$SELF_PGID" ] && continue
+      _g="$(fx_pgid_raw "$pid")"
+      [ -n "$_g" ] && [ "$_g" = "$SELF_PGID" ] && continue
       case "$SEEN_PIDS" in
         *" $pid "*) ;;
         *)
@@ -325,7 +311,7 @@ echo
 
 # ── SIGTERM + live wait ───────────────────────────────────────────────
 echo "[stop.sh] sending SIGTERM to process groups, waiting up to 4s for graceful exit..."
-for pid in "${PIDS[@]}"; do kill_tree TERM "$pid"; done
+for pid in "${PIDS[@]}"; do fx_pg_kill TERM "$pid"; done
 
 REPORTED=()
 for _ in "${PIDS[@]}"; do REPORTED+=(0); done
@@ -356,7 +342,7 @@ if [ ${#STILL_PIDS[@]} -gt 0 ]; then
     echo "[stop.sh] grace period elapsed — escalating to SIGKILL on ${#STILL_PIDS[@]} straggler(s):"
     for j in "${!STILL_PIDS[@]}"; do
       printf "  ☠ pid %-7s (:%s)\n" "${STILL_PIDS[$j]}" "${STILL_PORTS[$j]}"
-      kill_tree KILL "${STILL_PIDS[$j]}"
+      fx_pg_kill KILL "${STILL_PIDS[$j]}"
     done
     sleep 1
   else

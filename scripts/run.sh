@@ -477,17 +477,30 @@ mkdir -p "$INSTANCE_ROOT/.forgeax/games"
 # warn so the user can recover any local state. Both paths converge on the
 # canonical `ln -snf`.
 _FX_SYMLINK="$ENGINE_SRC_DIR/.forgeax"
+# node is a native Windows exe under Git Bash and does NOT understand MSYS
+# paths: it reads a leading `/f/...` as drive-relative `<cwd-drive>:\f\...`
+# (so `/f/forgeax/...` becomes `F:\f\forgeax\...`), making symlinkSync fail with
+# ENOENT on a target that doesn't exist. Convert to a node-friendly path
+# (`F:/forgeax/...`) via cygpath on Windows; identity elsewhere.
+fx_node_path() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) cygpath -m "$1" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+_FX_TARGET_N="$(fx_node_path "$INSTANCE_ROOT/.forgeax")"
+_FX_SYMLINK_N="$(fx_node_path "$_FX_SYMLINK")"
 if [ -L "$_FX_SYMLINK" ] || [ ! -e "$_FX_SYMLINK" ]; then
   # Use Node.js to create a 'junction' safely on Windows without Admin privileges, acts as normal symlink on Mac/Linux
-  node -e "const fs = require('fs'); try { fs.unlinkSync('$_FX_SYMLINK'); } catch(e){} fs.symlinkSync('$INSTANCE_ROOT/.forgeax', '$_FX_SYMLINK', 'junction');"
+  node -e "const fs = require('fs'); try { fs.unlinkSync('$_FX_SYMLINK_N'); } catch(e){} fs.symlinkSync('$_FX_TARGET_N', '$_FX_SYMLINK_N', 'junction');"
 elif [ -d "$_FX_SYMLINK" ] && [ -z "$(ls -A "$_FX_SYMLINK" 2>/dev/null)" ]; then
   rmdir "$_FX_SYMLINK" 2>/dev/null || rm -rf "$_FX_SYMLINK"
-  node -e "const fs = require('fs'); fs.symlinkSync('$INSTANCE_ROOT/.forgeax', '$_FX_SYMLINK', 'junction');"
+  node -e "const fs = require('fs'); fs.symlinkSync('$_FX_TARGET_N', '$_FX_SYMLINK_N', 'junction');"
   echo "[run.sh] cleared empty real dir at $_FX_SYMLINK and replaced with symlink"
 elif [ -d "$_FX_SYMLINK" ]; then
   _FX_BAK="$_FX_SYMLINK.bak-$(date +%Y%m%d-%H%M%S)"
   mv "$_FX_SYMLINK" "$_FX_BAK"
-  node -e "const fs = require('fs'); fs.symlinkSync('$INSTANCE_ROOT/.forgeax', '$_FX_SYMLINK', 'junction');"
+  node -e "const fs = require('fs'); fs.symlinkSync('$_FX_TARGET_N', '$_FX_SYMLINK_N', 'junction');"
   echo "  ⚠ $_FX_SYMLINK was a real directory; moved to $_FX_BAK and replaced with symlink." >&2
   echo "    If you had local state under it, rsync it into $INSTANCE_ROOT/.forgeax/ then delete the .bak." >&2
 else
@@ -495,7 +508,7 @@ else
   echo "  Move/clear it first, then re-run." >&2
   exit 1
 fi
-unset _FX_SYMLINK _FX_BAK
+unset _FX_SYMLINK _FX_BAK _FX_TARGET_N _FX_SYMLINK_N
 
 # ---- 3.5 shared game library symlink discovery ----
 # Walk packages/games/*/ and symlink games with forge.json into

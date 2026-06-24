@@ -511,8 +511,16 @@ else
         ok "$d  build cache fresh, skip"
       else
         printf '  → bun run build (%s)\n' "$d"
-        (cd "$d" && bun run build)
-        ok "$d  built"
+        # Best-effort, same policy as the install step above: one plugin's
+        # build failure must not abort the whole deploy. Without the explicit
+        # if-guard, `set -e` turns a single failing `bun run build` (e.g.
+        # node-editor tripping a tsc error in its own submodule source) into a
+        # hard stop, skipping .env scaffold + sample-game seeding entirely.
+        if (cd "$d" && bun run build); then
+          ok "$d  built"
+        else
+          printf '\033[33m  ⚠ %s  build failed — continuing\033[0m\n' "$d"
+        fi
       fi
     fi
   done

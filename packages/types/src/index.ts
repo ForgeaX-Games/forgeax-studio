@@ -12,3 +12,4 @@ export * from './tool';
 export * from './image-gen';
 export * from './host-sdk';
 export * from './persona-capability-surface';
+export * from './observability';

@@ -11,7 +11,8 @@
     "./agent": "./src/agent.ts",
     "./skill": "./src/skill.ts",
     "./tool": "./src/tool.ts",
-    "./host-sdk": "./src/host-sdk.ts"
+    "./host-sdk": "./src/host-sdk.ts",
+    "./observability": "./src/observability.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -93,6 +93,22 @@ case "$(uname -s)" in
     ;;
 esac
 
+# fx_nodepath <path> → a path safe to pass to a NATIVE Windows binary
+# (node.exe / bun.exe). Those do NOT understand MSYS paths: they read
+# `/d/UGit/...` as drive-relative → `D:\d\UGit\...` (note the doubled \d), so
+# fs.symlinkSync / readdirSync hit a non-existent dir (ENOENT) or silently find
+# nothing. On MSYS/Cygwin we convert to Windows *forward-slash* form via
+# `cygpath -m` — forward slashes need no escaping inside `node -e '...'` strings
+# and node/bun accept them on Windows. Passthrough on macOS / Linux (and if
+# cygpath is somehow missing).
+fx_nodepath() {
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 # ---- 0. version banner + env confirmation ----
 # Print version banner + write a versions.json that server/interface will read.
 # See scripts/version.sh + CHANGELOG.md for the v0.M.D.N scheme.
@@ -477,30 +493,19 @@ mkdir -p "$INSTANCE_ROOT/.forgeax/games"
 # warn so the user can recover any local state. Both paths converge on the
 # canonical `ln -snf`.
 _FX_SYMLINK="$ENGINE_SRC_DIR/.forgeax"
-# node is a native Windows exe under Git Bash and does NOT understand MSYS
-# paths: it reads a leading `/f/...` as drive-relative `<cwd-drive>:\f\...`
-# (so `/f/forgeax/...` becomes `F:\f\forgeax\...`), making symlinkSync fail with
-# ENOENT on a target that doesn't exist. Convert to a node-friendly path
-# (`F:/forgeax/...`) via cygpath on Windows; identity elsewhere.
-fx_node_path() {
-  case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*) cygpath -m "$1" ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
-_FX_TARGET_N="$(fx_node_path "$INSTANCE_ROOT/.forgeax")"
-_FX_SYMLINK_N="$(fx_node_path "$_FX_SYMLINK")"
+_FX_TARGET_NODE="$(fx_nodepath "$INSTANCE_ROOT/.forgeax")"
+_FX_SYMLINK_NODE="$(fx_nodepath "$_FX_SYMLINK")"
 if [ -L "$_FX_SYMLINK" ] || [ ! -e "$_FX_SYMLINK" ]; then
   # Use Node.js to create a 'junction' safely on Windows without Admin privileges, acts as normal symlink on Mac/Linux
-  node -e "const fs = require('fs'); try { fs.unlinkSync('$_FX_SYMLINK_N'); } catch(e){} fs.symlinkSync('$_FX_TARGET_N', '$_FX_SYMLINK_N', 'junction');"
+  node -e "const fs = require('fs'); try { fs.unlinkSync('$_FX_SYMLINK_NODE'); } catch(e){} fs.symlinkSync('$_FX_TARGET_NODE', '$_FX_SYMLINK_NODE', 'junction');"
 elif [ -d "$_FX_SYMLINK" ] && [ -z "$(ls -A "$_FX_SYMLINK" 2>/dev/null)" ]; then
   rmdir "$_FX_SYMLINK" 2>/dev/null || rm -rf "$_FX_SYMLINK"
-  node -e "const fs = require('fs'); fs.symlinkSync('$_FX_TARGET_N', '$_FX_SYMLINK_N', 'junction');"
+  node -e "const fs = require('fs'); fs.symlinkSync('$_FX_TARGET_NODE', '$_FX_SYMLINK_NODE', 'junction');"
   echo "[run.sh] cleared empty real dir at $_FX_SYMLINK and replaced with symlink"
 elif [ -d "$_FX_SYMLINK" ]; then
   _FX_BAK="$_FX_SYMLINK.bak-$(date +%Y%m%d-%H%M%S)"
   mv "$_FX_SYMLINK" "$_FX_BAK"
-  node -e "const fs = require('fs'); fs.symlinkSync('$_FX_TARGET_N', '$_FX_SYMLINK_N', 'junction');"
+  node -e "const fs = require('fs'); fs.symlinkSync('$_FX_TARGET_NODE', '$_FX_SYMLINK_NODE', 'junction');"
   echo "  ⚠ $_FX_SYMLINK was a real directory; moved to $_FX_BAK and replaced with symlink." >&2
   echo "    If you had local state under it, rsync it into $INSTANCE_ROOT/.forgeax/ then delete the .bak." >&2
 else
@@ -508,7 +513,7 @@ else
   echo "  Move/clear it first, then re-run." >&2
   exit 1
 fi
-unset _FX_SYMLINK _FX_BAK _FX_TARGET_N _FX_SYMLINK_N
+unset _FX_SYMLINK _FX_BAK _FX_TARGET_NODE _FX_SYMLINK_NODE
 
 # ---- 3.5 shared game library symlink discovery ----
 # Walk packages/games/*/ and symlink games with forge.json into
@@ -519,7 +524,9 @@ if [ -d "$GAMES_LIB_DIR" ] && [ -n "$(ls -A "$GAMES_LIB_DIR" 2>/dev/null)" ]; th
   # Shared seeder (U1): single source of truth in scripts/seed-games.ts —
   # reads forge.json#id, idempotent symlink, preserves real dirs. The desktop
   # .app uses the parity Rust impl (lib.rs::seed_shared_games).
-  FORGEAX_GAMES_SRC="$GAMES_LIB_DIR" FORGEAX_GAMES_DST="$INSTANCE_ROOT/.forgeax/games" \
+  # seed-games.ts runs under bun (a native Windows binary) → feed it Windows
+  # forward-slash paths so its fs.symlinkSync resolves (see fx_nodepath).
+  FORGEAX_GAMES_SRC="$(fx_nodepath "$GAMES_LIB_DIR")" FORGEAX_GAMES_DST="$(fx_nodepath "$INSTANCE_ROOT/.forgeax/games")" \
     bun "$ROOT/scripts/seed-games.ts" || echo "  ⚠ [run.sh] seed-games failed (continuing without shared games)"
 else
   cat >&2 <<'EOF'
@@ -654,9 +661,12 @@ done < <(node -e '
     // Resolve symlinks (the node-editor apps are reached via committed L0
     // symlinks) to the real path so pnpm finds the monorepo workspace root.
     let dir=path.join(root,d.name); try{dir=fs.realpathSync(dir)}catch{}
+    // Emit forward-slash form so the bash side `cd "$_dir"` works on Windows
+    // Git-Bash (realpathSync returns backslashes there). No-op on POSIX.
+    dir=dir.split(path.sep).join("/");
     process.stdout.write([dir,id,shortId,sa.port].join("\t")+"\n");
   }
-' "$MP_PLUGINS_DIR")
+' "$(fx_nodepath "$MP_PLUGINS_DIR")")
 
 if [ "${#PLUGIN_DIRS[@]}" -eq 0 ]; then
   echo "[run.sh]   no standalone-backend plugins discovered under $MP_PLUGINS_DIR"
@@ -794,7 +804,7 @@ for _i in "${!PLUGIN_DIRS[@]}"; do
     # muxed output anyway, and JSON is easier for agents to parse. Override
     # per-run by exporting FORGEAX_LOG_PRETTY=1 before run.sh.
     export FORGEAX_LOG_PRETTY="${FORGEAX_LOG_PRETTY:-0}"
-    FORGEAX_PROJECT_ROOT="${PLUGIN_PROOTS[$_i]}" \
+    FORGEAX_PROJECT_ROOT="$(fx_nodepath "${PLUGIN_PROOTS[$_i]}")" \
     PORT="${PLUGIN_BPORTS[$_i]}" \
     VITE_DEV_PORT="${PLUGIN_FPORTS[$_i]}" \
     VITE_API_TARGET="http://localhost:${PLUGIN_BPORTS[$_i]}" \

@@ -165,7 +165,7 @@ find_listen_pids() {
       # Last column is PID. Match :PORT exactly with trailing space to
       # avoid 18900 matching :189000.
       netstat -ano 2>/dev/null \
-        | awk -v p=":$port " '$0 ~ p && $0 ~ /LISTEN/ { print $NF }' \
+        | awk -v p=":$port " '$0 ~ p && $0 ~ /LISTEN/ { sub(/\r$/, "", $NF); print $NF }' \
         | sort -u
       ;;
   esac

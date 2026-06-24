@@ -11,6 +11,12 @@ import { EDITOR_PANELS } from '@forgeax/editor-shared/manifest';
 import { EditSurface } from '@forgeax/editor/edit';
 import { PlaySurface } from '@forgeax/editor/play';
 import { ReelPlaySurface } from './ReelPlaySurface';
+// studio→marketplace is a legal edge at this aggregation layer. interface holds
+// no specific plugin id; studio injects the concrete inline panel here.
+import { PluginAuthorPanel, WB_PLUGIN_AUTHOR_ID } from '../../../marketplace/plugins/wb-plugin-author/src/panel';
+// studio→host-sdk is legal here too. interface imports these as TYPES only and
+// receives the runtime factories through the PanelRenderers injection.
+import { createPluginPort, createWindowTransport } from '@forgeax/host-sdk';
 
 // Resolve the active game slug: pinned slug first, else poll the workbench
 // active-slug endpoint (carried over verbatim from the interface EditMode/
@@ -143,4 +149,9 @@ export const editorRenderers: PanelRenderers = {
   editorPanelTitles: EDITOR_PANEL_TITLES,
   renderEdit: ({ viewportOnly }) => <EditMode viewportOnly={viewportOnly} />,
   renderPreview: () => <PreviewMode />,
+  // Inline (non-iframe) workbench panels, keyed by bus plugin id.
+  workbenchPanels: { [WB_PLUGIN_AUTHOR_ID]: PluginAuthorPanel },
+  // Host-SDK port factories for the wb:* plugin iframe RPC (studio-only).
+  createPluginPort,
+  createWindowTransport,
 };

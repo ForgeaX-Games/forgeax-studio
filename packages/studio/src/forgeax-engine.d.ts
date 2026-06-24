@@ -19,6 +19,23 @@ declare module '@forgeax/engine-runtime';
 declare module '@forgeax/engine-ecs';
 declare module '@forgeax/engine-gltf';
 
+// engine-types is imported as TYPES (SceneAsset, SceneEntity, LocalEntityId, …)
+// by editor-core / play-runtime, pulled into studio's program transitively via
+// workspace symlinks. A bare `declare module` only supplies value-space `any`,
+// so `type SceneAsset` fails with TS2709. Declare each type as `any` so
+// type-space resolves until the engine ships real .d.ts.
+declare module '@forgeax/engine-types' {
+  export type SceneAsset = any;
+  export type SceneEntity = any;
+  export type LocalEntityId = any;
+  export type CubeTextureMetadata = any;
+  export type ImageMetadata = any;
+  export type PackIndexEntry = any;
+  export type TextureAsset = any;
+  export type AssetError = any;
+  export type ImageError = any;
+}
+
 // engine-project is imported by editor-core/store.ts for both values
 // (loadGameProject, FORGE_JSON, GameProjectError) AND types
 // (`type GameProject`). A bare `declare module` only supplies value-space

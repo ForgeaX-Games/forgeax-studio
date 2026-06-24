@@ -358,6 +358,24 @@ if [ "${FORGEAX_SKIP_ENGINE_DIST_FRESHNESS:-}" != "1" ]; then
       ENGINE_STALE="$ENGINE_STALE $p"
     fi
   done
+  # Opt-in zero-touch: FORGEAX_AUTO_DEPLOY=1 rebuilds via deploy.sh instead of
+  # blocking — handy for unattended/agent starts after an engine bump. Default
+  # stays block-and-instruct (deploy is expensive; don't run it implicitly).
+  if [ -n "$ENGINE_STALE" ] && [ "${FORGEAX_AUTO_DEPLOY:-}" = "1" ]; then
+    echo "[engine] dist STALE for:$ENGINE_STALE — FORGEAX_AUTO_DEPLOY=1, rebuilding via deploy.sh…" >&2
+    if ! (cd "$ROOT" && bash scripts/deploy.sh); then
+      echo "  ERROR: auto deploy.sh failed. Run it manually: bash scripts/deploy.sh" >&2
+      exit 1
+    fi
+    ENGINE_STALE=""
+    for p in $ENGINE_ENTRY_PKGS; do
+      pdir="$ENGINE_PKG_DIR/$p"
+      [ -d "$pdir/src" ] && [ -f "$pdir/dist/index.mjs" ] || continue
+      if [ -n "$(find "$pdir/src" -type f -newer "$pdir/dist/index.mjs" -print -quit 2>/dev/null)" ]; then
+        ENGINE_STALE="$ENGINE_STALE $p"
+      fi
+    done
+  fi
   if [ -n "$ENGINE_STALE" ]; then
     echo "  ERROR: engine dist STALE (src newer than dist) for:$ENGINE_STALE" >&2
     echo "  The engine pin changed but its TypeScript dist was not rebuilt, so the" >&2
@@ -365,6 +383,7 @@ if [ "${FORGEAX_SKIP_ENGINE_DIST_FRESHNESS:-}" != "1" ]; then
     echo "  / Play FALLBACK / spawn-data-unknown-field on edits that are actually valid." >&2
     echo "  Rebuild the engine dist:" >&2
     echo "    bash scripts/deploy.sh        # builds engine dist (+ wasm, + deps)" >&2
+    echo "  Or auto-rebuild on start:  FORGEAX_AUTO_DEPLOY=1 bash start.sh" >&2
     echo "  Override (not recommended): FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 bash scripts/run.sh" >&2
     exit 1
   fi

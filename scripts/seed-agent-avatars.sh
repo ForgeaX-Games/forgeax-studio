@@ -8,13 +8,15 @@
 #   bash scripts/seed-agent-avatars.sh --dry-run                # preview only
 #   bash scripts/seed-agent-avatars.sh --force                  # overwrite even if size matches
 #
-# Mapping table (27 agents → 10 portrait sets) is below in MAP_*. Every agent
+# Mapping table (27 agents → 11 portrait sets) is below in MAP_*. Every agent
 # becomes self-contained: <plugin>/avatar/ holds its own copy of 9 webm + a
 # generic AVATAR.md state-machine rules file. Smart fallback applies for
-# agents without dedicated portraits (forgeax-default → Arin; mira / animator-2d
+# agents without dedicated portraits (forgeax-default → Arin; animator-2d
 # / character-designer-2d / vfx-artist-3d / lowpoly → Iro;
 # reel-storyboard / reel-video / reel-visual → reia, REIA 的 3 个专业子智能体
 # 暂时复用导演本人的 portrait, 等插画师补齐后用 --force 一键替换).
+# 场景资产流水线 (director / sino / mira) 共用 haru多表情 专属 portrait
+# (2026-06-24).
 #
 # Idempotent: skips files whose size already matches the source (unless --force).
 # Safe to re-run after插画师 ships updated webms.
@@ -63,7 +65,9 @@ arin	Arin多表情	self
 forgeax-default	Arin多表情	arin
 iori	Iori多表情	self
 iro	Iro多表情	self
-mira	Iro多表情	iro
+mira	haru多表情	self
+director	haru多表情	self
+sino	haru多表情	self
 animator-2d	Iro多表情	iro
 character-designer-2d	Iro多表情	iro
 vfx-artist-3d	Iro多表情	iro

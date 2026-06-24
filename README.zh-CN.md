@@ -35,6 +35,17 @@
   几秒就活。
 - **一份代码,Web 与桌面通吃。** 同一个 UI 既跑浏览器,也通过 Tauri 2 作为原生桌面应用运行。
 
+## 🆕 v0.2.0 更新
+
+- **首启引导** —— 选好模型供应商(默认 OpenRouter),几分钟即可开始做游戏。
+- **在可视化编辑器里创作游戏** —— 新增 open-project 流程 + 引导式建游戏入口;编辑器直接把场景资产写回磁盘。
+- **在 studio 内扩展工作台** —— 插件作者面板 + host SDK,自己写可视化 workbench 插件。
+- **更大的工作室团队** —— 新增 scene-pipeline agent(director / sino / mira)加入 Forge 的阵容。
+- **引擎升级** —— world 作用域插件构建 + handle 编解码。
+- **更干净的资产管线** —— 工作台电池/模板路径与预设资产全部 ASCII 化,跨平台、对贡献者更友好。
+
+→ 完整说明见 [Releases](https://github.com/ForgeaX-Games/forgeax-studio/releases) 页。
+
 ## 🔁 闭环如何运转
 
 1. 你告诉 **Forge** 想做什么游戏。

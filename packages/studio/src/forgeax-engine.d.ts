@@ -18,3 +18,22 @@
 declare module '@forgeax/engine-runtime';
 declare module '@forgeax/engine-ecs';
 declare module '@forgeax/engine-gltf';
+
+// engine-project is imported by editor-core/store.ts for both values
+// (loadGameProject, FORGE_JSON, GameProjectError) AND types
+// (`type GameProject`). A bare `declare module` only supplies value-space
+// `any`, so `type GameProject` fails with TS2709. Declare the surface
+// explicitly so both spaces resolve until the engine ships real .d.ts.
+declare module '@forgeax/engine-project' {
+  export const loadGameProject: any;
+  export const loadGameProjectSync: any;
+  export const resolveDefaultScene: any;
+  export const validateGameProject: any;
+  export const GameProjectSchema: any;
+  export const GameProjectError: any;
+  export const FORGE_JSON: string;
+  export type GameProject = any;
+  export type ResolvedScene = any;
+  export type GameProjectErrorCode = any;
+  export type GameProjectErrorDetail = any;
+}

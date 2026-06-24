@@ -525,8 +525,35 @@ else
     fi
 
     if node -e "try{const p=require('./${d%/}/package.json');process.exit(p.scripts&&p.scripts.build?0:1)}catch{process.exit(1)}"; then
-      # Skip rebuild if dist/ is newer than src/ — cheap mtime check.
-      if [ -d "${d}dist" ] && [ "${d}dist" -nt "${d}package.json" ]; then
+      # Skip rebuild if the plugin's build output is newer than its source —
+      # cheap mtime check, two shapes:
+      #   - single-package plugin (wb-*): one top-level dist/, compared to
+      #     package.json (original heuristic).
+      #   - pnpm-workspace plugin (node-editor): NO top-level dist; its build
+      #     emits leaf dists under apps/*/{frontend,backend,vendor}/dist and
+      #     packages/*/dist. Treat as fresh when ≥1 leaf dist exists AND none
+      #     is older than the workspace's package.json. CI restores these from
+      #     a cache keyed on the marketplace submodule SHA, then `touch`es them
+      #     so this check passes — turning node-editor's ~47s rebuild into a
+      #     skip. Locally, editing any source makes it newer than dist → no
+      #     skip → rebuild, so correctness is preserved without a cache.
+      _plugin_build_fresh() {
+        local dir="$1"
+        if [ -d "${dir}dist" ]; then
+          [ "${dir}dist" -nt "${dir}package.json" ]
+          return
+        fi
+        # Workspace plugin: scan its OWN leaf dists (prune node_modules — a
+        # dep's dist/ is not our build output and must not gate the skip).
+        local found=0
+        while IFS= read -r leaf; do
+          found=1
+          # If package.json is newer than this dist, the build is stale.
+          [ "${dir}package.json" -nt "$leaf" ] && return 1
+        done < <(find "$dir" -name node_modules -prune -o -maxdepth 4 -type d -name dist -print 2>/dev/null)
+        [ "$found" -eq 1 ]
+      }
+      if _plugin_build_fresh "$d"; then
         ok "$d  build cache fresh, skip"
       else
         printf '  → bun run build (%s)\n' "$d"

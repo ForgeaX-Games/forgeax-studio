@@ -334,18 +334,37 @@ if [ -d "$ROOT/packages/engine" ]; then
   # by the preview runtime, so nothing in the filters above pulls it transitively.
   # Without its dist/, `bun src/main.ts` throws "Cannot find module
   # @forgeax/engine-project" at startup and every /api/* 500s — list it explicitly.
-  (cd "$ROOT/packages/engine" && pnpm install --frozen-lockfile && \
-    pnpm --filter '@forgeax/engine-app...' \
-         --filter '@forgeax/engine-runtime...' --filter '@forgeax/engine-ecs...' \
-         --filter '@forgeax/engine-types...' --filter '@forgeax/engine-vite-plugin-shader...' \
-         --filter '@forgeax/engine-vite-plugin-pack...' \
-         --filter '@forgeax/engine-shader-compiler...' --filter '@forgeax/engine-naga...' \
-         --filter '@forgeax/engine-wgpu-wasm...' \
-         --filter '@forgeax/engine-gltf...' --filter '@forgeax/engine-image...' --filter '@forgeax/engine-pack...' \
-         --filter '@forgeax/engine-project...' \
-         -r build) || \
-    fail "engine submodule build failed. Check that pnpm is installed (npm i -g pnpm)."
-  ok "engine packages built"
+  # FORGEAX_SKIP_ENGINE_BUILD (CI-only fast path): when the engine packages'
+  # tsup dist/ has been restored from a cache keyed on the engine submodule
+  # SHA (see .github/workflows/ci.yml), the `pnpm -r build` below is pure
+  # rework — it re-runs tsup to reproduce byte-identical dist. Skip it. We
+  # STILL run `pnpm install --frozen-lockfile` because the workspace symlinks
+  # it creates (node_modules/.pnpm/@forgeax+engine-*) are what lets vite
+  # resolve `@forgeax/engine-app` to packages/engine/packages/app/dist; the
+  # cache only carries dist/, not node_modules.
+  # Guarded by an actual dist check: if the env is set but dist is missing
+  # (cache restore failed / first run), we FALL THROUGH to a real build
+  # rather than booting against absent artifacts — fail-fast over false green.
+  if [ -n "${FORGEAX_SKIP_ENGINE_BUILD:-}" ] && \
+     [ -d "$ROOT/packages/engine/packages/app/dist" ] && \
+     [ -d "$ROOT/packages/engine/packages/runtime/dist" ]; then
+    (cd "$ROOT/packages/engine" && pnpm install --frozen-lockfile) || \
+      fail "engine pnpm install failed (skip-build path). Check that pnpm is installed (npm i -g pnpm)."
+    ok "engine build skipped — FORGEAX_SKIP_ENGINE_BUILD set and dist/ restored from cache"
+  else
+    (cd "$ROOT/packages/engine" && pnpm install --frozen-lockfile && \
+      pnpm --filter '@forgeax/engine-app...' \
+           --filter '@forgeax/engine-runtime...' --filter '@forgeax/engine-ecs...' \
+           --filter '@forgeax/engine-types...' --filter '@forgeax/engine-vite-plugin-shader...' \
+           --filter '@forgeax/engine-vite-plugin-pack...' \
+           --filter '@forgeax/engine-shader-compiler...' --filter '@forgeax/engine-naga...' \
+           --filter '@forgeax/engine-wgpu-wasm...' \
+           --filter '@forgeax/engine-gltf...' --filter '@forgeax/engine-image...' --filter '@forgeax/engine-pack...' \
+           --filter '@forgeax/engine-project...' \
+           -r build) || \
+      fail "engine submodule build failed. Check that pnpm is installed (npm i -g pnpm)."
+    ok "engine packages built"
+  fi
   # Note: engine packages emit dist/*.mjs only; .d.ts come from a separate
   # root-level `tsc -b` (engine package.json#scripts.build = `pnpm -r build
   # && tsc -b`). We deliberately do NOT run that here — engine main currently

@@ -18,6 +18,10 @@
 #   - dev   : window loads the vite dev server (:18920) → live, no repackage.
 #   - .app  : `app.sh build` freezes the source into a self-contained bundle
 #             (its own bun sidecar on 18810/15273). See DEVELOPMENT.md.
+#
+# Platform: `dev` runs on macOS and on Windows (under Git Bash — prereqs: Rust +
+# MinGW-w64 via `winget install BrechtSanders.WinLibs.POSIX.MSVCRT`). The `build`
+# / `open` packaging modes are macOS-only (.app/.dmg) for now.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ROOT="$(pwd)"
@@ -33,6 +37,67 @@ for arg in "$@"; do [ "$arg" = "debug" ] && DEVTOOLS=1; done
 export FORGEAX_DEVTOOLS="$DEVTOOLS"
 
 port_up() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# ── platform ────────────────────────────────────────────────────────────────
+# desktop-dev runs under Git Bash on Windows; branch only where the OS differs
+# (mirrors scripts/run.sh's uname-based handling). macOS stays the default path.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=1 ;; *) IS_WINDOWS=0 ;; esac
+# Executable suffix for staged sidecars. Tauri's externalBin resolver wants the
+# host-triple-suffixed name; on Windows that file MUST carry `.exe`.
+EXE=""; [ "$IS_WINDOWS" = 1 ] && EXE=".exe"
+
+# Windows-gnu's Rust toolchain shells out to MinGW-w64 (`gcc`/`dlltool`) to LINK
+# the Tauri shell, and rustup does not ship them. Discover a winlibs/msys install
+# and prepend it to PATH so `tauri dev`'s cargo build can link. No-op off Windows
+# or when a C toolchain is already reachable.
+#   Prerequisite note: on the gnu toolchain the lib's `cdylib` crate-type hits
+#   GNU ld's "export ordinal too large" limit; src-tauri/Cargo.toml keeps
+#   crate-type = ["lib"] for Windows desktop dev (the .exe needs no cdylib).
+ensure_cc_toolchain() {
+  [ "$IS_WINDOWS" = 1 ] || return 0
+  command -v dlltool >/dev/null 2>&1 && command -v gcc >/dev/null 2>&1 && return 0
+  local base d
+  base="$(cygpath -u "${LOCALAPPDATA:-}" 2>/dev/null)/Microsoft/WinGet/Packages"
+  for d in "$base"/BrechtSanders.WinLibs.*/mingw64/bin /c/msys64/mingw64/bin /c/mingw64/bin; do
+    if [ -x "$d/dlltool.exe" ] && [ -x "$d/gcc.exe" ]; then
+      PATH="$d:$PATH"; export PATH
+      echo "[app] MinGW-w64 on PATH: $d"
+      return 0
+    fi
+  done
+  echo "[app] WARNING: MinGW-w64 (gcc/dlltool) not found — 'tauri dev' can't link the Rust shell." >&2
+  echo "[app]          install once:  winget install BrechtSanders.WinLibs.POSIX.MSVCRT" >&2
+  return 0
+}
+
+# Reap any previous desktop dev window so a relaunch always lands on fresh source.
+reap_dev_windows() {
+  if [ "$IS_WINDOWS" = 1 ]; then
+    if tasklist 2>/dev/null | grep -iq 'forgeax-studio-desktop'; then
+      echo "[app] closing previous dev window(s) so you get the latest code…"
+      MSYS_NO_PATHCONV=1 taskkill /IM forgeax-studio-desktop.exe /F >/dev/null 2>&1 || true
+      sleep 1
+    fi
+  elif pgrep -f forgeax-studio-desktop >/dev/null 2>&1; then
+    echo "[app] closing previous dev window(s) so you get the latest code…"
+    pkill -f forgeax-studio-desktop 2>/dev/null || true
+    sleep 1
+  fi
+}
+
+# Bust the webview HTTP cache so a relaunch can't serve a pre-edit JS bundle,
+# while KEEPING localStorage / IndexedDB (editor scene state). Per-engine paths:
+# WebView2 (EBWebView) on Windows, WKWebView on macOS.
+clear_webview_cache() {
+  if [ "$IS_WINDOWS" = 1 ]; then
+    local d; d="$(cygpath -u "${LOCALAPPDATA:-}" 2>/dev/null)/com.forgeax.studio/EBWebView"
+    rm -rf "$d/Default/Cache" "$d/Default/Code Cache" "$d/Default/GPUCache" >/dev/null 2>&1 || true
+  else
+    rm -rf "$HOME/Library/Caches/com.forgeax.studio" \
+           "$HOME/Library/Caches/forgeax-studio-desktop" \
+           "$HOME/Library/Saved Application State/com.forgeax.studio.savedState" >/dev/null 2>&1 || true
+  fi
+}
 
 case "$MODE" in
   dev|"")
@@ -55,18 +120,15 @@ case "$MODE" in
     # the dynamically-ported workbench plugins (pidfiles + pgrep fallback).
     echo "[app] clean restart — reaping any existing/stale web stack first…"
     bash "$ROOT/scripts/stop.sh" --force >/dev/null 2>&1 || true
-    # Bust the WKWebView HTTP cache. The stack restart above makes :18920 serve
-    # CURRENT source, but WKWebView persists its resource cache to disk per
-    # bundle-id and reuses it across relaunches — so a fresh `tauri dev` window
-    # silently serves the PRE-EDIT JS bundle (seen as the app stuck on an old
-    # version / old UI while the live :18920 is current). Clearing the HTTP cache
-    # + saved window state forces a fresh fetch. WebKit/ (localStorage / IndexedDB
-    # = editor scene state) is deliberately KEPT. The webview is not running yet
-    # (tauri:dev launches below), so this is race-free.
-    echo "[app] clearing WKWebView HTTP cache (force fresh source load)…"
-    rm -rf "$HOME/Library/Caches/com.forgeax.studio" \
-           "$HOME/Library/Caches/forgeax-studio-desktop" \
-           "$HOME/Library/Saved Application State/com.forgeax.studio.savedState" >/dev/null 2>&1 || true
+    # Bust the webview HTTP cache. The stack restart above makes :18920 serve
+    # CURRENT source, but the webview persists its resource cache to disk and
+    # reuses it across relaunches — so a fresh `tauri dev` window can silently
+    # serve the PRE-EDIT JS bundle (app stuck on an old UI while live :18920 is
+    # current). Clearing the HTTP cache forces a fresh fetch; localStorage /
+    # IndexedDB (editor scene state) is deliberately KEPT. The webview is not
+    # running yet (tauri:dev launches below), so this is race-free.
+    echo "[app] clearing webview HTTP cache (force fresh source load)…"
+    clear_webview_cache
     echo "[app] starting web stack (start.sh) in background…"
     nohup bash "$ROOT/start.sh" > /tmp/forgeax-stack.log 2>&1 &
     printf '[app] waiting for UI :18920'
@@ -87,13 +149,15 @@ case "$MODE" in
     # the same way build-desktop does (idempotent, skip if present).
     BIN_DIR="$ROOT/packages/interface/src-tauri/binaries"
     TRIPLE="$(rustc -Vv 2>/dev/null | sed -n 's/^host: //p')"
-    if [ -n "$TRIPLE" ] && [ ! -x "$BIN_DIR/bun-$TRIPLE" ]; then
+    if [ -n "$TRIPLE" ] && [ ! -x "$BIN_DIR/bun-$TRIPLE$EXE" ]; then
       BUN_BIN="$(command -v bun || true)"
-      if [ -n "$BUN_BIN" ]; then
+      # Git Bash resolves `bun` without the .exe; the real file carries it.
+      [ -n "$BUN_BIN" ] && [ ! -f "$BUN_BIN" ] && [ -f "$BUN_BIN$EXE" ] && BUN_BIN="$BUN_BIN$EXE"
+      if [ -n "$BUN_BIN" ] && [ -f "$BUN_BIN" ]; then
         mkdir -p "$BIN_DIR"
-        cp "$BUN_BIN" "$BIN_DIR/bun-$TRIPLE"
-        chmod +x "$BIN_DIR/bun-$TRIPLE"
-        echo "[app] staged tauri sidecar: bun-$TRIPLE"
+        cp "$BUN_BIN" "$BIN_DIR/bun-$TRIPLE$EXE"
+        chmod +x "$BIN_DIR/bun-$TRIPLE$EXE"
+        echo "[app] staged tauri sidecar: bun-$TRIPLE$EXE"
       fi
     fi
     # tauri.conf.json also declares `resources: ["resources"]` (the .app payload
@@ -107,11 +171,9 @@ case "$MODE" in
     # AND the stale one keeps serving pre-edit JS (so a code fix "doesn't show").
     # Reap any prior dev-binary instance first so you always land on a fresh
     # window that loads current vite source.
-    if pgrep -f forgeax-studio-desktop >/dev/null 2>&1; then
-      echo "[app] closing previous dev window(s) so you get the latest code…"
-      pkill -f forgeax-studio-desktop 2>/dev/null || true
-      sleep 1
-    fi
+    reap_dev_windows
+    # Windows-gnu: put MinGW-w64 (gcc/dlltool) on PATH so cargo can link the shell.
+    ensure_cc_toolchain
     if [ "$DEVTOOLS" = 1 ]; then
       echo "[app] launching desktop dev window (tauri:dev — live HMR, DevTools ON via debug)…"
     else

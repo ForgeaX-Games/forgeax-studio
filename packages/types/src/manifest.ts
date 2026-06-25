@@ -105,6 +105,9 @@ const ProvidesAgentSchema = z.object({
   role: z.string().min(1),
   card: z.object({
     name: I18nStringSchema,
+    // 统一命名「中文职能·英文名」+ 灰字英文职能。cnTitle=中文职能，enTitle=英文职能。
+    cnTitle: z.string().min(1).optional(),
+    enTitle: z.string().min(1).optional(),
     color: z.string().min(1),
     avatar: z.string().min(1),
     // ADR-0019: WEBM 状态机头像. 缺省时 loader 也会自动尝试 ./avatar/AVATAR.md.

@@ -16,6 +16,11 @@ export type ProviderId = z.infer<typeof ProviderIdSchema>;
 
 export const AgentCardSchema = z.object({
   name: I18nStringSchema,
+  /** 中文职能（如「核心玩法师」）。UI 把它和 name(英文名) 拼成标题「中文职能·英文名」。
+   *  缺省时该 agent 没有「职能·人名」二段式，UI 退回直接显示 name。 */
+  cnTitle: z.string().min(1).optional(),
+  /** 英文职能（如「Gameplay Pillar Designer」）。UI 作为标题下方的灰字副标题。 */
+  enTitle: z.string().min(1).optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{3,8}$/u, 'must be hex color, e.g. #1F6FEB')

@@ -193,6 +193,11 @@ export interface TurnRequest {
    *  its own CLI session id, often a synthetic UUID). Opaque to the kernel
    *  except for forwarding into the tool server's env. */
   hostSessionId?: string;
+  /** W3C `traceparent` (`00-<traceId>-<spanId>-<flags>`) of the caller's span, for
+   *  full-chain distributed tracing: the kernel parents its `kernel.turn` span under
+   *  this so browser → host → kernel → agent → tool form ONE trace. Opaque pass-through;
+   *  absent ⇒ kernel.turn starts its own root (backward-compatible). Additive (frozen-allowed). */
+  traceparent?: string;
   /** Blocking gate (the single tool-use chokepoint, fail-closed).
    *  Absent ⇒ kernel applies its own default. */
   requestPermission?(call: PermissionCall): Promise<PermissionDecision>;

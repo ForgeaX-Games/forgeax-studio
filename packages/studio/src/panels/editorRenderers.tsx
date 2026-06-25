@@ -10,7 +10,6 @@ import type { PanelRenderers } from '@forgeax/interface/components/DockShell/pan
 import { EDITOR_PANELS } from '@forgeax/editor-shared/manifest';
 import { EditSurface } from '@forgeax/editor/edit';
 import { PlaySurface } from '@forgeax/editor/play';
-import { ReelPlaySurface } from './ReelPlaySurface';
 // studio→marketplace is a legal edge at this aggregation layer. interface holds
 // no specific plugin id; studio injects the concrete inline panel here.
 import { PluginAuthorPanel, WB_PLUGIN_AUTHOR_ID } from '../../../marketplace/plugins/wb-plugin-author/src/panel';
@@ -76,62 +75,16 @@ function EditMode({ viewportOnly }: { viewportOnly?: boolean } = {}) {
   return <EditSurface slug={slug} viewportOnly={viewportOnly} />;
 }
 
-// Detect whether the active game has an interactive film-game (影游) scenario
-// active, and which one. The wb-reel dev server exposes the per-game scenario
-// library at `/__reel__/scenarios?game=<slug>` (proxied same-origin by both the
-// interface and studio vite dev servers → FORGEAX_REEL_URL); the response is
-// `{ db: { activeId, items } }`. A non-null `activeId` means the Play workspace
-// should show the wb-reel Player instead of the 3D PlaySurface.
-//
-// Polled (not one-shot) so toggling/generating scenarios in the wb-reel
-// workbench flips the Play preview without a manual reload, mirroring how
-// useActiveSlug polls the active slug.
-function useReelActiveScenario(slug: string | null): string | null {
-  const [scenarioId, setScenarioId] = useState<string | null>(null);
-  useEffect(() => {
-    if (!slug) {
-      setScenarioId(null);
-      return;
-    }
-    let cancelled = false;
-    const check = async () => {
-      try {
-        const r = await fetch(
-          `/__reel__/scenarios?game=${encodeURIComponent(slug)}`,
-          { cache: 'no-store' },
-        );
-        if (!r.ok) {
-          if (!cancelled) setScenarioId(null);
-          return;
-        }
-        const j = (await r.json()) as { db?: { activeId?: string | null } };
-        if (!cancelled) setScenarioId(j.db?.activeId ?? null);
-      } catch {
-        // wb-reel dev server not running / not a reel project → no reel preview.
-        if (!cancelled) setScenarioId(null);
-      }
-    };
-    void check();
-    const t = setInterval(check, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [slug]);
-  return scenarioId;
-}
-
 function PreviewMode() {
   const slug = useActiveSlug();
-  const reelScenarioId = useReelActiveScenario(slug);
   if (!slug) {
     return <div className="preview-mode"><div className="preview-frame preview-frame--waiting"><div className="preview-center"><div className="preview-title">Loading...</div></div></div></div>;
   }
-  // 影游优先：当前 game 有活动剧本时，Play 工作区放 wb-reel 的 player-only 预览；
-  // 否则回退到 3D ECS 游戏的 PlaySurface。
-  if (reelScenarioId) {
-    return <ReelPlaySurface scenarioId={reelScenarioId} slug={slug} />;
-  }
+  // Opening a project renders that project. Play always shows the game's own
+  // engine PlaySurface — it does NOT reinterpret a game as an interactive-film
+  // (影游) from a side-file. 影游 is its own independent project type and should
+  // be rendered from the project itself (forge.json), not via a heuristic layer
+  // ("reel-first") laid over every game.
   return <PlaySurface slug={slug} />;
 }
 

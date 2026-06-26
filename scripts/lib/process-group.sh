@@ -100,8 +100,12 @@ fx_pg_kill() {
     # a leading `/PID` into a Windows path. /T = whole tree, /F = force.
     case "$sig" in
       KILL|SIGKILL|9) MSYS_NO_PATHCONV=1 taskkill /PID "$wp" /T /F >/dev/null 2>&1 || true ;;
-      *) MSYS_NO_PATHCONV=1 taskkill /PID "$wp" /T >/dev/null 2>&1 \
-         || MSYS_NO_PATHCONV=1 taskkill /PID "$wp" /T /F >/dev/null 2>&1 || true ;;
+      *) 
+         # On Windows, Node.js/Bun console apps often ignore the graceful WM_CLOSE
+         # sent by `taskkill /T` without `/F`, especially when deadlocked (e.g. Vite 6).
+         # `taskkill` still returns 0 (success) in that case, which skips the `/F` fallback
+         # and leaves a zombie process holding the port. We must always use `/F` for these.
+         MSYS_NO_PATHCONV=1 taskkill /PID "$wp" /T /F >/dev/null 2>&1 || true ;;
     esac
     return 0
   fi

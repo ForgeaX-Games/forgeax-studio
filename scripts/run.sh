@@ -724,16 +724,21 @@ export FORGEAX_PLUGIN_DEV_PORTS_FILE="$PLUGIN_DEV_PORTS_FILE"
 # (incl. editor / face-mask / plugins) and stays correct as services are added.
 # Bare-variable kill is kept as a belt-and-suspenders fallback in case a pidfile
 # write lost a race.
-_run_sh_cleanup() {
-  fx_pg_reap_pidfiles TERM
-  for _pid in "${SRV:-}" "${UI:-}" "${EN:-}" "${ED:-}" "${NARR:-}" "${FACE_MASK:-}" "${PLUGIN_PIDS[@]}"; do
-    [ -n "$_pid" ] || continue
-    fx_pg_kill TERM "$_pid"
-  done
-  fx_pg_clear
-  fx_startlock_release
-  rm -f "$RUN_STACK_FILE" "$PLUGIN_DEV_PORTS_FILE"
-}
+  _run_sh_cleanup() {
+    # On Windows, fx_pg_kill TERM maps to taskkill /F now, which is fast and final.
+    # We reap pidfiles first, then fallback to the variables.
+    fx_pg_reap_pidfiles TERM
+    for _pid in "${SRV:-}" "${UI:-}" "${EN:-}" "${ED:-}" "${NARR:-}" "${FACE_MASK:-}" "${PLUGIN_PIDS[@]}"; do
+      [ -n "$_pid" ] || continue
+      fx_pg_kill TERM "$_pid"
+    done
+    fx_pg_clear
+    fx_startlock_release
+    rm -f "$RUN_STACK_FILE" "$PLUGIN_DEV_PORTS_FILE"
+    # Ensure the bash script itself exits immediately when Ctrl+C is pressed,
+    # overriding any lingering `wait` that might ignore the trap completion.
+    exit 0
+  }
 trap _run_sh_cleanup SIGINT SIGTERM EXIT
 
 # Fresh run dir — drop any pidfiles from a previous (crashed) run before we

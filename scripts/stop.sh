@@ -171,6 +171,25 @@ find_listen_pids() {
   esac
 }
 
+# find_listen_pids_by_pid <pid> → 0+ ports (one per line) that <pid> LISTENs on.
+# Used by the Windows orphan layer to recover a drifted dynamic port from a pid
+# we found by command-line signature (so the release poll + final verification
+# can cover it). Windows netstat -ano only; harmless empty output elsewhere.
+find_listen_pids_by_pid() {
+  local pid="$1"
+  [ -n "$pid" ] || return 0
+  case "$DISCOVERY_TOOL" in
+    netstat)
+      # Last column is PID; local address is field 2 (TCP rows). Strip the host
+      # prefix down to the trailing :PORT, then the port. Match LISTEN + exact pid.
+      netstat -ano 2>/dev/null \
+        | awk -v pid="$pid" '$0 ~ /LISTEN/ { p=$NF; sub(/\r$/, "", p); if (p==pid) { la=$2; sub(/.*:/, "", la); print la } }' \
+        | sort -u
+      ;;
+    *) : ;;
+  esac
+}
+
 # Liveness check is now the platform-aware fx_pid_alive (scripts/lib/process-group.sh,
 # sourced above) — `kill -0` on POSIX, `tasklist` by WINPID on Windows. Kept as a
 # thin alias so existing call sites read naturally.
@@ -286,6 +305,48 @@ if command -v pgrep >/dev/null 2>&1; then
           ;;
       esac
     done
+  done
+fi
+
+# Layer 4 (Windows-native fallback): the pgrep layer above is a no-op on git-bash
+# (no procps, and even if present it can't see NATIVE bun.exe/node.exe). On
+# Windows an orphaned plugin vite/bun whose dynamic port has DRIFTED and whose
+# pidfile holds a now-dead MSYS pid (its launcher git-bash exited) slips through
+# every layer above — the "stop.sh says nothing to kill but :15175 is still
+# squatted" bug. Use a PowerShell CIM query to find native processes whose
+# command line references THIS working tree, then feed them to the same taskkill
+# teardown (fx_pg_kill → taskkill /T /F reaps the child esbuild too).
+#
+# NOTE: the inline PowerShell uses DOUBLE quotes only — inside bash single quotes
+# you cannot escape a single quote, so a WMI -Filter "Name='bun.exe'" would have
+# its quotes eaten and silently match nothing. We filter via Where-Object + a
+# name array instead. ROOT is passed by env (FX_ROOT_WIN) to dodge quoting, and
+# both the cmdline and the pattern are normalized /→\ so a forward-slash cmdline
+# still matches.
+if [ "$FX_OS" = "win" ] && command -v powershell.exe >/dev/null 2>&1; then
+  _root_win="$(cygpath -w "$ROOT" 2>/dev/null || printf '%s' "$ROOT")"
+  for pid in $(FX_ROOT_WIN="$_root_win" powershell.exe -NoProfile -NonInteractive -Command '
+    $r = ($env:FX_ROOT_WIN -replace "/","\");
+    $names = @("bun.exe","node.exe","esbuild.exe","python.exe","vite.exe");
+    Get-CimInstance Win32_Process |
+      Where-Object { ($names -contains $_.Name) -and $_.CommandLine -and ((($_.CommandLine -replace "/","\")) -like "*$r*") } |
+      ForEach-Object { $_.ProcessId }
+  ' 2>/dev/null | tr -d "\r"); do
+    [ -n "$pid" ] || continue
+    case "$SEEN_PIDS" in
+      *" $pid "*) ;;
+      *)
+        PIDS+=("$pid")
+        PID_PORTS+=("win-orphan")
+        SEEN_PIDS="$SEEN_PIDS$pid "
+        # Drifted dynamic port: reverse-map this orphan's LISTEN port(s) into the
+        # sweep list so the post-kill release poll + final verification cover them
+        # too (they're absent from FX_FIXED_PORTS and a stale dev-stack.env).
+        for _op in $(find_listen_pids_by_pid "$pid"); do
+          append_runtime_port "$_op"
+        done
+        ;;
+    esac
   done
 fi
 

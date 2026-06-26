@@ -57,6 +57,18 @@ for %%P in (%PORTS%) do (
   )
 )
 
+REM ── Windows orphan fallback: catch repo processes whose dynamic port has ──
+REM ── DRIFTED (so netstat above missed them) by matching the working-tree   ──
+REM ── path in each native process's command line, then merge into PIDLIST.  ──
+REM ── Mirrors scripts\stop.sh Layer 4. taskkill /T below reaps their children.──
+for /f "usebackq delims=" %%K in (`powershell -NoProfile -NonInteractive -Command "$r='%ROOT%' -replace '/','\'; $names=@('bun.exe','node.exe','esbuild.exe','python.exe','vite.exe'); Get-CimInstance Win32_Process ^| Where-Object { ($names -contains $_.Name) -and $_.CommandLine -and ((($_.CommandLine -replace '/','\')) -like ('*'+$r+'*')) } ^| ForEach-Object { $_.ProcessId }" 2^>nul`) do (
+  set "FOUND=%%K"
+  echo !PIDLIST! | findstr /c:" !FOUND! " >nul || (
+    set "PIDLIST=!PIDLIST!!FOUND! "
+    echo   orphan  -^>  pid !FOUND!
+  )
+)
+
 REM trim and test emptiness
 set "TRIM=%PIDLIST: =%"
 if "%TRIM%"=="" (

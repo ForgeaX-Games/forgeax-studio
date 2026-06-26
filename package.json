@@ -18,6 +18,7 @@
     "packages/agent-host",
     "packages/core",
     "packages/host-sdk",
+    "packages/kernel/platform-io",
     "packages/interface",
     "packages/interface/packages/design",
     "packages/studio",

@@ -6,6 +6,8 @@
   "description": "ForgeaX Studio — AI-native game development environment",
   "scripts": {
     "harness:sync": "node scripts/sync-harness.mjs",
+    "lint:layers": "bun scripts/check-layers.ts --strict",
+    "test:layers": "bun test scripts/check-layers.spec.ts",
     "lint:boundaries": "bun run lint:boundaries:core && bun run lint:boundaries:cli && bun run lint:boundaries:agent-host",
     "lint:boundaries:core": "cd packages/core && bun run lint:boundaries",
     "lint:boundaries:cli": "cd packages/cli && bun run lint:boundaries",

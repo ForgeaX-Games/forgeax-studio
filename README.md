@@ -38,7 +38,7 @@ drop into a visual editor to tweak the scene directly at any time.
   on-disk scene, so there is no "export to test" round trip — flip to Play and you're
   inside the real game; flip back and your edits are intact.
 - **One process, instant boot.** The entire runtime is a single Bun server — no Docker,
-  no instance provisioning. `start.sh` and you're live in seconds.
+  no instance provisioning. `bun run start` and you're live in seconds.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
@@ -67,8 +67,8 @@ drop into a visual editor to tweak the scene directly at any time.
 ```bash
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
-bash install.sh        # deps + engine/wasm build; scaffolds .env (set ANTHROPIC_API_KEY)
-bash start.sh          # server :18900 · UI :18920 · engine :15173
+bun run setup        # deps + engine/wasm build; scaffolds .env (set ANTHROPIC_API_KEY)
+bun run start          # server :18900 · UI :18920 · engine :15173
 # open http://localhost:18920 and tell Forge what to build
 ```
 

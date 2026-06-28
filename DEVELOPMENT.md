@@ -11,7 +11,7 @@ where your games/.env live, plus ports).
 
 | Mode | How | server | engine | UI origin |
 |---|---|:--:|:--:|---|
-| **web-dev** | `bash start.sh` | 18900 | 15173 | vite `:18920` |
+| **web-dev** | `bun run start` | 18900 | 15173 | vite `:18920` |
 | **desktop-dev** | `start.sh` + `bun run tauri:dev` | 18900 | 15173 | webview → vite `:18920` |
 | **desktop app** (.app) | double-click the built `.app` | **18810** | **15273** | server serves SPA single-origin |
 
@@ -29,9 +29,9 @@ where your games/.env live, plus ports).
 ## Web — run locally
 
 ```bash
-bash install.sh    # deps in each package + engine build (pnpm + wasm) +
+bun run setup    # deps in each package + engine build (pnpm + wasm) +
                    # scaffolds .env from .env.example and prompts for ANTHROPIC_API_KEY
-bash start.sh      # server :18900 · UI :18920 · engine :15173
+bun run start      # server :18900 · UI :18920 · engine :15173
 # open http://localhost:18920
 ```
 
@@ -54,11 +54,11 @@ runs all three services with `bun --watch` / `vite` (live HMR — edits in
 ## Desktop — one command (recommended)
 
 ```bash
-bash app.sh          # dev app: native window + live source (HMR). First run auto-installs;
+bun run app          # dev app: native window + live source (HMR). First run auto-installs;
                      # auto-starts the web stack; auto-stops it when you close the window.
-bash app.sh build    # package a distributable .app / .dmg
-bash app.sh open     # open the last-built .app
-bash app.sh stop     # stop the dev web stack
+bun run app build    # package a distributable .app / .dmg
+bun run app open     # open the last-built .app
+bun run app stop     # stop the dev web stack
 ```
 
 `app.sh` wraps the manual steps below — use those if you want the pieces separately.
@@ -66,7 +66,7 @@ bash app.sh stop     # stop the dev web stack
 ## Desktop — develop the shell (manual)
 
 ```bash
-bash start.sh                          # terminal A: the web stack (required)
+bun run start                          # terminal A: the web stack (required)
 cd packages/interface && bun run tauri:dev   # terminal B: the Tauri window
 ```
 
@@ -77,7 +77,7 @@ first (the shell logs a hint when `:18920` isn't reachable).
 ## Desktop — build the `.app` / `.dmg` (manual)
 
 ```bash
-bash scripts/build-desktop.sh                 # assemble Resources (bun runtime +
+bun run app build                 # assemble Resources (bun runtime +
                                               # server src + engine + marketplace +
                                               # games + SPA dist) under src-tauri/resources
 cd packages/interface && bunx tauri build     # compile the shell + bundle
@@ -101,7 +101,7 @@ then loads the single-origin SPA. Launch it with `open "…/ForgeaX Studio.app"`
 | `cp: …/node_modules/*: No such file or directory` during `build-desktop.sh` | The desktop assemble needs a **hoisted** root `node_modules`; bun's default isolated linker leaves it empty. `build-desktop.sh` now self-heals with `bun install --linker hoisted` (step 0). If you hit this on an old script, run `bun install --linker hoisted` at the repo root first. |
 | `bundle_dmg.sh` fails / no `.dmg` (but the `.app` exists) | The DMG styling step uses Finder/AppleScript and fails in a headless session. **The `.app` itself is fine** — use it directly, or produce the dmg from a GUI session (or via `hdiutil`). |
 | Engine preview is blank / `Failed to resolve @forgeax/engine-*` | The engine isn't built. Run `install.sh` (it does `pnpm install` + builds the engine packages incl. the wasm module). |
-| `engine dist STALE` on start (after an engine bump) | `start.sh` blocks with the fix: `bash scripts/deploy.sh` then `start.sh`. For unattended/agent starts, `FORGEAX_AUTO_DEPLOY=1 bash start.sh` rebuilds automatically instead of blocking. |
+| `engine dist STALE` on start (after an engine bump) | `start.sh` blocks with the fix: `bun run setup` then `start.sh`. For unattended/agent starts, `FORGEAX_AUTO_DEPLOY=1 bun run start` rebuilds automatically instead of blocking. |
 | `ERR_SSL_PROTOCOL_ERROR` on `:18920` | The interface defaults to HTTPS when `FORGEAX_INTERFACE_HTTPS=1`. Either access via `https://`, or run plain HTTP on `localhost` (WebGPU still works on localhost). |
-| Port already in use | `bash scripts/stop.sh` (SIGTERM + grace) then `start.sh`. The `.app`'s 18810/15273 are reaped when the app quits. |
+| Port already in use | `bun run stop` (SIGTERM + grace) then `start.sh`. The `.app`'s 18810/15273 are reaped when the app quits. |
 | Chat says "no API key" | Set `ANTHROPIC_API_KEY` in `.env` (web) or via the desktop first-run overlay. |

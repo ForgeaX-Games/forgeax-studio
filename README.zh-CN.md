@@ -31,7 +31,7 @@
   admin / worker),具名人格各自*拥有*你项目文件的一部分——可见、可信的委派。
 - **所编即所玩。** 可视化编辑器与运行中的游戏共享同一份落盘场景,没有「导出去测」的往返——切到
   Play 你就在真游戏里,切回来编辑原样还在。
-- **一个进程,即时启动。** 整个运行时是单个 Bun server——无需 Docker、无需实例供给。`start.sh`
+- **一个进程,即时启动。** 整个运行时是单个 Bun server——无需 Docker、无需实例供给。`bun run start`
   几秒就活。
 - **一份代码,Web 与桌面通吃。** 同一个 UI 既跑浏览器,也通过 Tauri 2 作为原生桌面应用运行。
 
@@ -59,8 +59,8 @@
 ```bash
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
-bash install.sh        # 装依赖 + 构建引擎/wasm;生成 .env(填 ANTHROPIC_API_KEY)
-bash start.sh          # server :18900 · UI :18920 · engine :15173
+bun run setup        # 装依赖 + 构建引擎/wasm;生成 .env(填 ANTHROPIC_API_KEY)
+bun run start          # server :18900 · UI :18920 · engine :15173
 # 打开 http://localhost:18920,告诉 Forge 你想做什么
 ```
 

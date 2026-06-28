@@ -14,7 +14,7 @@ import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync,
 import { createInterface } from 'node:readline';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { has, IS_WIN, run } from './lib/sh.ts';
+import { has, IS_WIN, resolvePython, run } from './lib/sh.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -294,16 +294,18 @@ function syncHarness(cwd: string, label: string): void {
 function installHarnessSkills(): void {
   const py = join(ROOT, 'packages/harness/skills/forgeax-install/scripts/install_harness.py');
   const ir = join(ROOT, 'packages/harness/skills/forgeax-install/examples/forgeax-studio.json');
-  if (!existsSync(py) || !existsSync(ir) || !has('python3')) {
-    warnY('forgeax-install IR or python3 missing — skipping');
+  const python = resolvePython();
+  if (!existsSync(py) || !existsSync(ir) || !python) {
+    warnY('forgeax-install IR or a working Python missing — skipping');
     return;
   }
   for (const m of ['.codebuddy', '.cursor', '.agents', '.claude', '.claude-internal', '.workbuddy']) {
     mkdirSync(join(ROOT, m, 'skills'), { recursive: true });
     mkdirSync(join(ROOT, m, 'rules'), { recursive: true });
   }
+  const [pyCmd, ...pyPrefix] = python;
   console.log(`  → forgeax-install (harness skills/rules → ${ROOT})`);
-  if (run('python3', [py, '--spec', ir, '--target-root', ROOT])) ok('harness skills/rules installed');
+  if (run(pyCmd, [...pyPrefix, py, '--spec', ir, '--target-root', ROOT])) ok('harness skills/rules installed');
   else warnY('forgeax-install failed — continuing');
 }
 

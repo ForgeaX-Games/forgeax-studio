@@ -263,20 +263,11 @@ const engineSrcDir = join(ROOT, 'packages/editor/packages/play-runtime');
 mkdirSync(join(instanceRoot, '.forgeax/games'), { recursive: true });
 ensureForgeaxJunction(join(engineSrcDir, '.forgeax'), join(instanceRoot, '.forgeax'));
 
-// ── 3.5 shared game library seed ─────────────────────────────────────────────
-const gamesLibDir = join(ROOT, 'packages/games');
-if (existsSync(gamesLibDir) && readdirSync(gamesLibDir).length > 0) {
-  const r = spawnSync('bun', [join(ROOT, 'scripts/seed-games.ts')], {
-    cwd: ROOT,
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-    env: { ...process.env, FORGEAX_GAMES_SRC: gamesLibDir, FORGEAX_GAMES_DST: join(instanceRoot, '.forgeax/games') },
-  });
-  if (r.status !== 0) console.log('  ⚠ [run] seed-games failed (continuing without shared games)');
-} else {
-  console.error('  ⚠ [run] packages/games/ is empty or not initialised — shared game library unavailable.');
-  console.error('     Restore: git submodule update --init packages/games   (or: bun run setup)');
-}
+// Shared game library is seeded once by `bun run setup` (deploy.ts [7/7] →
+// seed-games.ts symlinks). run.ts intentionally does NOT re-seed: seed-games is
+// idempotent so re-running was harmless, but doing it on every start blurred the
+// deploy/start split and risked piling up <slug>.bak-<ts> if a real dir ever
+// appeared. If .forgeax/games/ is empty, run `bun run setup` to (re)seed.
 
 process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
 

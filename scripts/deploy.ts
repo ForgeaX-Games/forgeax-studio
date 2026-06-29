@@ -10,7 +10,7 @@
 // Flags: --start · --no-plugins · --skip-bootstrap · --interactive/-i
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -238,26 +238,22 @@ if (!/^ANTHROPIC_API_KEY=.+/m.test(readFileSync(envFile, 'utf8'))) {
 // ── 7. seed sample games ──────────────────────────────────────────────────────
 console.log();
 bold('[7/7] Seeding sample games to .forgeax/games/');
+// SSOT: defer to scripts/seed-games.ts (symlink each shared-library game into
+// .forgeax/games/<slug>). This is the SAME path run.ts and the desktop .app's
+// Rust seed_shared_games use — one algorithm, symlinks only, idempotent. Do NOT
+// cpSync real dirs here: a real <slug> dir shadows the shared library, and
+// seed-games would later rename it to <slug>.bak-<ts>, piling up duplicates.
 const gamesSrc = join(ROOT, 'packages/games');
 const gamesDst = join(ROOT, '.forgeax/games');
 mkdirSync(gamesDst, { recursive: true });
-if (existsSync(gamesSrc)) {
-  let seeded = 0;
-  let skipped = 0;
-  for (const e of readdirSync(gamesSrc, { withFileTypes: true })) {
-    if (!e.isDirectory()) continue;
-    const sample = join(gamesSrc, e.name);
-    if (!existsSync(join(sample, 'forge.json'))) continue;
-    const target = join(gamesDst, e.name);
-    if (existsSync(target)) {
-      skipped++;
-      continue;
-    }
-    cpSync(sample, target, { recursive: true, filter: (s) => !/[\\/](node_modules|\.forgeax)([\\/]|$)/.test(s) });
-    console.log(`  + seeded ${e.name}`);
-    seeded++;
-  }
-  ok(`sample games: ${seeded} seeded, ${skipped} already present`);
+if (existsSync(gamesSrc) && readdirSync(gamesSrc).length > 0) {
+  const r = spawnSync(process.execPath, [join(ROOT, 'scripts/seed-games.ts')], {
+    stdio: 'inherit',
+    cwd: ROOT,
+    env: { ...process.env, FORGEAX_GAMES_SRC: gamesSrc, FORGEAX_GAMES_DST: gamesDst },
+  });
+  if (r.status !== 0) warnY('seed-games failed (continuing without shared games)');
+  else ok('sample games seeded (symlinks)');
 } else {
   console.log('  → packages/games not found (skipped)');
 }

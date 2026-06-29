@@ -58,7 +58,7 @@ switch (mode) {
 // ── dev ───────────────────────────────────────────────────────────────────
 async function devMode(): Promise<void> {
   // First run on a fresh clone: deps + engine build (idempotent).
-  if (!existsSync(join(ROOT, 'packages/engine/packages/runtime/dist/index.mjs'))) {
+  if (!existsSync(join(ROOT, 'packages/editor/packages/engine/packages/runtime/dist/index.mjs'))) {
     console.log('[app] first run — installing deps + building engine (setup)…');
     runScript('setup.ts', []);
   }

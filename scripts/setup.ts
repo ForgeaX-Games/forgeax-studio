@@ -112,7 +112,9 @@ ok('submodules ready, aligned to local main');
 // .forgeax-harness floating clone (non-fatal).
 syncHarness(ROOT, '.forgeax-harness floating clone');
 installHarnessSkills();
-for (const sub of ['engine', 'editor']) {
+// engine harness sync now flows through the editor submodule (it carries the
+// nested engine at packages/editor/packages/engine).
+for (const sub of ['editor']) {
   if (existsSync(join(ROOT, 'packages', sub, 'scripts/sync-harness.mjs'))) {
     bold(`  → packages/${sub} harness sync`);
     spawnSync('node', ['scripts/sync-harness.mjs'], { stdio: 'inherit', cwd: join(ROOT, 'packages', sub) });
@@ -121,8 +123,8 @@ for (const sub of ['engine', 'editor']) {
 
 // ── 3. engine submodule build ────────────────────────────────────────────────
 bold('[3/6] Building engine submodule packages');
-const engineDir = join(ROOT, 'packages/engine');
-if (!existsSync(engineDir)) fail('packages/engine submodule missing — run git submodule update --init --recursive');
+const engineDir = join(ROOT, 'packages/editor/packages/engine');
+if (!existsSync(engineDir)) fail('packages/editor/packages/engine (editor nested engine) submodule missing — run git submodule update --init --recursive');
 const skipEngineBuild =
   env.FORGEAX_SKIP_ENGINE_BUILD &&
   existsSync(join(engineDir, 'packages/app/dist')) &&

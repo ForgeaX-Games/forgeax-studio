@@ -14,7 +14,7 @@
 //   <out>/examples/coi-serviceworker.js   COOP/COEP shim (for `coi` examples)
 //
 // Env:
-//   ENGINE_DIR   path to the engine checkout (default: <repo>/packages/engine)
+//   ENGINE_DIR   path to the engine checkout (default: <repo>/packages/editor/packages/engine)
 //   OUT_DIR      website staging/root to write into (default: <repo>/website-staging)
 //   CURATION     curation json (default: scripts/website/showcase.curation.json)
 //   ENGINE_SHA   engine commit sha for the alignment stamp (default: git -C ENGINE_DIR)
@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
-const ENGINE_DIR = resolve(process.env.ENGINE_DIR || join(REPO, 'packages', 'engine'));
+const ENGINE_DIR = resolve(process.env.ENGINE_DIR || join(REPO, 'packages', 'editor', 'packages', 'engine'));
 const OUT_DIR = resolve(process.env.OUT_DIR || join(REPO, 'website-staging'));
 const CURATION = resolve(process.env.CURATION || join(HERE, 'showcase.curation.json'));
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',').map((s) => s.trim())) : null;

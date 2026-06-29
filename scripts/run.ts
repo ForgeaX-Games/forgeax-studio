@@ -193,13 +193,13 @@ if (!existsSync(wsSentinel)) {
 console.log('[workspace] @forgeax/* linked');
 
 // ── 2.x engine dist precondition + freshness ─────────────────────────────────
-const enginePkgDir = join(ROOT, 'packages/engine/packages');
+const enginePkgDir = join(ROOT, 'packages/editor/packages/engine/packages');
 const engineEntryPkgs = ['app', 'runtime', 'ecs', 'vite-plugin-pack', 'vite-plugin-shader'];
 const missing = engineEntryPkgs.filter((p) => !existsSync(join(enginePkgDir, p, 'dist/index.mjs')));
 if (missing.length > 0) {
   console.error(`  ERROR: engine dist missing for: ${missing.join(' ')}`);
-  console.error('  (expected packages/engine/packages/<pkg>/dist/index.mjs)');
-  console.error('  The forgeax-engine submodule has not been fully built yet. Run: bun fx setup');
+  console.error('  (expected packages/editor/packages/engine/packages/<pkg>/dist/index.mjs)');
+  console.error('  The editor nested engine submodule has not been fully built yet. Run: bun fx setup');
   process.exit(1);
 }
 console.log(`[engine] dist found for entry packages: ${engineEntryPkgs.join(' ')}`);
@@ -227,7 +227,7 @@ if (process.env.FORGEAX_SKIP_ENGINE_DIST_FRESHNESS !== '1') {
 }
 
 // ── 2.x.b wgpu wasm freshness ────────────────────────────────────────────────
-const wgpuDir = join(ROOT, 'packages/engine/packages/wgpu-wasm');
+const wgpuDir = join(ROOT, 'packages/editor/packages/engine/packages/wgpu-wasm');
 const wasmArtefact = join(wgpuDir, 'pkg/wgpu_wasm_bg.wasm');
 const wasmSentinel = join(ROOT, '.forgeax/sentinels/wgpu-wasm.built');
 if (wgpuWasmStale()) {
@@ -241,7 +241,7 @@ console.log('[engine] wgpu wasm fresh');
 
 // ── 2.6 vite optimizeDeps cache self-heal ────────────────────────────────────
 if (process.env.FORGEAX_VITE_NO_CLEAN !== '1') {
-  const engineDist = join(ROOT, 'packages/engine/packages/runtime/dist');
+  const engineDist = join(ROOT, 'packages/editor/packages/engine/packages/runtime/dist');
   const interfaceSrc = join(ROOT, 'packages/interface/src');
   const playSrc = join(ROOT, 'packages/editor/packages/play-runtime/src');
   const editSrc = join(ROOT, 'packages/editor/packages/edit-runtime/src');

@@ -22,6 +22,9 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT="$(pwd)"
+# Engine now lives as the editor's nested submodule (top-level packages/engine
+# was removed); this is the single source for all engine path references below.
+ENGINE_ROOT="$ROOT/packages/editor/packages/engine"
 STUDIO=${STUDIO:-1}
 if [ "$STUDIO" = "1" ]; then
   IFACE="$ROOT/packages/studio"
@@ -97,9 +100,9 @@ ENG_CLOSURE_DIRS="$(node -e '
   while(q.length){const n=q.shift();if(seen.has(n)||!byName[n])continue;seen.add(n);
     for(const dep of byName[n].deps)if(dep.startsWith("@forgeax/"))q.push(dep);}
   process.stdout.write([...seen].map(n=>byName[n].dir).join("\n"));
-' "$ROOT/packages/engine/packages")"
+' "$ENGINE_ROOT/packages")"
 for d in $ENG_CLOSURE_DIRS; do
-  engpkg="$ROOT/packages/engine/packages/$d"
+  engpkg="$ENGINE_ROOT/packages/$d"
   [ -f "$engpkg/package.json" ] || continue
   pname="$(node -e "try{process.stdout.write(require('$engpkg/package.json').name||'')}catch(e){}")"
   [ -n "$pname" ] || continue
@@ -211,7 +214,7 @@ done
 # engine-naga, …) are absent from engine-src/node_modules/@forgeax (they live
 # deeper / in the engine submodule's own node_modules); a flat sibling set lets
 # vite resolve the whole graph. Each excludes its nested node_modules.
-for pkgdir in "$ROOT"/packages/engine/packages/*/; do
+for pkgdir in "$ENGINE_ROOT"/packages/*/; do
   [ -f "${pkgdir}package.json" ] || continue
   pname="$(bun -e 'try{process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).name||"")}catch{}' "${pkgdir}package.json" 2>/dev/null)"
   case "$pname" in @forgeax/*) ;; *) continue ;; esac
@@ -242,7 +245,7 @@ done
 # Copy that runtime closure flat into resources/engine/node_modules.
 ENGINE_RT_DEPS="uuidv7 upng-js jpeg-js ajv ajv-formats fast-deep-equal json-schema-traverse require-from-string fast-uri zod"
 for dep in $ENGINE_RT_DEPS; do
-  src="$(find "$ROOT/packages/engine/node_modules/.pnpm" -maxdepth 3 -type d -path "*/node_modules/$dep" 2>/dev/null | head -1)"
+  src="$(find "$ENGINE_ROOT/node_modules/.pnpm" -maxdepth 3 -type d -path "*/node_modules/$dep" 2>/dev/null | head -1)"
   [ -z "$src" ] && { echo "[build-desktop]   WARN: engine runtime dep not found: $dep"; continue; }
   rm -rf "$ENG/node_modules/$dep"
   rsync -aL --exclude node_modules "$src/" "$ENG/node_modules/$dep/" 2>/dev/null || true
@@ -252,10 +255,10 @@ done
 # for <projectRoot>/.forgeax/games/_template or <projectRoot>/packages/engine/
 # templates/game-default — neither exists under ~/ForgeaxProjects in the .app.
 # Ship the template; lib.rs seeds it into the project root on launch.
-if [ -d "$ROOT/packages/engine/templates/game-default" ]; then
+if [ -d "$ENGINE_ROOT/templates/game-default" ]; then
   rm -rf "$RES/game-template"; mkdir -p "$RES/game-template"
   rsync -aL --exclude node_modules --exclude .git \
-    "$ROOT/packages/engine/templates/game-default/" "$RES/game-template/"
+    "$ENGINE_ROOT/templates/game-default/" "$RES/game-template/"
 fi
 
 # Shared game library (official examples) — packages/games. dev's run.sh §3.5

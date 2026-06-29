@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { resolveCommand, stashPopArgsForMessage } from './fx.ts';
+import { didCreateStash, parseSubmodulePaths, resolveCommand, stashPopArgsForRef, submoduleUpdateArgs, updateShouldStash } from './fx.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const script = (name: string) => resolve(ROOT, 'scripts', name);
@@ -72,11 +72,42 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['restart'])).toEqual({ type: 'internal', command: 'restart', args: [] });
   });
 
-  it('restores the exact update stash by message after a successful update', () => {
-    expect(stashPopArgsForMessage('forgeax pre-update 2026-06-29T13:49:00.000Z')).toEqual([
+  it('keeps update separate from setup and build work', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const updateBody = source.slice(source.indexOf('function update('), source.indexOf('function restartStack('));
+
+    expect(updateBody).not.toContain("script('setup.ts')");
+    expect(updateBody).not.toContain('Running setup');
+    expect(updateBody).not.toContain('--no-plugins');
+    expect(updateBody).not.toContain('--skip-bootstrap');
+  });
+
+  it('updates submodules explicitly after updating the root repo', () => {
+    expect(parseSubmodulePaths([
+      'submodule.packages/engine.path packages/engine',
+      'submodule.packages/interface.path packages/interface',
+      '',
+    ].join('\n'))).toEqual(['packages/engine', 'packages/interface']);
+    expect(submoduleUpdateArgs('packages/engine')).toEqual(['submodule', 'update', '--init', '--recursive', '--', 'packages/engine']);
+  });
+
+  it('uses stash by default for update dirty worktrees', () => {
+    expect(updateShouldStash([])).toBe(true);
+    expect(updateShouldStash(['--stash'])).toBe(true);
+    expect(updateShouldStash(['--dry-run'])).toBe(true);
+    expect(updateShouldStash(['--no-stash'])).toBe(false);
+  });
+
+  it('restores only a stash that was actually created by update', () => {
+    expect(didCreateStash('', 'abc123')).toBe(true);
+    expect(didCreateStash('old123', 'new456')).toBe(true);
+    expect(didCreateStash('same123', 'same123')).toBe(false);
+    expect(didCreateStash('same123', '')).toBe(false);
+
+    expect(stashPopArgsForRef('abc123')).toEqual([
       'stash',
       'pop',
-      'stash^{/forgeax pre-update 2026-06-29T13:49:00.000Z}',
+      'abc123',
     ]);
   });
 });

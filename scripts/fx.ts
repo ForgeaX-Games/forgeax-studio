@@ -27,7 +27,7 @@ const BUN = process.execPath;
 const script = (name: string): string => resolve(ROOT, 'scripts', name);
 
 const SCRIPT_COMMANDS = new Map<string, string>([
-  // setup / update prerequisites
+  // setup prerequisites
   ['setup', 'setup.ts'],
 
   // dev lifecycle
@@ -39,7 +39,7 @@ const SCRIPT_COMMANDS = new Map<string, string>([
 ]);
 
 const BUILTIN_COMMANDS = new Set([
-  // setup / update orchestration
+  // git update orchestration
   'update',
 
   // dev lifecycle orchestration
@@ -83,7 +83,7 @@ Usage:
 
 Common commands:
   setup                 Prepare deps, submodules, engine, plugins, .env scaffold
-  update                Pull latest code, run setup, refresh generated artefacts
+  update                Pull latest root code and sync all submodules
   start [web|app]       Start Studio and open the selected client (default: web)
   stop                  Stop web-dev stack
   restart               Stop then start web-dev stack
@@ -95,7 +95,7 @@ Common commands:
 
 Examples:
   bun fx setup
-  bun fx update --stash
+  bun fx update
   bun fx start
   bun fx start app debug
   bun fx status
@@ -137,8 +137,60 @@ function updateStashMessage(): string {
   return `forgeax pre-update ${new Date().toISOString()}`;
 }
 
-export function stashPopArgsForMessage(message: string): string[] {
-  return ['stash', 'pop', `stash^{/${message}}`];
+function stashTopRef(): string {
+  return gitOut(['rev-parse', '--verify', 'stash@{0}']);
+}
+
+export function didCreateStash(before: string, after: string): boolean {
+  return after !== '' && after !== before;
+}
+
+export function stashPopArgsForRef(ref: string): string[] {
+  return ['stash', 'pop', ref];
+}
+
+export function updateShouldStash(args: string[]): boolean {
+  return !args.includes('--no-stash');
+}
+
+export function parseSubmodulePaths(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/)[1])
+    .filter(Boolean);
+}
+
+function submodulePaths(): string[] {
+  return parseSubmodulePaths(gitOut(['config', '--file', '.gitmodules', '--get-regexp', 'path']));
+}
+
+export function submoduleUpdateArgs(path: string): string[] {
+  return ['submodule', 'update', '--init', '--recursive', '--', path];
+}
+
+function updateSubmodules(dryRun: boolean): boolean {
+  const paths = submodulePaths();
+  if (paths.length === 0) {
+    console.log('[update] no submodules configured');
+    return true;
+  }
+
+  const failed: string[] = [];
+  for (const path of paths) {
+    const args = submoduleUpdateArgs(path);
+    if (dryRun) {
+      console.log(`[dry-run] git ${args.join(' ')}`);
+      continue;
+    }
+    console.log(`[update] submodule ${path}`);
+    const r = spawnSync('git', args, { cwd: ROOT, stdio: 'inherit' });
+    if ((r.status ?? 1) !== 0) failed.push(path);
+  }
+
+  const okCount = paths.length - failed.length;
+  console.log(`[update] submodule report: ${okCount}/${paths.length} ok${failed.length ? `, ${failed.length} failed` : ''}`);
+  for (const path of failed) console.log(`  ✗ ${path}`);
+  return failed.length === 0;
 }
 
 function currentBranch(): string {
@@ -301,19 +353,26 @@ function doctor(args: string[]): never {
 
 function update(args: string[]): void {
   const dryRun = args.includes('--dry-run');
-  const stash = args.includes('--stash');
+  const stash = updateShouldStash(args);
   const restart = args.includes('--restart');
-  const installArgs = args.filter((a) => a === '--no-plugins' || a === '--skip-bootstrap');
   let stashedMessage = '';
 
   console.log('[update] Checking working tree');
   if (isDirty()) {
     if (!stash) {
-      console.error('[update] local changes detected; use --stash or clean the worktree first.');
+      console.error('[update] local changes detected; remove --no-stash or clean the worktree first.');
       process.exit(2);
     }
+    const stashBefore = dryRun ? '' : stashTopRef();
     stashedMessage = updateStashMessage();
     runGit(['stash', 'push', '-u', '-m', stashedMessage], { dryRun, inherit: true });
+    const stashAfter = dryRun ? `stash^{/${stashedMessage}}` : stashTopRef();
+    if (didCreateStash(stashBefore, stashAfter)) {
+      stashedMessage = stashAfter;
+    } else {
+      console.log('[update] no root stash was created; leaving submodule-only changes in place');
+      stashedMessage = '';
+    }
   } else {
     console.log('[update] working tree clean');
   }
@@ -328,20 +387,17 @@ function update(args: string[]): void {
     runGit(['rebase', 'origin/main'], { dryRun, inherit: true });
   }
 
-  console.log('[update] Running setup');
-  if (dryRun) console.log(`[dry-run] bun ${script('setup.ts')} ${installArgs.join(' ')}`);
-  else {
-    const setup = spawnSync(BUN, [script('setup.ts'), ...installArgs], { cwd: ROOT, stdio: 'inherit' });
-    if ((setup.status ?? 0) !== 0) process.exit(setup.status ?? 1);
-  }
-
-  console.log('[update] Refreshing wgpu-wasm timestamp');
-  if (dryRun) console.log(`[dry-run] touch ${wgpuWasmPath()}`);
-  else touchWgpuWasm();
+  console.log('[update] Updating submodules');
+  const submodulesOk = updateSubmodules(dryRun);
 
   if (stashedMessage) {
     console.log('[update] Restoring pre-update stash');
-    runGit(stashPopArgsForMessage(stashedMessage), { dryRun, inherit: true });
+    runGit(stashPopArgsForRef(stashedMessage), { dryRun, inherit: true });
+  }
+
+  if (!submodulesOk) {
+    console.error('[update] one or more submodules failed to update; see report above');
+    process.exit(1);
   }
 
   if (restart) {

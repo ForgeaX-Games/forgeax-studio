@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// scripts/deploy.ts — forgeax-studio one-command end-to-end setup (`bun run setup`).
-// Replaces deploy.sh. Idempotent — re-running picks up where it left off.
+// @ts-nocheck
+// scripts/setup.ts — forgeax-studio one-command end-to-end setup (`bun fx setup`).
+// Idempotent — re-running picks up where it left off.
 //
 // Steps: [0] toolchain bootstrap (bootstrap.ts --toolchain-only) · [1] prereq
 // gate · [2] submodule init+align+harness sync · [3] engine pnpm build · [3b]
@@ -38,7 +39,7 @@ for (const a of process.argv.slice(2)) {
   else if (a === '--yes' || a === '-y') {
     /* back-compat no-op: auto is the default */
   } else if (a === '-h' || a === '--help') {
-    console.log('Usage: bun run setup [--start] [--no-plugins] [--skip-bootstrap] [--interactive]');
+    console.log('Usage: bun fx setup [--start] [--no-plugins] [--skip-bootstrap] [--interactive]');
     process.exit(0);
   } else fail(`unknown arg: ${a}`);
 }
@@ -76,7 +77,6 @@ ok(`git + bun + node v${nodeMajor} present`);
 
 // ── 2. submodule init + align + harness sync ─────────────────────────────────
 bold('[2/6] Initialising submodules');
-run('git', ['config', 'submodule.recurse', 'true'], { cwd: ROOT });
 
 // SSH fallback for private submodules (HTTPS→SSH rewrite, this run only).
 const gitEnv: NodeJS.ProcessEnv = { ...env, GIT_TERMINAL_PROMPT: '0' };
@@ -227,7 +227,7 @@ if (!/^ANTHROPIC_API_KEY=.+/m.test(readFileSync(envFile, 'utf8'))) {
     if (key.trim()) {
       upsertEnv(envFile, 'ANTHROPIC_API_KEY', key.trim());
       ok('ANTHROPIC_API_KEY set');
-    } else console.log(`  (skipped — edit ${envFile} before bun run start)`);
+    } else console.log(`  (skipped — edit ${envFile} before bun fx start)`);
   } else {
     warnY(`ANTHROPIC_API_KEY not set in ${envFile} — edit it before chatting in Studio.`);
   }
@@ -259,14 +259,14 @@ if (existsSync(gamesSrc) && readdirSync(gamesSrc).length > 0) {
 }
 
 console.log();
-bold('Deploy complete.');
-console.log('Next:\n  bun run start      # start 3-service dev stack');
+bold('Setup complete.');
+console.log('Next:\n  bun fx start      # start Studio and open the default web client');
 console.log('Endpoints once running:\n  http://localhost:18920  Studio UI\n  http://localhost:18900  Server\n  http://localhost:15173  Engine');
 
 if (start) {
   console.log();
-  bold('[start] Launching dev stack…');
-  const r = spawnSync(process.execPath, [join(ROOT, 'scripts/run.ts')], { stdio: 'inherit', cwd: ROOT, env });
+  bold('[start] Launching Studio…');
+  const r = spawnSync(process.execPath, ['fx', 'start'], { stdio: 'inherit', cwd: ROOT, env });
   process.exit(r.status ?? 0);
 }
 

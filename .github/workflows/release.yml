@@ -3,7 +3,7 @@ name: Desktop release
 # Builds the ForgeaX Studio desktop app installers and attaches them to a GitHub
 # Release. Runs ONLY on a version tag (v*) or manual dispatch — never on every push.
 #
-# macOS is wired up today (mirrors the local `bash app.sh build` path). Windows is
+# macOS is wired up today (mirrors the local `bun fx build app` path). Windows is
 # scaffolded but commented until the sidecar/build is validated there. The produced
 # installers are unsigned dev builds for now — see docs/desktop distribution notes
 # for signing/notarization before a public 1.0.
@@ -32,12 +32,12 @@ jobs:
       - name: Install wasm-pack
         uses: taiki-e/install-action@v2
         with: { tool: wasm-pack }
-      - name: Install + build engine (install.sh)
-        run: bash install.sh
+      - name: Install + build engine (bun fx setup)
+        run: bun fx setup
         env:
           FORGEAX_SKIP_HARNESS_SYNC: "1"
-      - name: Package desktop app (build-desktop.sh + tauri build)
-        run: bash app.sh build
+      - name: Package desktop app (bun fx build app)
+        run: bun fx build app
       - name: Collect artifacts
         run: |
           mkdir -p dist
@@ -73,5 +73,5 @@ jobs:
   #     - uses: dtolnay/rust-toolchain@stable
   #     - uses: taiki-e/install-action@v2
   #       with: { tool: wasm-pack }
-  #     - run: bash install.sh
+  #     - run: bun fx setup
   #     # Windows packaging needs a bun sidecar + tauri build path validated first.

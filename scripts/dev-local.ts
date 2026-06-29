@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // scripts/dev-local.ts — local-only launcher: run the studio stack on a port
 // block that won't clash with another forgeax-studio on the default ports, bound
-// to 127.0.0.1 only. Replaces dev-local.sh (`bun run dev:local`).
+// to 127.0.0.1 only. Replaces dev-local.sh; retained as a lower-level launcher
+// and intentionally not exposed as a top-level `bun fx` command.
 //
 // Plugin dev ports are seeded from each plugin manifest's sa.port (shared across
 // stacks); FORGEAX_PLUGIN_PORT_OFFSET=10000 moves this stack's whole plugin band

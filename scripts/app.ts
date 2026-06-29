@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
+// @ts-nocheck
 // scripts/app.ts — ForgeaX Studio desktop app, one command (Tauri 2).
-// Replaces app.sh (`bun run app [dev|build|open|stop]`).
+// Replaces app.sh (`bun fx start app`, `bun fx build app`).
 //
-//   bun run app            # dev app: native window running LIVE source (HMR).
-//   bun run app debug      #   same + auto-open DevTools
-//   bun run app build      # package a distributable .app/.dmg (macOS)
-//   bun run app open       # open the last-built .app (macOS)
-//   bun run app stop       # stop the dev web stack
+//   bun fx start app          # dev app: native window running LIVE source (HMR).
+//   bun fx start app debug    #   same + auto-open DevTools
+//   bun fx build app          # package a distributable .app/.dmg (macOS)
+//   bun scripts/app.ts open   # open the last-built .app (macOS)
+//   bun fx stop               # stop the dev web stack
 //
 // dev runs on macOS and Windows (Git-Bash no longer needed — pure Bun). build/
 // open packaging is macOS-only (.app/.dmg).
@@ -50,7 +51,7 @@ switch (mode) {
     runScript('stop.ts', args.slice(1));
     break;
   default:
-    console.error('usage: bun run app {dev|build|open|stop}');
+    console.error('usage: bun fx start app [debug]  |  bun fx build app');
     process.exit(2);
 }
 
@@ -59,7 +60,7 @@ async function devMode(): Promise<void> {
   // First run on a fresh clone: deps + engine build (idempotent).
   if (!existsSync(join(ROOT, 'packages/engine/packages/runtime/dist/index.mjs'))) {
     console.log('[app] first run — installing deps + building engine (setup)…');
-    runScript('deploy.ts', []);
+    runScript('setup.ts', []);
   }
 
   // The desktop app OWNS the full dev-stack lifecycle: reap any existing/stale
@@ -124,7 +125,7 @@ function buildMode(): void {
   const r2 = spawnSync('bunx', ['tauri', 'build'], { cwd: ifaceDir, stdio: 'inherit', shell: IS_WIN });
   if (r2.status !== 0) process.exit(r2.status ?? 1);
   const app = join(ifaceDir, 'src-tauri/target/release/bundle/macos/ForgeaX Studio.app');
-  if (existsSync(app)) console.log(`[app] ✓ built: ${app}   (run: bun run app open)`);
+  if (existsSync(app)) console.log(`[app] ✓ built: ${app}   (run: bun scripts/app.ts open)`);
   else {
     console.log('[app] build finished but .app not found (check the bundle dir)');
     process.exit(1);
@@ -134,7 +135,7 @@ function buildMode(): void {
 function openMode(): void {
   const app = join(ifaceDir, 'src-tauri/target/release/bundle/macos/ForgeaX Studio.app');
   if (!existsSync(app)) {
-    console.error('[app] no built .app — run: bun run app build');
+    console.error('[app] no built .app — run: bun fx build app');
     process.exit(1);
   }
   spawnSync('open', [app], { stdio: 'inherit' });

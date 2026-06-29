@@ -43,7 +43,7 @@ for (const a of process.argv.slice(2)) {
   else if (a === '--no-force') force = false;
   else if (a === '--purge-vite') purgeVite = true;
   else if (a === '-h' || a === '--help') {
-    console.log('Usage: bun run stop [--no-force] [--purge-vite]');
+    console.log('Usage: bun fx stop [--no-force] [--purge-vite]');
     console.log('  --no-force    warn + exit 1 instead of escalating to SIGKILL after 4s');
     console.log('  --purge-vite  also clear all vite optimizeDeps caches');
     process.exit(0);
@@ -179,7 +179,7 @@ if (purgeVite) {
   console.log('[stop] --purge-vite: clearing all vite optimizeDeps caches');
   vitePurgeAll(ROOT);
 }
-console.log(`[stop] done in ${elapsed}s — stack is down, safe to run: bun run start`);
+console.log(`[stop] done in ${elapsed}s — stack is down, safe to run: bun fx start`);
 
 // ── helpers ───────────────────────────────────────────────────────────────
 

@@ -29,7 +29,7 @@ export class StartLock {
       if (pid && isAlive(pid)) {
         console.error(`  ✗ another run is already starting the stack (pid ${pid}).`);
         console.error('    Refusing to start a second time — that would crash half the stack');
-        console.error('    on strictPort EADDRINUSE. Wait for it, or: bun run stop --force');
+        console.error('    on strictPort EADDRINUSE. Wait for it, or: bun fx stop --force');
         process.exit(1);
       }
       // Stale lock — previous holder is gone. Reclaim it.

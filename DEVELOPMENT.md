@@ -11,8 +11,8 @@ where your games/.env live, plus ports).
 
 | Mode | How | server | engine | UI origin |
 |---|---|:--:|:--:|---|
-| **web-dev** | `bun run start` | 18900 | 15173 | vite `:18920` |
-| **desktop-dev** | `start.sh` + `bun run tauri:dev` | 18900 | 15173 | webview → vite `:18920` |
+| **web-dev** | `bun fx start` | 18900 | 15173 | vite `:18920` |
+| **desktop-dev** | `bun fx start app` | 18900 | 15173 | webview → vite `:18920` |
 | **desktop app** (.app) | double-click the built `.app` | **18810** | **15273** | server serves SPA single-origin |
 
 > Desktop ports (18810/15273) are deliberately offset from the dev ports so a
@@ -29,21 +29,22 @@ where your games/.env live, plus ports).
 ## Web — run locally
 
 ```bash
-bun run setup    # deps in each package + engine build (pnpm + wasm) +
+bun fx setup    # deps in each package + engine build (pnpm + wasm) +
                    # scaffolds .env from .env.example and prompts for ANTHROPIC_API_KEY
-bun run start      # server :18900 · UI :18920 · engine :15173
+bun fx start      # server :18900 · UI :18920 · engine :15173
 # open http://localhost:18920
 ```
 
-`install.sh` → `scripts/deploy.sh`; `start.sh` → `scripts/run.sh`. Both are thin
-wrappers. `run.sh` does a port preflight, links the shared game library, then
-runs all three services with `bun --watch` / `vite` (live HMR — edits in
+`bun fx` is the single user-facing command router. `bun fx setup` delegates to
+`scripts/setup.ts`; `bun fx start` starts the web stack, waits for the UI, then
+opens the default web client. `scripts/run.ts` does a port preflight, links the
+shared game library, then runs all services with `bun --watch` / `vite` (live HMR — edits in
 `packages/{interface,server}` take effect immediately).
 
 ### API keys
 
 - Chat needs **`ANTHROPIC_API_KEY`** in `$ROOT/.env` (web) — set it via
-  `install.sh`'s prompt or by editing `.env`. `ANTHROPIC_BASE_URL` is optional
+  `bun fx setup`'s prompt or by editing `.env`. `ANTHROPIC_BASE_URL` is optional
   (proxy; blank = api.anthropic.com).
 - **The services boot without a key** — `/api/settings`, the SPA, and the engine
   preview all work keyless. Only LLM chat requires the key.
@@ -54,32 +55,33 @@ runs all three services with `bun --watch` / `vite` (live HMR — edits in
 ## Desktop — one command (recommended)
 
 ```bash
-bun run app          # dev app: native window + live source (HMR). First run auto-installs;
+bun fx start app          # dev app: native window + live source (HMR). First run auto-installs;
                      # auto-starts the web stack; auto-stops it when you close the window.
-bun run app build    # package a distributable .app / .dmg
-bun run app open     # open the last-built .app
-bun run app stop     # stop the dev web stack
+bun fx build app    # package a distributable .app / .dmg
+bun scripts/app.ts open     # open the last-built .app
+bun fx stop     # stop the dev web stack
 ```
 
-`app.sh` wraps the manual steps below — use those if you want the pieces separately.
+`bun fx start app` wraps the manual steps below — use those if you want the pieces separately.
 
 ## Desktop — develop the shell (manual)
 
 ```bash
-bun run start                          # terminal A: the web stack (required)
+bun scripts/run.ts                    # terminal A: the web stack only (manual)
 cd packages/interface && bun run tauri:dev   # terminal B: the Tauri window
 ```
 
 The dev window just loads the vite dev server (`:18920`), so HMR works exactly
-like web-dev. If the window is blank, the web stack isn't up — run `start.sh`
-first (the shell logs a hint when `:18920` isn't reachable).
+like web-dev. If the window is blank, the web stack isn't up — run
+`bun scripts/run.ts` first (the startup script logs a hint when `:18920` isn't
+reachable).
 
 ## Desktop — build the `.app` / `.dmg` (manual)
 
 ```bash
-bun run app build                 # assemble Resources (bun runtime +
-                                              # server src + engine + marketplace +
-                                              # games + SPA dist) under src-tauri/resources
+bun fx build app                 # assemble Resources (bun runtime +
+                              # server src + engine + marketplace +
+                              # games + SPA dist) under src-tauri/resources
 cd packages/interface && bunx tauri build     # compile the shell + bundle
 # → packages/interface/src-tauri/target/release/bundle/macos/ForgeaX Studio.app
 #   (and …/bundle/dmg/…dmg)
@@ -100,8 +102,8 @@ then loads the single-origin SPA. Launch it with `open "…/ForgeaX Studio.app"`
 |---|---|
 | `cp: …/node_modules/*: No such file or directory` during `build-desktop.sh` | The desktop assemble needs a **hoisted** root `node_modules`; bun's default isolated linker leaves it empty. `build-desktop.sh` now self-heals with `bun install --linker hoisted` (step 0). If you hit this on an old script, run `bun install --linker hoisted` at the repo root first. |
 | `bundle_dmg.sh` fails / no `.dmg` (but the `.app` exists) | The DMG styling step uses Finder/AppleScript and fails in a headless session. **The `.app` itself is fine** — use it directly, or produce the dmg from a GUI session (or via `hdiutil`). |
-| Engine preview is blank / `Failed to resolve @forgeax/engine-*` | The engine isn't built. Run `install.sh` (it does `pnpm install` + builds the engine packages incl. the wasm module). |
-| `engine dist STALE` on start (after an engine bump) | `start.sh` blocks with the fix: `bun run setup` then `start.sh`. For unattended/agent starts, `FORGEAX_AUTO_DEPLOY=1 bun run start` rebuilds automatically instead of blocking. |
+| Engine preview is blank / `Failed to resolve @forgeax/engine-*` | The engine isn't built. Run `bun fx setup` (it does `pnpm install` + builds the engine packages incl. the wasm module). |
+| `engine dist STALE` on start (after an engine bump) | `bun fx start` blocks with the fix: `bun fx setup` then `bun fx start`. For unattended/agent starts, `FORGEAX_AUTO_DEPLOY=1 bun fx start` rebuilds automatically instead of blocking. |
 | `ERR_SSL_PROTOCOL_ERROR` on `:18920` | The interface defaults to HTTPS when `FORGEAX_INTERFACE_HTTPS=1`. Either access via `https://`, or run plain HTTP on `localhost` (WebGPU still works on localhost). |
-| Port already in use | `bun run stop` (SIGTERM + grace) then `start.sh`. The `.app`'s 18810/15273 are reaped when the app quits. |
+| Port already in use | `bun fx stop` (SIGTERM + grace) then `bun fx start`. The `.app`'s 18810/15273 are reaped when the app quits. |
 | Chat says "no API key" | Set `ANTHROPIC_API_KEY` in `.env` (web) or via the desktop first-run overlay. |

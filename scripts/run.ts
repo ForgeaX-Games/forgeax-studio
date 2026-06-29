@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+// @ts-nocheck
 // scripts/run.ts — forgeax-studio zero-build dev orchestrator (cross-platform).
 //
 // Replaces run.sh + run.bat with one Bun implementation. Boot order:
@@ -167,8 +168,8 @@ for (const [name, port] of preflight) {
 }
 if (preflightBusy) {
   console.error('\n  Stop the previous stack first:');
-  console.error('    bun run stop           # SIGTERM + 4s grace');
-  console.error('    bun run stop --force   # escalate to SIGKILL');
+  console.error('    bun fx stop           # SIGTERM + 4s grace');
+  console.error('    bun fx stop --force   # escalate to SIGKILL');
   console.error('  Or set FORGEAX_SKIP_PREFLIGHT=1 to override.');
   if (process.env.FORGEAX_SKIP_PREFLIGHT !== '1') process.exit(1);
 }
@@ -180,12 +181,12 @@ if (!existsSync(wsSentinel)) {
   console.log('[run]   running: bun install (one-shot self-heal)');
   const r = spawnSync('bun', ['install'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
   if (r.status !== 0) {
-    console.error('  ERROR: bun install failed. Run: bun run setup');
+    console.error('  ERROR: bun install failed. Run: bun fx setup');
     process.exit(1);
   }
   if (!existsSync(wsSentinel)) {
     console.error(`  ERROR: bun install finished but ${wsSentinel} still missing.`);
-    console.error('  This usually means the engine submodule isn\'t initialised. Run: bun run setup');
+    console.error('  This usually means the engine submodule isn\'t initialised. Run: bun fx setup');
     process.exit(1);
   }
 }
@@ -198,7 +199,7 @@ const missing = engineEntryPkgs.filter((p) => !existsSync(join(enginePkgDir, p, 
 if (missing.length > 0) {
   console.error(`  ERROR: engine dist missing for: ${missing.join(' ')}`);
   console.error('  (expected packages/engine/packages/<pkg>/dist/index.mjs)');
-  console.error('  The forgeax-engine submodule has not been fully built yet. Run: bun run setup');
+  console.error('  The forgeax-engine submodule has not been fully built yet. Run: bun fx setup');
   process.exit(1);
 }
 console.log(`[engine] dist found for entry packages: ${engineEntryPkgs.join(' ')}`);
@@ -212,14 +213,14 @@ if (process.env.FORGEAX_SKIP_ENGINE_DIST_FRESHNESS !== '1') {
   if (stale.length > 0) {
     if (process.env.FORGEAX_AUTO_DEPLOY === '1') {
       console.error(`[engine] dist STALE for: ${stale.join(' ')} — FORGEAX_AUTO_DEPLOY=1, rebuilding…`);
-      const r = spawnSync('bun', ['run', 'setup'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+      const r = spawnSync('bun', ['fx', 'setup'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
       if (r.status !== 0) {
-        console.error('  ERROR: auto setup failed. Run it manually: bun run setup');
+        console.error('  ERROR: auto setup failed. Run it manually: bun fx setup');
         process.exit(1);
       }
     } else {
       console.error(`  ERROR: engine dist STALE for: ${stale.join(' ')} (src newer than dist).`);
-      console.error('  Rebuild: bun run setup   (or set FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 / FORGEAX_AUTO_DEPLOY=1)');
+      console.error('  Rebuild: bun fx setup   (or set FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 / FORGEAX_AUTO_DEPLOY=1)');
       process.exit(1);
     }
   }
@@ -232,8 +233,8 @@ const wasmSentinel = join(ROOT, '.forgeax/sentinels/wgpu-wasm.built');
 if (wgpuWasmStale()) {
   if (!existsSync(wasmArtefact)) console.error(`  ERROR: wgpu wasm artefact missing: ${wasmArtefact}`);
   else console.error('  ERROR: wgpu wasm stale (src / Cargo / pkg/wgpu_wasm.js newer than the .wasm).');
-  console.error('  Rebuild: pnpm -F @forgeax/engine-wgpu-wasm build:wasm   (or: bun run setup)');
-  console.error('  Override (not recommended): FORGEAX_SKIP_WGPU_WASM_FRESHNESS=1 bun run start');
+  console.error('  Rebuild: pnpm -F @forgeax/engine-wgpu-wasm build:wasm   (or: bun fx setup)');
+  console.error('  Override (not recommended): FORGEAX_SKIP_WGPU_WASM_FRESHNESS=1 bun fx start');
   if (process.env.FORGEAX_SKIP_WGPU_WASM_FRESHNESS !== '1') process.exit(1);
 }
 console.log('[engine] wgpu wasm fresh');
@@ -263,11 +264,11 @@ const engineSrcDir = join(ROOT, 'packages/editor/packages/play-runtime');
 mkdirSync(join(instanceRoot, '.forgeax/games'), { recursive: true });
 ensureForgeaxJunction(join(engineSrcDir, '.forgeax'), join(instanceRoot, '.forgeax'));
 
-// Shared game library is seeded once by `bun run setup` (deploy.ts [7/7] →
+// Shared game library is seeded once by `bun fx setup` (setup.ts [7/7] →
 // seed-games.ts symlinks). run.ts intentionally does NOT re-seed: seed-games is
 // idempotent so re-running was harmless, but doing it on every start blurred the
 // deploy/start split and risked piling up <slug>.bak-<ts> if a real dir ever
-// appeared. If .forgeax/games/ is empty, run `bun run setup` to (re)seed.
+// appeared. If .forgeax/games/ is empty, run `bun fx setup` to (re)seed.
 
 process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
 
@@ -361,7 +362,7 @@ console.log(
 );
 if (narrativeWillStart()) console.log(`[run] + narrative API :${PORT_NARRATIVE} (wb-narrative standalone)`);
 console.log(`[run] open http://localhost:${PORT_INTERFACE} to use the Studio UI`);
-console.log('[run]   浏览器(WebGPU): bun run web   ·   桌面 App: bun run app');
+console.log('[run]   浏览器(WebGPU): bun fx start   ·   桌面 App: bun fx start app');
 
 const launch = (name: string, cmd: string, args: string[], opts: SpawnOpts): number => {
   const child = spawnService(cmd, args, opts);

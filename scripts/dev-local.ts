@@ -50,8 +50,12 @@ console.log(`    editor     http://127.0.0.1:${process.env.FORGEAX_EDITOR_PORT}`
 console.log(`    plugins    seed+${offset}`);
 console.log('──────────────────────────────────────────────────────────────');
 
+// NB: pass env explicitly — under Bun, spawnSync does NOT inherit the parent's
+// (runtime-mutated) process.env when `env` is omitted, so the port overrides set
+// above would be silently dropped and run.ts would fall back to the default ports.
 const r = spawnSync(process.execPath, [join(ROOT, 'scripts/run.ts'), ...process.argv.slice(2)], {
   stdio: 'inherit',
   cwd: ROOT,
+  env: process.env,
 });
 process.exit(r.status ?? 0);

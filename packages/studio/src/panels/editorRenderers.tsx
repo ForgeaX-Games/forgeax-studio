@@ -92,7 +92,7 @@ const EDITOR_PANEL_TITLES: Record<string, string> = {
   hierarchy: 'Hierarchy', assets: 'Assets', inspector: 'Inspector',
   history: 'History', capabilities: 'Capabilities',
   material: 'Material', timeline: 'Timeline', matgraph: 'Mat Graph',
-  launcher: 'Launcher', 'asset-inspector': 'Asset Inspector',
+  mesh: 'Mesh', launcher: 'Launcher', 'asset-inspector': 'Asset Inspector',
 };
 
 /** PanelRenderers wired with the real editor surfaces + the editor-shared

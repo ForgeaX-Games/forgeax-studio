@@ -20,8 +20,8 @@
     "baseUrl": "./src",
     "paths": {
       "@/*": ["*"],
-      "@forgeax/types": ["../../types/src/index.ts"],
-      "@forgeax/types/*": ["../../types/src/*"]
+      "@forgeax/types": ["../../contracts/types/src/index.ts"],
+      "@forgeax/types/*": ["../../contracts/types/src/*"]
     }
   },
   "include": ["src", "test"]

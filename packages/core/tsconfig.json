@@ -17,10 +17,10 @@
     "types": ["bun"],
     "baseUrl": "./src",
     "paths": {
-      "@forgeax/agent-runtime": ["../../agent-runtime/src/index.ts"],
-      "@forgeax/agent-runtime/*": ["../../agent-runtime/src/*"],
-      "@forgeax/types": ["../../types/src/index.ts"],
-      "@forgeax/types/*": ["../../types/src/*"]
+      "@forgeax/agent-runtime": ["../../contracts/agent-runtime/src/index.ts"],
+      "@forgeax/agent-runtime/*": ["../../contracts/agent-runtime/src/*"],
+      "@forgeax/types": ["../../contracts/types/src/index.ts"],
+      "@forgeax/types/*": ["../../contracts/types/src/*"]
     }
   },
   "include": ["src", "test", "scripts"]

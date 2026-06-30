@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "forgeax ring-0 sidecar — kernel process supervision + IPC control plane (R3 阶段1脊梁).",
+  "description": "forgeax ring-0 sidecar — kernel process supervision + IPC control plane (R3 阶段1脊梁). Self-contained leaf: zero @forgeax/* deps, independently cloneable.",
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/types.ts",
@@ -19,6 +19,9 @@
     "lint:boundaries": "depcruise --config .dependency-cruiser.cjs src"
   },
   "devDependencies": {
-    "dependency-cruiser": "^17.4.3"
+    "@types/bun": "^1.3.13",
+    "@types/node": "^22.0.0",
+    "dependency-cruiser": "^17.4.3",
+    "typescript": "^5.6.3"
   }
 }

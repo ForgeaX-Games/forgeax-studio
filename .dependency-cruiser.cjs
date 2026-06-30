@@ -46,7 +46,7 @@ module.exports = {
       name: 'types-pure',
       severity: 'error',
       comment: '@forgeax/types is type/schema only. Do not import runtime packages.',
-      from: { path: '^packages/types/' },
+      from: { path: '^packages/contracts/types/' },
       to: {
         path: [
           '^packages/server/',
@@ -54,7 +54,7 @@ module.exports = {
           '^packages/host-sdk/',
           '^packages/marketplace/',
           '^packages/cli/',
-          '^packages/agent-runtime/',
+          '^packages/contracts/agent-runtime/',
         ],
       },
     },
@@ -69,7 +69,7 @@ module.exports = {
           '^packages/interface/',
           '^packages/marketplace/',
           '^packages/cli/',
-          '^packages/agent-runtime/',
+          '^packages/contracts/agent-runtime/',
         ],
       },
     },

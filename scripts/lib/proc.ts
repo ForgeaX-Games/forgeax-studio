@@ -208,11 +208,21 @@ export interface SpawnOpts {
 function resolveCmd(cmd: string): string {
   if (cmd === 'bun') return process.execPath;
   const probe = IS_WIN ? spawnSync('where', [cmd], { encoding: 'utf8' }) : spawnSync('which', [cmd], { encoding: 'utf8' });
-  const first = (probe.stdout ?? '')
+  const matches = (probe.stdout ?? '')
     .split('\n')
     .map((s) => s.trim())
-    .filter(Boolean)[0];
-  return first || cmd; // fall back to the bare name (spawn will error loudly)
+    .filter(Boolean);
+  if (IS_WIN) {
+    // `where` lists EVERY match, and the npm-global bin dir ships both an
+    // extensionless POSIX shim (e.g. ...\npm\pnpm) AND the real Windows shim
+    // (...\npm\pnpm.cmd), with the extensionless one first. spawn (no shell:true)
+    // can't execute the extensionless file -> ENOENT, so prefer a PATHEXT-style
+    // executable (.cmd/.exe/.bat/.com). Bun spawns .cmd directly (verified) so
+    // we still avoid shell:true and keep child.pid == the real process.
+    const exec = matches.find((m) => /\.(cmd|exe|bat|com)$/i.test(m));
+    return exec || matches[0] || cmd;
+  }
+  return matches[0] || cmd; // fall back to the bare name (spawn will error loudly)
 }
 
 /**

@@ -30,7 +30,19 @@
 	path = packages/editor
 	url = https://github.com/ForgeaX-Games/forgeax-editor.git
 	branch = main
-[submodule "packages/kernel"]
-	path = packages/kernel
-	url = https://github.com/ForgeaX-Games/forgeax-kernel.git
+[submodule "packages/contracts"]
+	path = packages/contracts
+	url = https://github.com/ForgeaX-Games/forgeax-contracts.git
+	branch = main
+[submodule "packages/agent-host"]
+	path = packages/agent-host
+	url = https://github.com/ForgeaX-Games/forgeax-agent-host.git
+	branch = main
+[submodule "packages/platform-io"]
+	path = packages/platform-io
+	url = https://github.com/ForgeaX-Games/forgeax-platform-io.git
+	branch = main
+[submodule "packages/core"]
+	path = packages/core
+	url = https://github.com/ForgeaX-Games/forgeax-core.git
 	branch = main

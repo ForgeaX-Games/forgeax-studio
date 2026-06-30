@@ -234,14 +234,20 @@ jobs:
           done
 
       # platform-io lives at packages/kernel/platform-io (a two-segment path the
-      # loop above can't reach). Typecheck + test it explicitly — it's the backend
-      # L1 reused by cli/server and the standalone editor, so its path-confinement
-      # contract matters.
+      # loop above can't reach). Typecheck it explicitly — it's the backend L1
+      # reused by cli/server and the standalone editor.
+      #
+      # NOTE: we run typecheck but NOT `bun -F @forgeax/platform-io test` here.
+      # The mirror's scrub() rewrites home-path literals (/home/<user>, /Users/<user>
+      # → /home/you, /Users/you) across the whole tree, including test FIXTURES.
+      # friendly-path.test.ts deliberately asserts that two DISTINCT home paths
+      # (/home/you vs /home/you) don't false-match — but scrub collapses
+      # both to /home/you, breaking the assertion's premise (a scrub artifact, not a
+      # real regression). The kernel's unit tests already run unscrubbed and green in
+      # the INTERNAL ci.yml, so dropping them here loses no coverage; the public CI's
+      # job is to prove a fresh clone installs/typechecks/builds/boots.
       - name: Typecheck @forgeax/platform-io (kernel)
         run: bun -F @forgeax/platform-io typecheck
-
-      - name: Test @forgeax/platform-io (kernel)
-        run: bun -F @forgeax/platform-io test
 
       # interface is the shared UI shell; a reverse dep on a studio-layer package
       # compiles in the monorepo but blanks the standalone editor at load. This

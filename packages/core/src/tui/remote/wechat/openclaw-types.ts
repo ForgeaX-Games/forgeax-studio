@@ -125,7 +125,7 @@ export interface QRStatusResponse {
 export const DEFAULT_API_BASE_URL = 'https://ilinkai.weixin.qq.com';
 /** 默认扫码 bot_type。 */
 export const DEFAULT_ILINK_BOT_TYPE = '3';
-/** forgeax 自己的应用版本号(标识调用方;区别于 a peer agent CLI 的 'cbc-1.0.0')。 */
+/** forgeax 自己的应用版本号(标识调用方;区别于 a peer agent CLI 的 'ref-1.0.0')。 */
 export const DEFAULT_CHANNEL_VERSION = 'forgeax-1.0.0';
 /** getupdates 服务端长轮询时长(ms);客户端 fetch 超时再加 10s 余量。 */
 export const DEFAULT_POLL_TIMEOUT_MS = 35_000;

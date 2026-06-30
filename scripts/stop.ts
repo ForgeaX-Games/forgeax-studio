@@ -29,7 +29,6 @@ import {
   killTree,
   listenPids,
   runDir,
-  selfAndAncestors,
   sleep,
 } from './lib/proc.ts';
 import { vitePurgeAll } from './lib/vite-cache.ts';
@@ -81,13 +80,9 @@ for (let i = 0; i < ports.length; i++) console.log(`  :${String(ports[i]).padEnd
 console.log();
 
 // ── discover pids: ports → dev-stack.env pids → pidfiles → signature match ──
-// Never reap our own launcher chain (e.g. `bun fx start app` → app.ts → stop.ts):
-// those ancestors carry the repo path on their command line and would otherwise
-// be caught by the signature scan, killing the very command doing the reaping.
-const protectedPids = selfAndAncestors();
 const found = new Map<number, string>(); // pid -> source label
 const note = (pid: number, src: string) => {
-  if (pid && !protectedPids.has(pid) && !found.has(pid)) found.set(pid, src);
+  if (pid && !found.has(pid)) found.set(pid, src);
 };
 
 for (const port of ports) for (const pid of listenPids(port)) note(pid, `:${port}`);

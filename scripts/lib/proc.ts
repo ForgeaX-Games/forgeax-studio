@@ -89,51 +89,6 @@ export function killTree(pid: number, force: boolean): void {
   }
 }
 
-/**
- * Map of pid → parent pid for every live process (one OS call). Windows uses a
- * single CIM query; POSIX shells out to `ps`. Empty map on failure.
- */
-function parentMap(): Map<number, number> {
-  const map = new Map<number, number>();
-  const ingest = (out: string): void => {
-    for (const line of out.split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      const pid = Number.parseInt(parts[0] ?? '', 10);
-      const ppid = Number.parseInt(parts[1] ?? '', 10);
-      if (pid > 0 && Number.isFinite(ppid)) map.set(pid, ppid);
-    }
-  };
-  if (IS_WIN) {
-    const ps = 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }';
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8' });
-    ingest(r.stdout ?? '');
-    return map;
-  }
-  const r = spawnSync('ps', ['-ax', '-o', 'pid=,ppid='], { encoding: 'utf8' });
-  ingest(r.stdout ?? '');
-  return map;
-}
-
-/**
- * The pid chain from `pid` (default: this process) up to the OS root, inclusive.
- *
- * stop.ts uses this to never reap the very command that launched it: when
- * `bun fx start app` runs, the parent `app.ts` (and its bun ancestors) carry the
- * repo's absolute path on their command line, so stop's signature scan would
- * otherwise match and SIGKILL them — killing the launcher mid-reap (the stack
- * services it should target are spawned detached as *children*, never ancestors).
- */
-export function selfAndAncestors(pid: number = process.pid): Set<number> {
-  const chain = new Set<number>();
-  const parents = parentMap();
-  let cur: number | undefined = pid;
-  while (cur && cur > 0 && !chain.has(cur)) {
-    chain.add(cur);
-    cur = parents.get(cur);
-  }
-  return chain;
-}
-
 /** True if the process is still alive. */
 export function isAlive(pid: number): boolean {
   if (!pid) return false;

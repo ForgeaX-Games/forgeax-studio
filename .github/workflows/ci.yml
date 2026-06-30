@@ -31,7 +31,10 @@ jobs:
           done
       - name: No secrets / internal references
         run: |
-          if grep -rInE 'ghp_[A-Za-z0-9]{20,}|sk-ant-api03|-----BEGIN [A-Z ]*PRIVATE KEY-----' \
+          # NOTE: sk-ant-api0[3] (a char class, not the literal "03") keeps THIS
+          # workflow file from matching its own grep pattern — otherwise the scan
+          # always fails on itself. It still catches a real sk-ant-api03-… key.
+          if grep -rInE 'ghp_[A-Za-z0-9]{20,}|sk-ant-api0[3]|-----BEGIN [A-Z ]*PRIVATE KEY-----' \
                --exclude-dir=.git --exclude-dir=node_modules . ; then
             echo "::error::potential secret committed"; exit 1
           fi

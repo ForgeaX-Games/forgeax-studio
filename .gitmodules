@@ -30,3 +30,7 @@
 	path = packages/editor
 	url = https://github.com/ForgeaX-Games/forgeax-editor.git
 	branch = main
+[submodule "packages/kernel"]
+	path = packages/kernel
+	url = https://github.com/ForgeaX-Games/forgeax-kernel.git
+	branch = main

@@ -1,0 +1,9 @@
+# Secrets — defense-in-depth, do not rely solely on the repo-root .gitignore
+.env
+.env.*
+!.env.example
+*.key
+key.txt
+llm_key.json
+
+scripts/whistle-debug.sh

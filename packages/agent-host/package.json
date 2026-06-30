@@ -1,0 +1,24 @@
+{
+  "name": "@forgeax/agent-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "forgeax ring-0 sidecar — kernel process supervision + IPC control plane (R3 阶段1脊梁).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/types.ts",
+    "./serve": "./src/main.ts"
+  },
+  "bin": {
+    "forgeax-agent-host": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "bun src/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint:boundaries": "depcruise --config .dependency-cruiser.cjs src"
+  },
+  "devDependencies": {
+    "dependency-cruiser": "^17.4.3"
+  }
+}

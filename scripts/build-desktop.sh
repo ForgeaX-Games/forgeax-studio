@@ -80,8 +80,11 @@ for entry in "$ROOT"/node_modules/*; do
   [ -L "$entry" ] && continue               # top-level workspace symlinks (forgeax-cli, forgeax-interface)
   cp -RL "$entry" "$RES/node_modules/$name"
 done
+# @forgeax/types + @forgeax/agent-runtime moved under packages/contracts/ (the cli
+# dependency-closure refactor, 1ad5a3d). Vendor each from its real source path into
+# node_modules/@forgeax/<pkg> (the import name is unchanged: @forgeax/types etc.).
 for pkg in types agent-runtime; do
-  rsync -a --exclude node_modules "$ROOT/packages/$pkg/" "$RES/node_modules/@forgeax/$pkg/"
+  rsync -a --exclude node_modules "$ROOT/packages/contracts/$pkg/" "$RES/node_modules/@forgeax/$pkg/"
 done
 # The server value-imports engine packages (@forgeax/engine-project's forge.json
 # loader, @forgeax/engine-runtime's Transform, @forgeax/engine-physics component

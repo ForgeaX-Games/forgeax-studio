@@ -7,9 +7,23 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Lightweight, dependency-free hygiene gate that always runs fast and green on a
-# clean checkout. Heavy build/test of the full studio (engine wasm + bun sidecar)
-# is exercised by the desktop release workflow and locally via install.sh.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Two jobs:
+#   hygiene — fast, dependency-free gate (JSON validity, required files, secret scan).
+#   build   — the real signal: a fresh clone must `bun fx setup` + typecheck + build
+#             + boot the 3-service stack. This catches the regression class where the
+#             published mirror stops installing/booting (e.g. a workspace or dep that
+#             the mirror assembly forgot to ship). Mirrors the internal ci.yml, adapted
+#             for the public topology: submodules are PUBLIC (no token) and we run a
+#             plain `bun install` (the mirror's workspace set differs from internal, so
+#             internal's bun.lock — which we deliberately don't ship — wouldn't satisfy
+#             --frozen-lockfile). The engine the build actually uses is the SAME nested
+#             path as internal — packages/editor/packages/engine (root workspaces points
+#             there); the top-level packages/engine submodule the public .gitmodules adds
+#             is not what `bun fx setup` builds, so all engine paths below match internal.
 jobs:
   hygiene:
     name: Repo hygiene
@@ -39,3 +53,248 @@ jobs:
             echo "::error::potential secret committed"; exit 1
           fi
           echo "clean"
+
+  build:
+    name: typecheck + build + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Public mirror: all submodules are public repos under ForgeaX-Games — no
+      # token needed (unlike internal CI, which uses INTERNAL_TOKEN for private subs).
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      # ── Toolchain ──────────────────────────────────────────────────────
+      # bun / node(.nvmrc) / pnpm(.pnpm-version) + the Rust+wasm toolchain that
+      # `bun fx setup` needs to build wgpu-wasm (without it the engine vite server
+      # dies with ENOENT wgpu_wasm_bg.wasm).
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js (from .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Read pnpm version (SSOT .pnpm-version)
+        id: pnpm-version
+        run: echo "value=$(cat .pnpm-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.pnpm-version.outputs.value }}
+
+      # 1.93 = wgpu's MSRV (same crate as internal, just at the top-level engine path).
+      - name: Setup Rust toolchain (for wgpu-wasm)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.93'
+          targets: wasm32-unknown-unknown
+
+      - name: Setup wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.14.0
+
+      # ── Caches (deps / compile output only — never dist artifacts) ─────
+      # Engine lives at packages/editor/packages/engine (nested under editor, same as
+      # internal — that's what root workspaces builds). Caches key on lockfiles /
+      # submodule SHAs so a stale cache can never mask a regression (miss → cold
+      # build at full cost, never a false green).
+      - name: Cache Rust (cargo registry + wgpu-wasm target)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/editor/packages/engine/packages/wgpu-wasm
+          shared-key: wgpu-wasm
+          cache-on-failure: 'false'
+
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store (engine + plugin deps)
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml', 'packages/marketplace/plugins/*/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache bun install (root + plugin deps)
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'packages/marketplace/plugins/*/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      # Engine dist cache — keyed on the engine submodule SHA (perfect fingerprint
+      # of its source; pin unchanged ⇒ dist unchanged). On hit, FORGEAX_SKIP_ENGINE_BUILD
+      # lets setup.ts skip the tsup build (it still installs workspace symlinks);
+      # setup.ts guards the skip on dist/ existing, so a partial restore self-heals.
+      - name: Resolve engine submodule SHA
+        id: engine-sha
+        run: echo "sha=$(git -C packages/editor/packages/engine rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache engine package dist (tsup output)
+        id: engine-dist
+        uses: actions/cache@v4
+        with:
+          path: packages/editor/packages/engine/packages/*/dist
+          key: ${{ runner.os }}-engine-dist-${{ steps.engine-sha.outputs.sha }}
+
+      - name: Enable engine-build skip on dist cache hit
+        if: steps.engine-dist.outputs.cache-hit == 'true'
+        run: echo "FORGEAX_SKIP_ENGINE_BUILD=1" >> "$GITHUB_ENV"
+
+      # Marketplace plugin dist cache — keyed on the marketplace submodule SHA.
+      # Touch restored dist before setup.ts so its per-plugin freshness check skips
+      # the rebuild (checkout stamps source to "now"; cached dist must look newer).
+      - name: Resolve marketplace submodule SHA
+        id: marketplace-sha
+        run: echo "sha=$(git -C packages/marketplace rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache marketplace plugin dist (vite/tsc output)
+        id: plugin-dist
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/marketplace/plugins/*/dist
+            packages/marketplace/plugins/node-editor/apps/*/frontend/dist
+            packages/marketplace/plugins/node-editor/apps/*/backend/dist
+            packages/marketplace/plugins/node-editor/apps/*/vendor/dist
+            packages/marketplace/plugins/node-editor/packages/*/dist
+          key: ${{ runner.os }}-plugin-dist-${{ steps.marketplace-sha.outputs.sha }}
+
+      - name: Touch plugin dist on cache hit (pre-setup)
+        if: steps.plugin-dist.outputs.cache-hit == 'true'
+        run: find packages/marketplace/plugins -name node_modules -prune -o -type d -name dist -exec touch {} +
+
+      # ── Seed .env so setup.ts stays non-interactive ───────────────────
+      # setup.ts has an unguarded `read` for ANTHROPIC_API_KEY; pre-seed a dummy
+      # key (the smoke below only probes health + vite roots, never a chat path).
+      - name: Seed .env (dummy ANTHROPIC_API_KEY for non-interactive setup)
+        run: |
+          set -eux
+          cp .env.example .env
+          sed -i 's|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=sk-ant-ci-dummy|' .env
+          grep -E '^ANTHROPIC_API_KEY=' .env
+          echo "FORGEAX_DEPLOY_NO_PROMPT_OPTIONAL=1" >> "$GITHUB_ENV"
+
+      # ── Script syntax gate (cheap, runs first) ─────────────────────────
+      - name: Script syntax check (scripts/*.ts + remaining *.sh)
+        run: |
+          set -eux
+          for f in scripts/*.ts scripts/lib/*.ts; do bun build "$f" --target=node >/dev/null; done
+          find scripts -maxdepth 2 -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+      # ── setup.ts: install + engine build + wgpu-wasm + plugin build ───
+      # Plain `bun install` happens inside setup (no --frozen-lockfile gate: the
+      # mirror ships no bun.lock — its workspace set differs from internal).
+      # FORGEAX_SKIP_HARNESS_SYNC=1: the mirror has no harness floating clone.
+      - name: bun fx setup (install + build + plugin build)
+        run: bun fx setup
+        env:
+          FORGEAX_SKIP_HARNESS_SYNC: '1'
+
+      # Restore mtime ordering so run.ts's freshness gates don't refuse to boot
+      # (wgpu .wasm must be newer than the committed pkg/*.js; engine dist newer
+      # than src on a cache hit). Content is correct; only mtime ordering needs repair.
+      - name: Touch engine artifacts to satisfy run.ts freshness gates
+        run: |
+          set -eux
+          touch packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm
+          find packages/editor/packages/engine/packages/*/dist -type f -exec touch {} +
+
+      # ── Per-package typecheck fan-out (setup.ts does not typecheck) ────
+      # Same package list and typecheck||lint fallback as internal CI. cli is
+      # intentionally excluded (it carries pre-existing test-file type debt that
+      # internal CI also does not typecheck).
+      - name: Typecheck each studio package
+        run: |
+          set -eu
+          for p in agent-runtime design host-sdk types editor server interface studio; do
+            echo "::group::typecheck @forgeax/$p"
+            if [ -f "packages/$p/package.json" ]; then
+              if node -e "p=require('./packages/$p/package.json');process.exit(p.scripts&&p.scripts.typecheck?0:1)"; then
+                (cd "packages/$p" && bun run typecheck)
+              else
+                (cd "packages/$p" && bun run lint)
+              fi
+            else
+              echo "skip: packages/$p has no package.json"
+            fi
+            echo "::endgroup::"
+          done
+
+      # platform-io lives at packages/kernel/platform-io (a two-segment path the
+      # loop above can't reach). Typecheck + test it explicitly — it's the backend
+      # L1 reused by cli/server and the standalone editor, so its path-confinement
+      # contract matters.
+      - name: Typecheck @forgeax/platform-io (kernel)
+        run: bun -F @forgeax/platform-io typecheck
+
+      - name: Test @forgeax/platform-io (kernel)
+        run: bun -F @forgeax/platform-io test
+
+      # interface is the shared UI shell; a reverse dep on a studio-layer package
+      # compiles in the monorepo but blanks the standalone editor at load. This
+      # guard fails CI on such an edge instead of letting it surface at runtime.
+      - name: interface package-boundary guard
+        run: bun run --cwd packages/interface lint:dep
+
+      # editor-family subpackages aren't in the typecheck fan-out and carry engine
+      # type debt; this hermetic test asserts every `@forgeax/editor-core` import is
+      # reachable through the barrel, catching missing re-exports without typechecking
+      # the (red) subpackages.
+      - name: Editor-core barrel-export contract
+        run: bun test src/__tests__/barrel-export-contract.test.ts
+        working-directory: packages/editor/packages/editor-core
+
+      # ── Vite builds for the two front-end shells ───────────────────────
+      - name: Vite build packages/interface
+        run: bun run --cwd packages/interface build
+
+      - name: Vite build packages/studio
+        run: bun run --cwd packages/studio build
+
+      # ── run.ts smoke: start the 3-service stack and probe health ──────
+      - name: Smoke — bun scripts/run.ts + probe ports
+        id: smoke
+        run: |
+          set -eux
+          nohup bun scripts/run.ts > /tmp/forgeax-stack.log 2>&1 &
+          STACK_PID=$!
+          echo "stack pid: $STACK_PID"
+          for i in $(seq 1 90); do
+            if curl -fsS -o /dev/null http://127.0.0.1:18900/api/health 2>/dev/null \
+              && curl -fsS -o /dev/null http://127.0.0.1:18920/ 2>/dev/null \
+              && curl -fsS -o /dev/null http://127.0.0.1:15173/preview/ 2>/dev/null; then
+              echo "all three endpoints up after ${i} polls (~$((i*2))s)"
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:18900/api/health
+          echo
+          test "$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:18920/)" = "200"
+          test "$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:15173/preview/)" = "200"
+
+      - name: Upload stack log on smoke failure
+        if: failure() && steps.smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgeax-stack-log
+          path: /tmp/forgeax-stack.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Teardown — bun fx stop
+        if: always()
+        run: bun fx stop || bun fx stop --force || true

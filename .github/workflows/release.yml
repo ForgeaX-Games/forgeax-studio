@@ -75,6 +75,9 @@ jobs:
       - name: Install wasm-pack
         uses: taiki-e/install-action@v2
         with: { tool: wasm-pack }
+      - name: Install rsync (build-desktop.sh assembles Resources via rsync)
+        shell: pwsh
+        run: choco install -y --no-progress rsync
       - name: Install + build engine (bun fx setup)
         run: bun fx setup
         env:

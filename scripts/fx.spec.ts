@@ -2,10 +2,20 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { didCreateStash, parseSubmodulePaths, resolveCommand, stashPopArgsForRef, submoduleUpdateArgs, updateShouldStash } from './fx.ts';
+import {
+  didCreateStash,
+  formatUpdateReport,
+  parseSubmodulePaths,
+  resolveCommand,
+  startBusyPorts,
+  stashPopArgsForRef,
+  submoduleUpdateArgs,
+  updateShouldStash,
+} from './fx.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const script = (name: string) => resolve(ROOT, 'scripts', name);
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('scripts/fx.ts command routing', () => {
   it('keeps package.json scripts focused on fx plus checks', () => {
@@ -40,6 +50,15 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['start'])).toEqual({ type: 'internal', command: 'start', args: [] });
     expect(resolveCommand(['start', 'web', '--fresh'])).toEqual({ type: 'internal', command: 'start', args: ['web', '--fresh'] });
     expect(resolveCommand(['start', 'app', 'debug'])).toEqual({ type: 'internal', command: 'start', args: ['app', 'debug'] });
+  });
+
+  it('checks every fixed stack port before start launches a new stack', () => {
+    const owner = (port: number) => (port === 18900 || port === 15173 ? `pid-${port}` : '');
+
+    expect(startBusyPorts(owner)).toEqual([
+      ['server', 18900, 'pid-18900'],
+      ['engine', 15173, 'pid-15173'],
+    ]);
   });
 
   it('does not expose legacy dev/web/app commands at the fx top level', () => {
@@ -91,6 +110,20 @@ describe('scripts/fx.ts command routing', () => {
     expect(submoduleUpdateArgs('packages/engine')).toEqual(['submodule', 'update', '--init', '--recursive', '--', 'packages/engine']);
   });
 
+  it('formats update results as a repo result table', () => {
+    expect(stripAnsi(formatUpdateReport([
+      { repoType: 'root', repo: '.', result: 'ok', detail: 'pulled latest root code' },
+      { repoType: 'submodule', repo: 'packages/engine', result: 'failed', detail: 'git submodule update exited 1' },
+      { repoType: 'root', repo: '.', result: 'failed', detail: 'stash restore exited 1' },
+    ]))).toBe([
+      'RESULT  REPO             REPO TYPE  DETAIL',
+      '------  ---------------  ---------  -----------------------------',
+      'OK      .                root       pulled latest root code',
+      'FAILED  packages/engine  submodule  git submodule update exited 1',
+      'FAILED  .                root       stash restore exited 1',
+    ].join('\n'));
+  });
+
   it('uses stash by default for update dirty worktrees', () => {
     expect(updateShouldStash([])).toBe(true);
     expect(updateShouldStash(['--stash'])).toBe(true);
@@ -104,10 +137,10 @@ describe('scripts/fx.ts command routing', () => {
     expect(didCreateStash('same123', 'same123')).toBe(false);
     expect(didCreateStash('same123', '')).toBe(false);
 
-    expect(stashPopArgsForRef('abc123')).toEqual([
+    expect(stashPopArgsForRef('stash@{0}')).toEqual([
       'stash',
       'pop',
-      'abc123',
+      'stash@{0}',
     ]);
   });
 });

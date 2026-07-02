@@ -56,7 +56,7 @@ const child = spawn(
     '--no-default-browser-check',
     url,
   ],
-  { stdio: 'ignore', detached: true },
+  { stdio: 'ignore', detached: true, windowsHide: true },
 );
 child.unref();
 console.log(`[web] Chrome launched (pid ${child.pid}).`);

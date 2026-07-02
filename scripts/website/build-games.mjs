@@ -24,6 +24,16 @@ const ENGINE_DIR = resolve(process.env.ENGINE_DIR || join(REPO, 'packages', 'eng
 const GAMES_DIR = resolve(process.env.GAMES_DIR || join(REPO, 'packages', 'games'));
 const OUT_DIR = resolve(process.env.OUT_DIR || join(REPO, 'website-staging'));
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',').map((s) => s.trim())) : null;
+// Persistent WHITELIST for the public gallery (see games.curation.json). Returns an
+// ORDERED slug list, or null if the file is absent (→ legacy: publish all).
+const CURATION = join(HERE, 'games.curation.json');
+function allowlist() {
+  if (!existsSync(CURATION)) return null;                      // no file → publish all (legacy)
+  try {
+    const c = JSON.parse(readFileSync(CURATION, 'utf8'));
+    return Array.isArray(c.allow) ? c.allow.map((s) => String(s).trim()).filter(Boolean) : [];
+  } catch { return []; }                                       // malformed → fail SAFE: publish nothing
+}
 // Static game rendering depends on engine asset support that isn't available in a static build
 // (loadByGuid needs the dev ImportTransport/DDC; see ENGINE-ISSUES). Until that lands, ship an
 // honest "coming soon" gallery instead of black demo pages. Flip GAMES_LIVE=1 once supported.
@@ -231,6 +241,13 @@ ${games.map(card).join('\n')}
 
 function main() {
   let games = discoverGames();
+  // WHITELIST: keep only allow-listed slugs, in the curation array's order. `[]` → none.
+  const allow = allowlist();
+  if (allow) {
+    const rank = new Map(allow.map((s, i) => [s, i]));
+    games = games.filter((g) => rank.has(g.slug)).sort((a, b) => rank.get(a.slug) - rank.get(b.slug));
+    log(`whitelist: ${games.length}/${allow.length || 0} allowed game(s) — ${games.map((g) => g.slug).join(', ') || '(none — all hidden)'}`);
+  }
   if (ONLY) games = games.filter((g) => ONLY.has(g.slug));
   mkdirSync(join(OUT_DIR, 'games'), { recursive: true });
   // Until engine static-asset support lands, don't bake/deploy demo dirs (they'd render

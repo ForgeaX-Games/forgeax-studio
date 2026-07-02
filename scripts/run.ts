@@ -141,7 +141,7 @@ console.log();
 // ── 1.5 Node 22+ guard ───────────────────────────────────────────────────────
 // Bun runs this script, but the server runs under Node — keep the version check.
 const nodeMajor = (() => {
-  const r = spawnSync('node', ['-v'], { encoding: 'utf8' });
+  const r = spawnSync('node', ['-v'], { encoding: 'utf8', windowsHide: true });
   const m = (r.stdout ?? '').match(/v(\d+)/);
   return m ? Number.parseInt(m[1] as string, 10) : 0;
 })();
@@ -150,7 +150,7 @@ if (nodeMajor < 22) {
   console.error('  Install: nvm install 22 && nvm use 22');
   process.exit(1);
 }
-console.log(`[node]  ${spawnSync('node', ['-v'], { encoding: 'utf8' }).stdout.trim()}`);
+console.log(`[node]  ${spawnSync('node', ['-v'], { encoding: 'utf8', windowsHide: true }).stdout.trim()}`);
 
 // ── 2 port preflight ─────────────────────────────────────────────────────────
 const preflight: Array<[string, number]> = [
@@ -179,7 +179,7 @@ const wsSentinel = join(ROOT, 'packages/editor/packages/play-runtime/node_module
 if (!existsSync(wsSentinel)) {
   console.log(`[run] workspace dependencies not linked (missing ${wsSentinel})`);
   console.log('[run]   running: bun install (one-shot self-heal)');
-  const r = spawnSync('bun', ['install'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+  const r = spawnSync(process.execPath, ['install'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
   if (r.status !== 0) {
     console.error('  ERROR: bun install failed. Run: bun fx setup');
     process.exit(1);
@@ -213,7 +213,7 @@ if (process.env.FORGEAX_SKIP_ENGINE_DIST_FRESHNESS !== '1') {
   if (stale.length > 0) {
     if (process.env.FORGEAX_AUTO_DEPLOY === '1') {
       console.error(`[engine] dist STALE for: ${stale.join(' ')} — FORGEAX_AUTO_DEPLOY=1, rebuilding…`);
-      const r = spawnSync('bun', ['fx', 'setup'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' });
+      const r = spawnSync(process.execPath, ['fx', 'setup'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
       if (r.status !== 0) {
         console.error('  ERROR: auto setup failed. Run it manually: bun fx setup');
         process.exit(1);
@@ -274,10 +274,10 @@ process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
 
 // ── 3.75 heal broken workbench plugin dists ──────────────────────────────────
 if (existsSync(join(ROOT, 'scripts/build-plugins.ts'))) {
-  spawnSync('bun', [join(ROOT, 'scripts/build-plugins.ts')], {
+  spawnSync(process.execPath, [join(ROOT, 'scripts/build-plugins.ts')], {
     cwd: ROOT,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    windowsHide: true,
   });
 }
 
@@ -381,7 +381,17 @@ await waitForPort(PORT_SERVER, 10_000);
 
 const uiPkg = STUDIO === '1' ? 'studio' : 'interface';
 const ui = launch('interface', 'bun', ['x', 'vite'], { cwd: join(ROOT, 'packages', uiPkg) });
-const en = launch('engine', 'bun', ['x', 'vite'], { cwd: join(ROOT, 'packages/editor/packages/play-runtime') });
+// play-runtime holds ZERO on-disk layout convention now — the HOST injects it.
+// Studio's layout is `<engineSrcDir>/.forgeax/games` (via the junction above),
+// served under the vite root as the URL prefix `.forgeax/games`. Both must agree.
+const en = launch('engine', 'bun', ['x', 'vite'], {
+  cwd: engineSrcDir,
+  env: {
+    ...process.env,
+    FORGEAX_PREVIEW_GAMES_DIR: join(engineSrcDir, '.forgeax/games'),
+    FORGEAX_GAMES_URL_PREFIX: '.forgeax/games',
+  },
+});
 const ed = launch('editor', 'bun', ['x', 'vite', '--port', String(PORT_EDITOR), '--host', '127.0.0.1'], {
   cwd: join(ROOT, 'packages/editor/packages/edit-runtime'),
 });

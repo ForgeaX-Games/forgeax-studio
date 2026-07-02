@@ -11,4 +11,12 @@ describe('setup git configuration', () => {
     expect(setupSource).not.toContain("['config', 'submodule.recurse', 'true']");
     expect(setupSource).not.toContain('submodule.recurse');
   });
+
+  it('updates submodules one by one and reports failures at the end', () => {
+    const setupSource = readFileSync(join(ROOT, 'scripts/setup.ts'), 'utf8');
+
+    expect(setupSource).toContain('formatSetupReport(setupResults)');
+    expect(setupSource).toContain("['submodule', 'update', '--init', '--recursive', ...depth, '--', path]");
+    expect(setupSource).not.toContain("fail('git submodule update failed.')");
+  });
 });

@@ -73,7 +73,7 @@ export function clearPidfiles(root: string): void {
 export function killTree(pid: number, force: boolean): void {
   if (!pid) return;
   if (IS_WIN) {
-    spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
     return;
   }
   const sig: NodeJS.Signals = force ? 'SIGKILL' : 'SIGTERM';
@@ -105,7 +105,7 @@ function parentMap(): Map<number, number> {
   };
   if (IS_WIN) {
     const ps = 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }';
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8' });
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', windowsHide: true });
     ingest(r.stdout ?? '');
     return map;
   }
@@ -140,6 +140,7 @@ export function isAlive(pid: number): boolean {
   if (IS_WIN) {
     const r = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], {
       encoding: 'utf8',
+      windowsHide: true,
     });
     return (r.stdout ?? '').includes(`"${pid}"`);
   }
@@ -156,7 +157,7 @@ export function isAlive(pid: number): boolean {
 /** PIDs LISTENing on `port`. POSIX: lsof; Windows: netstat -ano. */
 export function listenPids(port: number): number[] {
   if (IS_WIN) {
-    const r = spawnSync('netstat', ['-ano'], { encoding: 'utf8' });
+    const r = spawnSync('netstat', ['-ano'], { encoding: 'utf8', windowsHide: true });
     if (!r.stdout) return [];
     const pids = new Set<number>();
     for (const line of r.stdout.split('\n')) {
@@ -207,7 +208,9 @@ export interface SpawnOpts {
  */
 function resolveCmd(cmd: string): string {
   if (cmd === 'bun') return process.execPath;
-  const probe = IS_WIN ? spawnSync('where', [cmd], { encoding: 'utf8' }) : spawnSync('which', [cmd], { encoding: 'utf8' });
+  const probe = IS_WIN
+    ? spawnSync('where', [cmd], { encoding: 'utf8', windowsHide: true })
+    : spawnSync('which', [cmd], { encoding: 'utf8' });
   const matches = (probe.stdout ?? '')
     .split('\n')
     .map((s) => s.trim())

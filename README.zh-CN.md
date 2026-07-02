@@ -35,14 +35,14 @@
   几秒就活。
 - **一份代码,Web 与桌面通吃。** 同一个 UI 既跑浏览器,也通过 Tauri 2 作为原生桌面应用运行。
 
-## 🆕 v0.2.0 更新
+## 🆕 v0.3.8 更新
 
-- **首启引导** —— 选好模型供应商(默认 OpenRouter),几分钟即可开始做游戏。
-- **在可视化编辑器里创作游戏** —— 新增 open-project 流程 + 引导式建游戏入口;编辑器直接把场景资产写回磁盘。
-- **在 studio 内扩展工作台** —— 插件作者面板 + host SDK,自己写可视化 workbench 插件。
-- **更大的工作室团队** —— 新增 scene-pipeline agent(director / sino / mira)加入 Forge 的阵容。
-- **引擎升级** —— world 作用域插件构建 + handle 编解码。
-- **更干净的资产管线** —— 工作台电池/模板路径与预设资产全部 ASCII 化,跨平台、对贡献者更友好。
+- **可视化场景编辑器(Edit/Play)** —— dock 面板编辑器,含 gizmo / inspector / 层级 / 内容浏览器;Edit 与 Play 共享同一份落盘场景,无需导出往返。
+- **ECS + WebGPU 引擎成为默认** —— 实时预览跑 forgeax-engine(Rust→wasm 热路径),CSM 阴影、PBR、粒子与 sprite atlas 动画齐备。
+- **Team 多 Agent 协作** —— coordinator + 专精 peer 并行分发原子任务,默认开启。
+- **新工作台插件** —— `wb-anim` / `wb-skill` / `wb-reel` 拆分动画、VFX 与交互影片管线;`wb-ai-asset` 支持 AI 生成 3D 资产。
+- **全栈 i18n** —— 英文 / 中文运行时可切换;编辑器与 Studio UI 跟随宿主语言。
+- **桌面 + Android 构建** —— 跨平台 Tauri 2 桌面打包 + nightly CI;Android 导出后端已落地。
 
 → 完整说明见 [Releases](https://github.com/ForgeaX-Games/forgeax-studio/releases) 页。
 

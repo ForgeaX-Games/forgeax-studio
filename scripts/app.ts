@@ -111,23 +111,26 @@ async function devMode(): Promise<void> {
 
   console.log(`[app] launching desktop dev window (tauri:dev — live HMR, DevTools ${devtools ? 'ON' : 'off'})…`);
   // tauri:dev always runs from packages/interface (src-tauri lives there).
-  const r = spawnSync('bun', ['run', 'tauri:dev'], { cwd: ifaceDir, stdio: 'inherit', shell: IS_WIN });
+  const r = spawnSync(process.execPath, ['run', 'tauri:dev'], { cwd: ifaceDir, stdio: 'inherit', windowsHide: true });
   process.exit(r.status ?? 0);
 }
 
-// ── build (macOS) ────────────────────────────────────────────────────────────
+// ── build (macOS .app/.dmg · Windows .msi) ────────────────────────────────────
 function buildMode(): void {
-  console.log('[app] packaging .app (build-desktop.sh assembles Resources, then tauri build)…');
-  // build-desktop stays bash for now (macOS-only payload assembly; see migration
-  // TODO). On macOS bash is always present.
-  const r1 = spawnSync('bash', [join(ROOT, 'scripts/build-desktop.sh')], { stdio: 'inherit', cwd: ROOT });
+  console.log('[app] packaging desktop app (build-desktop.ts assembles Resources, then tauri build)…');
+  // Payload assembly is now cross-platform Bun (build-desktop.ts replaced the
+  // bash build-desktop.sh). On Windows it also stages MinGW for the Rust link.
+  if (IS_WIN) ensureCcToolchain();
+  const r1 = spawnSync(process.execPath, [join(ROOT, 'scripts/build-desktop.ts')], { stdio: 'inherit', cwd: ROOT, windowsHide: true });
   if (r1.status !== 0) process.exit(r1.status ?? 1);
-  const r2 = spawnSync('bunx', ['tauri', 'build'], { cwd: ifaceDir, stdio: 'inherit', shell: IS_WIN });
+  const r2 = spawnSync(process.execPath, ['run', 'tauri', 'build'], { cwd: ifaceDir, stdio: 'inherit', windowsHide: true });
   if (r2.status !== 0) process.exit(r2.status ?? 1);
-  const app = join(ifaceDir, 'src-tauri/target/release/bundle/macos/ForgeaX Studio.app');
+  const bundleDir = join(ifaceDir, 'src-tauri/target/release/bundle');
+  const app = join(bundleDir, 'macos/ForgeaX Studio.app');
   if (existsSync(app)) console.log(`[app] ✓ built: ${app}   (run: bun scripts/app.ts open)`);
+  else if (existsSync(bundleDir)) console.log(`[app] ✓ build finished — installers in ${bundleDir}`);
   else {
-    console.log('[app] build finished but .app not found (check the bundle dir)');
+    console.log('[app] build finished but no bundle dir found (check tauri output)');
     process.exit(1);
   }
 }
@@ -147,16 +150,17 @@ function runScript(name: string, scriptArgs: string[], quiet = false): void {
   spawnSync(process.execPath, [join(ROOT, 'scripts', name), ...scriptArgs], {
     cwd: ROOT,
     stdio: quiet ? 'ignore' : 'inherit',
+    windowsHide: true,
   });
 }
 
 /** Reap any previous desktop dev window so a relaunch lands on fresh source. */
 function reapDevWindows(): void {
   if (IS_WIN) {
-    const r = spawnSync('tasklist', [], { encoding: 'utf8' });
+    const r = spawnSync('tasklist', [], { encoding: 'utf8', windowsHide: true });
     if ((r.stdout ?? '').toLowerCase().includes('forgeax-studio-desktop')) {
       console.log('[app] closing previous dev window(s) so you get the latest code…');
-      spawnSync('taskkill', ['/IM', 'forgeax-studio-desktop.exe', '/F'], { stdio: 'ignore' });
+      spawnSync('taskkill', ['/IM', 'forgeax-studio-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
     }
   } else {
     const r = spawnSync('pgrep', ['-f', 'forgeax-studio-desktop'], { encoding: 'utf8' });
@@ -185,7 +189,7 @@ function clearWebviewCache(): void {
 
 /** Stage the bun sidecar tauri's externalBin resolver requires (idempotent). */
 function stageTauriSidecar(): void {
-  const triple = (spawnSync('rustc', ['-Vv'], { encoding: 'utf8' }).stdout ?? '').match(/^host:\s*(.+)$/m)?.[1]?.trim();
+  const triple = (spawnSync('rustc', ['-Vv'], { encoding: 'utf8', windowsHide: true }).stdout ?? '').match(/^host:\s*(.+)$/m)?.[1]?.trim();
   if (!triple) return;
   const binDir = join(ifaceDir, 'src-tauri/binaries');
   const dest = join(binDir, `bun-${triple}${EXE}`);

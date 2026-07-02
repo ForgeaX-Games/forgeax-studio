@@ -42,14 +42,14 @@ drop into a visual editor to tweak the scene directly at any time.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
-## 🆕 What's new in v0.2.0
+## 🆕 What's new in v0.3.8
 
-- **Guided first-run onboarding** — pick a provider (OpenRouter by default) and start building in minutes.
-- **Author games in the visual editor** — an open-project flow + guided game-creation entry; the editor writes scene assets straight to disk.
-- **Extend the workbench in-studio** — a plugin-author panel + host SDK to build your own visual workbench plugins.
-- **A bigger studio team** — new scene-pipeline agents (director / sino / mira) join Forge's crew.
-- **Latest engine** — world-scoped plugin build + handle codec.
-- **Cleaner asset pipeline** — workbench battery/template paths and preset assets are now ASCII-only, for cross-platform, contributor-friendly checkouts.
+- **Visual scene editor (Edit/Play)** — dock-panel editor with gizmos, inspector, hierarchy and content browser; Edit and Play share one on-disk scene, no export round trip.
+- **ECS + WebGPU engine by default** — live preview runs forgeax-engine (Rust→wasm hot paths) with CSM shadows, PBR, particles and sprite-atlas animation.
+- **Team multi-agent collaboration** — coordinator + specialist peers dispatch atomic tasks in parallel; on by default.
+- **New workbench plugins** — `wb-anim` / `wb-skill` / `wb-reel` split animation, VFX and interactive-film pipelines; `wb-ai-asset` for AI-generated 3D assets.
+- **Full-stack i18n** — English / 中文 switchable at runtime; editor and Studio UI follow the host language.
+- **Desktop + Android builds** — cross-platform Tauri 2 desktop packaging with nightly CI; Android export backend landed.
 
 → Full notes on the [Releases](https://github.com/ForgeaX-Games/forgeax-studio/releases) page.
 

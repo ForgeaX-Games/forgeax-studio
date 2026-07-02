@@ -105,7 +105,7 @@ writeFileSync(dest, JSON.stringify(out, null, 2) + '\n', 'utf8');
 console.log(`wrote ${dest} — ${Object.keys(out).length} plugins`);
 // quick sanity: list the dirs the website page references
 const REFERENCED = [
-  'agent-arin', 'agent-iori', 'agent-suzu', 'agent-kotone', 'agent-iro', 'agent-cc-coder', 'agent-tsumugi', 'agent-yevi',
+  'agent-arin', 'agent-reia', 'agent-iori', 'agent-suzu', 'agent-kotone', 'agent-iro', 'agent-cc-coder', 'agent-tsumugi', 'agent-yevi',
   'wb-character', 'wb-anim', 'wb-skill', 'wb-lowpoly-obj', 'wb-3d-lowpoly', 'wb-gen3d', 'wb-2d-scene-asset-generator',
   'wb-scene-generator', 'wb-ui', 'wb-items', 'wb-look', 'wb-bgm', 'wb-narrative', 'wb-reel', 'wb-balance', 'wb-code',
   'wb-observatory', 'wb-agent-persona', 'wb-plugin-author', 'admin',

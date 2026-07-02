@@ -10,6 +10,7 @@ import { existsSync, openSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PORT_EDITOR, PORT_ENGINE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
 
 type ScriptPlan = { type: 'script'; script: string; args: string[] };
 type InternalPlan = { type: 'internal'; command: string; args: string[] };
@@ -21,8 +22,23 @@ type RunGitOptions = {
   inherit?: boolean;
 };
 
+type UpdateResult = {
+  repoType: 'root' | 'submodule';
+  repo: string;
+  result: string;
+  detail?: string;
+};
+
+type StartPort = readonly [name: string, port: number];
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUN = process.execPath;
+const START_PORTS: readonly StartPort[] = [
+  ['server', PORT_SERVER],
+  ['interface', PORT_INTERFACE],
+  ['engine', PORT_ENGINE],
+  ['editor', PORT_EDITOR],
+];
 
 const script = (name: string): string => resolve(ROOT, 'scripts', name);
 
@@ -137,7 +153,7 @@ function updateStashMessage(): string {
   return `forgeax pre-update ${new Date().toISOString()}`;
 }
 
-function stashTopRef(): string {
+function stashTopOid(): string {
   return gitOut(['rev-parse', '--verify', 'stash@{0}']);
 }
 
@@ -168,29 +184,87 @@ export function submoduleUpdateArgs(path: string): string[] {
   return ['submodule', 'update', '--init', '--recursive', '--', path];
 }
 
-function updateSubmodules(dryRun: boolean): boolean {
+function cleanTableCell(value: string): string {
+  return value.replace(/\r?\n/g, ' ');
+}
+
+function colorResult(result: string): string {
+  if (result === 'OK') return `\x1b[32m${result}\x1b[0m`;
+  if (result === 'FAILED') return `\x1b[31m${result}\x1b[0m`;
+  return result;
+}
+
+export function formatUpdateReport(rows: UpdateResult[]): string {
+  const tableRows = rows.map((row) => [
+    row.result.toUpperCase(),
+    row.repo,
+    row.repoType,
+    row.detail ?? '',
+  ]);
+  const header = ['RESULT', 'REPO', 'REPO TYPE', 'DETAIL'];
+  const widths = header.map((title, i) => Math.max(
+    title.length,
+    ...tableRows.map((row) => cleanTableCell(row[i] ?? '').length),
+  ));
+  const formatRow = (row: string[], color = false): string => row
+    .map((cell, i) => {
+      const text = cleanTableCell(cell).padEnd(widths[i]);
+      return color && i === 0 ? colorResult(text) : text;
+    })
+    .join('  ')
+    .trimEnd();
+
+  return [
+    formatRow(header),
+    widths.map((width) => '-'.repeat(width)).join('  '),
+    ...tableRows.map((row) => formatRow(row, true)),
+  ].join('\n');
+}
+
+function runGitUpdateStep(repoType: 'root', repo: string, args: string[], dryRun: boolean, okDetail: string): UpdateResult {
+  if (dryRun) {
+    console.log(`[dry-run] git ${args.join(' ')}`);
+    return { repoType, repo, result: 'planned', detail: `git ${args.join(' ')}` };
+  }
+  const r = spawnSync('git', args, { cwd: ROOT, stdio: 'inherit' });
+  const status = r.status ?? 1;
+  if (status === 0) return { repoType, repo, result: 'ok', detail: okDetail };
+  return { repoType, repo, result: 'failed', detail: `git ${args.join(' ')} exited ${status}` };
+}
+
+function restoreStashResult(ref: string, dryRun: boolean): UpdateResult {
+  const args = stashPopArgsForRef(ref);
+  if (dryRun) {
+    console.log(`[dry-run] git ${args.join(' ')}`);
+    return { repoType: 'root', repo: '.', result: 'planned', detail: `git ${args.join(' ')}` };
+  }
+  const r = spawnSync('git', args, { cwd: ROOT, stdio: 'inherit' });
+  const status = r.status ?? 1;
+  if (status === 0) return { repoType: 'root', repo: '.', result: 'ok', detail: 'restored pre-update stash' };
+  return { repoType: 'root', repo: '.', result: 'failed', detail: `stash restore exited ${status}` };
+}
+
+function updateSubmodules(dryRun: boolean): UpdateResult[] {
   const paths = submodulePaths();
   if (paths.length === 0) {
-    console.log('[update] no submodules configured');
-    return true;
+    return [{ repoType: 'submodule', repo: '(none)', result: 'skipped', detail: 'no submodules configured' }];
   }
 
-  const failed: string[] = [];
+  const rows: UpdateResult[] = [];
   for (const path of paths) {
     const args = submoduleUpdateArgs(path);
     if (dryRun) {
       console.log(`[dry-run] git ${args.join(' ')}`);
+      rows.push({ repoType: 'submodule', repo: path, result: 'planned', detail: `git ${args.join(' ')}` });
       continue;
     }
     console.log(`[update] submodule ${path}`);
     const r = spawnSync('git', args, { cwd: ROOT, stdio: 'inherit' });
-    if ((r.status ?? 1) !== 0) failed.push(path);
+    const status = r.status ?? 1;
+    if (status === 0) rows.push({ repoType: 'submodule', repo: path, result: 'ok', detail: 'synced to recorded commit' });
+    else rows.push({ repoType: 'submodule', repo: path, result: 'failed', detail: `git submodule update exited ${status}` });
   }
-
-  const okCount = paths.length - failed.length;
-  console.log(`[update] submodule report: ${okCount}/${paths.length} ok${failed.length ? `, ${failed.length} failed` : ''}`);
-  for (const path of failed) console.log(`  ✗ ${path}`);
-  return failed.length === 0;
+  return rows;
 }
 
 function currentBranch(): string {
@@ -242,6 +316,12 @@ function portOwner(port: number): string {
   }
 }
 
+export function startBusyPorts(owner: (port: number) => string = portOwner): Array<[string, number, string]> {
+  return START_PORTS
+    .map(([name, port]) => [name, port, owner(port)] as [string, number, string])
+    .filter(([, , pid]) => pid !== '');
+}
+
 function touchWgpuWasm(): void {
   const wasm = wgpuWasmPath();
   if (!existsSync(wasm)) return;
@@ -268,35 +348,41 @@ function startStudio(args: string[]): never {
 
 function startWeb(runArgs: string[]): never {
   const uiPort = Number.parseInt(process.env.FORGEAX_INTERFACE_PORT ?? '18920', 10);
-  if (!portOwner(uiPort)) {
-    console.log('[start] starting web stack in background...');
-    const stackLog = resolve(tmpdir(), 'forgeax-stack.log');
-    const fd = openSync(stackLog, 'a');
-    const child = spawn(BUN, [script('run.ts'), ...runArgs], {
-      cwd: ROOT,
-      detached: true,
-      env: process.env,
-      stdio: ['ignore', fd, fd],
-    });
-    child.unref();
+  const busyPorts = startBusyPorts();
+  if (busyPorts.length > 0) {
+    console.error('[start] dev stack already appears to be running:');
+    for (const [name, port, pid] of busyPorts) {
+      console.error(`  :${String(port).padEnd(5)} ${name.padEnd(9)} pid=${pid}`);
+    }
+    console.error('\n[start] use `bun fx restart` to stop and start the stack, or `bun fx stop` first.');
+    process.exit(1);
+  }
 
-    process.stdout.write(`[start] waiting for UI :${uiPort}`);
-    let up = false;
-    for (let i = 0; i < 90; i++) {
-      if (portOwner(uiPort)) {
-        up = true;
-        break;
-      }
-      process.stdout.write('.');
-      sleepSync(2000);
+  console.log('[start] starting web stack in background...');
+  const stackLog = resolve(tmpdir(), 'forgeax-stack.log');
+  const fd = openSync(stackLog, 'a');
+  const child = spawn(BUN, [script('run.ts'), ...runArgs], {
+    cwd: ROOT,
+    detached: true,
+    env: process.env,
+    stdio: ['ignore', fd, fd],
+  });
+  child.unref();
+
+  process.stdout.write(`[start] waiting for UI :${uiPort}`);
+  let up = false;
+  for (let i = 0; i < 90; i++) {
+    if (portOwner(uiPort)) {
+      up = true;
+      break;
     }
-    console.log();
-    if (!up) {
-      console.error(`[start] web stack failed to come up — see ${stackLog}`);
-      process.exit(1);
-    }
-  } else {
-    console.log(`[start] UI :${uiPort} is already running; opening web client.`);
+    process.stdout.write('.');
+    sleepSync(2000);
+  }
+  console.log();
+  if (!up) {
+    console.error(`[start] web stack failed to come up — see ${stackLog}`);
+    process.exit(1);
   }
 
   runScript(script('open-web.ts'), []);
@@ -356,6 +442,7 @@ function update(args: string[]): void {
   const stash = updateShouldStash(args);
   const restart = args.includes('--restart');
   let stashedMessage = '';
+  const results: UpdateResult[] = [];
 
   console.log('[update] Checking working tree');
   if (isDirty()) {
@@ -363,12 +450,12 @@ function update(args: string[]): void {
       console.error('[update] local changes detected; remove --no-stash or clean the worktree first.');
       process.exit(2);
     }
-    const stashBefore = dryRun ? '' : stashTopRef();
+    const stashBefore = dryRun ? '' : stashTopOid();
     stashedMessage = updateStashMessage();
     runGit(['stash', 'push', '-u', '-m', stashedMessage], { dryRun, inherit: true });
-    const stashAfter = dryRun ? `stash^{/${stashedMessage}}` : stashTopRef();
+    const stashAfter = dryRun ? `stash^{/${stashedMessage}}` : stashTopOid();
     if (didCreateStash(stashBefore, stashAfter)) {
-      stashedMessage = stashAfter;
+      stashedMessage = dryRun ? stashAfter : 'stash@{0}';
     } else {
       console.log('[update] no root stash was created; leaving submodule-only changes in place');
       stashedMessage = '';
@@ -380,23 +467,35 @@ function update(args: string[]): void {
   console.log(`[update] Updating ${currentBranch()}`);
   const up = upstream();
   if (up) {
-    runGit(['pull', '--ff-only', '--no-recurse-submodules'], { dryRun, inherit: true });
+    results.push(runGitUpdateStep('root', '.', ['pull', '--ff-only', '--no-recurse-submodules'], dryRun, 'pulled latest root code'));
   } else {
     console.log('[update] no upstream; fetching origin/main and rebasing current branch');
-    runGit(['fetch', '--no-recurse-submodules', 'origin', 'main'], { dryRun, inherit: true });
-    runGit(['rebase', 'origin/main'], { dryRun, inherit: true });
+    const fetchResult = runGitUpdateStep('root', '.', ['fetch', '--no-recurse-submodules', 'origin', 'main'], dryRun, 'fetched origin/main');
+    results.push(fetchResult);
+    if (fetchResult.result !== 'failed') {
+      results.push(runGitUpdateStep('root', '.', ['rebase', 'origin/main'], dryRun, 'rebased onto origin/main'));
+    }
   }
 
-  console.log('[update] Updating submodules');
-  const submodulesOk = updateSubmodules(dryRun);
+  const rootOk = !results.some((row) => row.repoType === 'root' && row.result === 'failed');
+  if (rootOk) {
+    console.log('[update] Updating submodules');
+    results.push(...updateSubmodules(dryRun));
+  } else {
+    results.push({ repoType: 'submodule', repo: '(all)', result: 'skipped', detail: 'root update failed' });
+  }
 
   if (stashedMessage) {
     console.log('[update] Restoring pre-update stash');
-    runGit(stashPopArgsForRef(stashedMessage), { dryRun, inherit: true });
+    results.push(restoreStashResult(stashedMessage, dryRun));
   }
 
-  if (!submodulesOk) {
-    console.error('[update] one or more submodules failed to update; see report above');
+  console.log();
+  console.log('[update] result report');
+  console.log(formatUpdateReport(results));
+
+  if (results.some((row) => row.result === 'failed')) {
+    console.error('[update] one or more repositories failed to update; see report above');
     process.exit(1);
   }
 

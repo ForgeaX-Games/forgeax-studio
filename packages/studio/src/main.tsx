@@ -18,7 +18,10 @@ applyTheme('dark');
 import { BrandProvider } from '@forgeax/interface/brand';
 import { ErrorBoundary } from '@forgeax/interface/components/ErrorBoundary';
 import { bootStageEntry } from '@forgeax/interface/boot/driver';
-import { subscribeSessionStream } from '@forgeax/interface/lib/session-stream';
+import { bootBroadcast } from '@forgeax/interface/boot/broadcast';
+import { subscribeSessionStream, subscribeDaemonTick } from '@forgeax/chat/session-store';
+import { initAgentPrefs } from '@forgeax/settings';
+import { initFilePreview } from '@forgeax/workbench';
 import { subscribeNarrativeCopilot } from '@forgeax/interface/lib/narrative-copilot';
 import { subscribeFileActivityStream } from '@forgeax/interface/lib/file-activity-stream';
 import { subscribePermissionStream } from '@forgeax/interface/lib/permission-stream';
@@ -85,6 +88,10 @@ function bootStore() {
   // signals (Play/Edit/plugin) into the status bar. Must run before any iframe
   // mounts so early createApp failures are caught. Idempotent.
   installHealthBridge();
+  initAgentPrefs();         // ① agent 安装偏好 owner（settings）—— 发首帧 bus 快照 + 挂 seed 监听
+  initFilePreview();        // ③ 文件预览 owner（workbench）—— 发首帧快照 + 挂 open-file 命令监听
+  bootBroadcast();          // R5/P1 唯一公共广播 socket + telemetry/workspace-changed
+  subscribeDaemonTick();    // daemon-tick-* 帧接到该广播流（chat 域）
   subscribeSessionStream();
   // 叙事工坊「完成即重唤醒」闭环：监听 Kotone 调 narrative:start-pipeline → 轮询后端
   // 直到管线进终态 → 投系统提示唤醒 Kotone 做完成总结。需在 session-stream 之后挂。

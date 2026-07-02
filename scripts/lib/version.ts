@@ -18,7 +18,7 @@ export interface VersionInfo {
 
 function git(root: string, args: string[]): string {
   try {
-    return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim();
+    return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true }).trim();
   } catch {
     return '';
   }
@@ -45,8 +45,8 @@ export function versionInfo(root: string): VersionInfo {
 
 function isDirty(root: string): boolean {
   try {
-    execFileSync('git', ['-C', root, 'diff', '--quiet']);
-    execFileSync('git', ['-C', root, 'diff', '--cached', '--quiet']);
+    execFileSync('git', ['-C', root, 'diff', '--quiet'], { windowsHide: true });
+    execFileSync('git', ['-C', root, 'diff', '--cached', '--quiet'], { windowsHide: true });
     return false;
   } catch {
     return true;

@@ -56,6 +56,23 @@ export default defineConfig({
       // (in studio/tsconfig.json) match. `package.json` `exports.*` covers
       // node-side resolution for `require.resolve` callers; this alias covers
       // bundler-side resolution + dev HMR.
+      // `@forgeax/chat` — the 前L2 chat app (R4). studio injects it into the
+      // interface shell via renderChat; route to chat/src so vite + the watcher
+      // pick up source changes (HMR) and tsc paths in studio/tsconfig match.
+      // The trailing-slash (subpath) alias MUST precede the bare-name one:
+      // Vite does first-prefix-match, and the bare name is itself a prefix of
+      // every subpath, so listing it first would greedily rewrite
+      // `@forgeax/chat/session-store` → `…/chat/src/index.ts/session-store`.
+      '@forgeax/chat/': `${resolve(PACKAGE_DIR, '../chat/src')}/`,
+      '@forgeax/chat': resolve(PACKAGE_DIR, '../chat/src/index.ts'),
+      // `@forgeax/dashboard` / `@forgeax/settings` / `@forgeax/workbench` —
+      // sibling 前L2 overlay apps (R4). Same subpath-before-bare ordering.
+      '@forgeax/dashboard/': `${resolve(PACKAGE_DIR, '../dashboard/src')}/`,
+      '@forgeax/dashboard': resolve(PACKAGE_DIR, '../dashboard/src/index.ts'),
+      '@forgeax/settings/': `${resolve(PACKAGE_DIR, '../settings/src')}/`,
+      '@forgeax/settings': resolve(PACKAGE_DIR, '../settings/src/index.ts'),
+      '@forgeax/workbench/': `${resolve(PACKAGE_DIR, '../workbench/src')}/`,
+      '@forgeax/workbench': resolve(PACKAGE_DIR, '../workbench/src/index.ts'),
       '@forgeax/interface/': `${resolve(PACKAGE_DIR, '../interface/src')}/`,
       // `@/` points to packages/interface/src/ — interface internals use it
       // for their own cross-references (e.g. `@/lib/utils`); when those files

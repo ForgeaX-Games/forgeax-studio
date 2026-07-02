@@ -240,6 +240,7 @@ function signatureMatchPids(root: string): number[] {
     const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], {
       encoding: 'utf8',
       env: { ...process.env, FX_ROOT_WIN: rootWin },
+      windowsHide: true,
     });
     return (r.stdout ?? '')
       .split('\n')
@@ -268,7 +269,7 @@ function signatureMatchPids(root: string): number[] {
 /** Human-readable command for a pid (cosmetic). */
 function pidCmd(pid: number): string {
   if (IS_WIN) {
-    const r = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8' });
+    const r = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8', windowsHide: true });
     const m = (r.stdout ?? '').match(/^"([^"]+)"/);
     return m ? (m[1] as string) : '';
   }

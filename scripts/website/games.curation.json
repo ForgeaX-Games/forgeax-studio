@@ -1,0 +1,4 @@
+{
+  "_comment": "Studio-side WHITELIST for the PUBLIC games gallery (https://forgeax.github.io/games/). build-games.mjs reads this: ONLY games whose slug is listed in `allow` are baked + shown on the site; every other dir in packages/games is hidden. The ARRAY ORDER is the display order. Empty `allow` = publish NOTHING (all games hidden) — the current state while games mature. To publish a game, add its slug (the forge.json `id`, or the dir name). Candidates once ready: marscraft, spin-cube, cow-survivor, fps. NOTE: deleting this file reverts to the old behavior (publish ALL discovered games).",
+  "allow": []
+}

@@ -10,6 +10,19 @@ import type { PanelRenderers } from '@forgeax/interface/components/DockShell/pan
 import { EDITOR_PANELS } from '@forgeax/editor-shared/manifest';
 import { EditSurface } from '@forgeax/editor/edit';
 import { PlaySurface } from '@forgeax/editor/play';
+// studio→chat is a legal aggregation edge (studio composes interface + apps).
+// interface stays chat-agnostic (no @forgeax/chat import); studio injects the
+// chat surface here through the renderChat slot, exactly like edit/preview.
+import { ChatPanel } from '@forgeax/chat';
+// studio→dashboard / studio→settings are legal aggregation edges too. interface
+// stays dashboard/settings-agnostic; studio injects the overlay bodies here via
+// the renderDashboard / renderSettings slots, exactly like chat/edit/preview.
+import { Dashboard } from '@forgeax/dashboard';
+import { SettingsPanel, SettingsSectionsRegister } from '@forgeax/settings';
+// studio→workbench is a legal aggregation edge. interface stays workbench-UI
+// agnostic (the plugin-host runtime stays L1); studio injects the workbench
+// main-area body here via the renderWorkbench slot.
+import { WorkbenchMode, WorkbenchModeDefault, AgentsMainArea } from '@forgeax/workbench';
 // studio→marketplace is a legal edge at this aggregation layer. interface holds
 // no specific plugin id; studio injects the concrete inline panel here.
 import { PluginAuthorPanel, WB_PLUGIN_AUTHOR_ID } from '../../../marketplace/plugins/wb-plugin-author/src/panel';
@@ -69,10 +82,25 @@ function useActiveSlug(): string | null {
   return liveSlugs[0] ?? null;
 }
 
+// Studio owns its on-disk game layout (`.forgeax/games/<slug>`, matching the
+// server's safe-path whitelist). The editor holds ZERO layout convention, so
+// the host must inject the game root: via the EditSurface `gameRoot` prop (main
+// viewport iframe) AND localStorage['forgeax.gameRoot'] (which EditorPanelFrame
+// reads to append `&gameRoot=` on the ep:* panel iframes). Both must agree.
+function studioGameRoot(slug: string): string {
+  return `.forgeax/games/${slug}`;
+}
+
 function EditMode({ viewportOnly }: { viewportOnly?: boolean } = {}) {
   const slug = useActiveSlug();
+  // Keep the panel-side gameRoot signal in sync with the active slug so ep:*
+  // panel iframes resolve to the same game the viewport does.
+  useEffect(() => {
+    if (!slug) return;
+    try { localStorage.setItem('forgeax.gameRoot', studioGameRoot(slug)); } catch { /* no storage */ }
+  }, [slug]);
   if (!slug) return null;
-  return <EditSurface slug={slug} viewportOnly={viewportOnly} />;
+  return <EditSurface slug={slug} gameRoot={studioGameRoot(slug)} viewportOnly={viewportOnly} />;
 }
 
 function PreviewMode() {
@@ -102,6 +130,20 @@ export const editorRenderers: PanelRenderers = {
   editorPanelTitles: EDITOR_PANEL_TITLES,
   renderEdit: ({ viewportOnly }) => <EditMode viewportOnly={viewportOnly} />,
   renderPreview: () => <PreviewMode />,
+  renderChat: () => <ChatPanel />,
+  renderDashboard: () => <Dashboard />,
+  // The settings slot mounts BOTH the sections-register side-effect and the
+  // panel, mirroring the old interface App.tsx ordering.
+  renderSettings: () => (
+    <>
+      <SettingsSectionsRegister />
+      <SettingsPanel />
+    </>
+  ),
+  renderWorkbench: (variant) =>
+    variant === 'agents' ? <AgentsMainArea />
+    : variant === 'files' ? <WorkbenchModeDefault showGalleryWhenEmpty={false} />
+    : <WorkbenchMode />,
   // Inline (non-iframe) workbench panels, keyed by bus plugin id.
   workbenchPanels: { [WB_PLUGIN_AUTHOR_ID]: PluginAuthorPanel },
   // Host-SDK port factories for the wb:* plugin iframe RPC (studio-only).

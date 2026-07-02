@@ -6,13 +6,15 @@ export const IS_WIN = process.platform === 'win32';
 
 /** True if `cmd` resolves on PATH (cross-platform `command -v`). */
 export function has(cmd: string): boolean {
-  const probe = IS_WIN ? spawnSync('where', [cmd], { stdio: 'ignore' }) : spawnSync('command', ['-v', cmd], { stdio: 'ignore', shell: '/bin/sh' });
+  const probe = IS_WIN
+    ? spawnSync('where', [cmd], { stdio: 'ignore', windowsHide: true })
+    : spawnSync('command', ['-v', cmd], { stdio: 'ignore', shell: '/bin/sh' });
   return probe.status === 0;
 }
 
 /** Run a command inheriting stdio; return true on exit 0. */
 export function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): boolean {
-  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: IS_WIN, cwd: opts.cwd, env: opts.env ?? process.env });
+  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: IS_WIN, cwd: opts.cwd, env: opts.env ?? process.env, windowsHide: true });
   return r.status === 0;
 }
 
@@ -28,7 +30,7 @@ export function resolvePython(): string[] | null {
     ? [['py', '-3'], ['python3'], ['python']]
     : [['python3'], ['python']];
   for (const [cmd, ...prefix] of candidates) {
-    const probe = spawnSync(cmd, [...prefix, '--version'], { stdio: 'pipe', shell: IS_WIN, encoding: 'utf8' });
+    const probe = spawnSync(cmd, [...prefix, '--version'], { stdio: 'pipe', shell: IS_WIN, encoding: 'utf8', windowsHide: true });
     if (probe.status === 0 && /Python \d/.test(`${probe.stdout}${probe.stderr}`)) return [cmd, ...prefix];
   }
   return null;

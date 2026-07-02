@@ -46,3 +46,19 @@
 	path = packages/core
 	url = https://github.com/ForgeaX-Games/forgeax-core.git
 	branch = main
+[submodule "packages/chat"]
+	path = packages/chat
+	url = https://github.com/ForgeaX-Games/forgeax-chat.git
+	branch = main
+[submodule "packages/dashboard"]
+	path = packages/dashboard
+	url = https://github.com/ForgeaX-Games/forgeax-dashboard.git
+	branch = main
+[submodule "packages/settings"]
+	path = packages/settings
+	url = https://github.com/ForgeaX-Games/forgeax-settings.git
+	branch = main
+[submodule "packages/workbench"]
+	path = packages/workbench
+	url = https://github.com/ForgeaX-Games/forgeax-workbench.git
+	branch = main

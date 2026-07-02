@@ -27,6 +27,59 @@ const fail = (s: string): never => {
   process.exit(1);
 };
 
+type SetupResult = {
+  repoType: 'submodule';
+  repo: string;
+  result: 'ok' | 'failed' | 'skipped';
+  detail?: string;
+};
+
+const setupResults: SetupResult[] = [];
+
+function cleanTableCell(value: string): string {
+  return value.replace(/\r?\n/g, ' ');
+}
+
+function colorResult(result: string): string {
+  if (result === 'OK') return `\x1b[32m${result}\x1b[0m`;
+  if (result === 'FAILED') return `\x1b[31m${result}\x1b[0m`;
+  return result;
+}
+
+function formatSetupReport(rows: SetupResult[]): string {
+  const tableRows = rows.map((row) => [
+    row.result.toUpperCase(),
+    row.repo,
+    row.repoType,
+    row.detail ?? '',
+  ]);
+  const header = ['RESULT', 'REPO', 'REPO TYPE', 'DETAIL'];
+  const widths = header.map((title, i) => Math.max(
+    title.length,
+    ...tableRows.map((row) => cleanTableCell(row[i] ?? '').length),
+  ));
+  const formatRow = (row: string[], color = false): string => row
+    .map((cell, i) => {
+      const text = cleanTableCell(cell).padEnd(widths[i]);
+      return color && i === 0 ? colorResult(text) : text;
+    })
+    .join('  ')
+    .trimEnd();
+
+  return [
+    formatRow(header),
+    widths.map((width) => '-'.repeat(width)).join('  '),
+    ...tableRows.map((row) => formatRow(row, true)),
+  ].join('\n');
+}
+
+function parseSubmodulePaths(output: string): string[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/)[1])
+    .filter(Boolean);
+}
+
 let start = false;
 let skipPlugins = false;
 let skipBootstrap = false;
@@ -96,18 +149,36 @@ if (!IS_WIN) {
 }
 const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
 {
-  const r = spawnSync('git', ['submodule', 'update', '--init', '--recursive', ...depth], {
-    stdio: 'inherit',
-    cwd: ROOT,
-    env: gitEnv,
-  });
-  if (r.status !== 0) fail('git submodule update failed.');
+  const paths = parseSubmodulePaths(
+    execFileSync('git', ['config', '--file', '.gitmodules', '--get-regexp', 'path'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    }),
+  );
+  if (paths.length === 0) {
+    setupResults.push({ repoType: 'submodule', repo: '(none)', result: 'skipped', detail: 'no submodules configured' });
+  }
+  for (const path of paths) {
+    const r = spawnSync('git', ['submodule', 'update', '--init', '--recursive', ...depth, '--', path], {
+      stdio: 'inherit',
+      cwd: ROOT,
+      env: gitEnv,
+    });
+    setupResults.push({
+      repoType: 'submodule',
+      repo: path,
+      result: (r.status ?? 1) === 0 ? 'ok' : 'failed',
+      detail: (r.status ?? 1) === 0 ? 'ready' : `git submodule update exited ${r.status ?? 1}`,
+    });
+  }
 }
 // Align each submodule onto local main (same pinned SHA — no fetch).
 spawnSync('git', ['submodule', 'foreach', '--recursive', '--quiet',
   'git branch -f main HEAD >/dev/null 2>&1 || true; git checkout main >/dev/null 2>&1 || true'],
   { stdio: 'ignore', cwd: ROOT });
-ok('submodules ready, aligned to local main');
+const failedSubmodules = setupResults.filter((row) => row.result === 'failed');
+if (failedSubmodules.length === 0) ok('submodules ready, aligned to local main');
+else warnY(`${failedSubmodules.length} submodule(s) failed; continuing and reporting at the end`);
 
 // .forgeax-harness floating clone (non-fatal).
 syncHarness(ROOT, '.forgeax-harness floating clone');
@@ -261,7 +332,17 @@ if (existsSync(gamesSrc) && readdirSync(gamesSrc).length > 0) {
 }
 
 console.log();
-bold('Setup complete.');
+const setupFailed = setupResults.some((row) => row.result === 'failed');
+bold(setupFailed ? 'Setup completed with failures.' : 'Setup complete.');
+if (setupResults.length > 0) {
+  console.log();
+  bold('[setup] submodule result report');
+  console.log(formatSetupReport(setupResults));
+}
+if (setupFailed) {
+  console.error('[setup] one or more submodules failed to update; see report above');
+  process.exit(1);
+}
 console.log('Next:\n  bun fx start      # start Studio and open the default web client');
 console.log('Endpoints once running:\n  http://localhost:18920  Studio UI\n  http://localhost:18900  Server\n  http://localhost:15173  Engine');
 

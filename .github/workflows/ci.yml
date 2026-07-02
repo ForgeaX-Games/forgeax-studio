@@ -219,7 +219,7 @@ jobs:
       - name: Typecheck each studio package
         run: |
           set -eu
-          for p in agent-runtime design host-sdk types editor server interface studio; do
+          for p in agent-runtime design host-sdk types editor server interface studio chat dashboard settings workbench; do
             echo "::group::typecheck @forgeax/$p"
             if [ -f "packages/$p/package.json" ]; then
               if node -e "p=require('./packages/$p/package.json');process.exit(p.scripts&&p.scripts.typecheck?0:1)"; then

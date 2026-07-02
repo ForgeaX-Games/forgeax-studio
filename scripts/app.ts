@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isPortBusy, sleep, spawnService } from './lib/proc.ts';
+import { readRootVersion, syncReleaseVersion } from './lib/sync-release-version.ts';
 import { has, IS_WIN } from './lib/sh.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -117,14 +118,20 @@ async function devMode(): Promise<void> {
 
 // ── build (macOS .app/.dmg · Windows .msi) ────────────────────────────────────
 function buildMode(): void {
-  console.log('[app] packaging desktop app (build-desktop.ts assembles Resources, then tauri build)…');
+  const inCi = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+  const releaseVer = syncReleaseVersion(ROOT);
+  console.log(`[app] packaging desktop app v${releaseVer} (build-desktop.ts assembles Resources, then tauri build)…`);
   // Payload assembly is now cross-platform Bun (build-desktop.ts replaced the
   // bash build-desktop.sh). On Windows it also stages MinGW for the Rust link.
   if (IS_WIN) ensureCcToolchain();
   const r1 = spawnSync(process.execPath, [join(ROOT, 'scripts/build-desktop.ts')], { stdio: 'inherit', cwd: ROOT, windowsHide: true });
   if (r1.status !== 0) process.exit(r1.status ?? 1);
-  const r2 = spawnSync(process.execPath, ['run', 'tauri', 'build'], { cwd: ifaceDir, stdio: 'inherit', windowsHide: true });
+  // bundle_dmg.sh uses AppleScript/Finder and fails on headless CI (see docs/desktop-tauri-howto.md).
+  const tauriBuildArgs = ['run', 'tauri', 'build'];
+  if (!IS_WIN && inCi) tauriBuildArgs.push('--', '--bundles', 'app');
+  const r2 = spawnSync(process.execPath, tauriBuildArgs, { cwd: ifaceDir, stdio: 'inherit', windowsHide: true });
   if (r2.status !== 0) process.exit(r2.status ?? 1);
+  if (!IS_WIN && inCi) createMacDmgWithHdiutil();
   const bundleDir = join(ifaceDir, 'src-tauri/target/release/bundle');
   const app = join(bundleDir, 'macos/ForgeaX Studio.app');
   if (existsSync(app)) console.log(`[app] ✓ built: ${app}   (run: bun scripts/app.ts open)`);
@@ -133,6 +140,34 @@ function buildMode(): void {
     console.log('[app] build finished but no bundle dir found (check tauri output)');
     process.exit(1);
   }
+}
+
+/** Headless CI fallback: create a plain DMG from the .app (no bundle_dmg.sh / Finder). */
+function createMacDmgWithHdiutil(): void {
+  const bundleDir = join(ifaceDir, 'src-tauri/target/release/bundle');
+  const appSrc = join(bundleDir, 'macos/ForgeaX Studio.app');
+  if (!existsSync(appSrc)) {
+    console.error(`[app] missing .app for DMG staging: ${appSrc}`);
+    process.exit(1);
+  }
+  const version = readRootVersion(ROOT);
+  const uname = spawnSync('uname', ['-m'], { encoding: 'utf8' });
+  const arch = (uname.stdout ?? '').trim() === 'arm64' ? 'aarch64' : 'x64';
+  const dmgDir = join(bundleDir, 'dmg');
+  const dmgOut = join(dmgDir, `ForgeaX Studio_${version}_${arch}.dmg`);
+  mkdirSync(dmgDir, { recursive: true });
+  const stage = join(tmpdir(), `forgeax-dmg-${Date.now()}`);
+  mkdirSync(stage, { recursive: true });
+  const rCp = spawnSync('cp', ['-R', appSrc, stage], { stdio: 'inherit' });
+  if (rCp.status !== 0) process.exit(rCp.status ?? 1);
+  spawnSync('ln', ['-s', '/Applications', join(stage, 'Applications')], { stdio: 'inherit' });
+  console.log(`[app] creating DMG via hdiutil: ${dmgOut}`);
+  const rDmg = spawnSync('hdiutil', ['create', '-volname', 'ForgeaX Studio', '-srcfolder', stage, '-ov', '-format', 'UDZO', dmgOut], {
+    stdio: 'inherit',
+  });
+  rmSync(stage, { recursive: true, force: true });
+  if (rDmg.status !== 0) process.exit(rDmg.status ?? 1);
+  console.log(`[app] ✓ DMG: ${dmgOut}`);
 }
 
 function openMode(): void {

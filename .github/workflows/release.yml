@@ -38,6 +38,31 @@ jobs:
           FORGEAX_SKIP_HARNESS_SYNC: "1"
       - name: Package desktop app (bun fx build app)
         run: bun fx build app
+        env:
+          CI: "true"
+      - name: Create DMG (macOS hdiutil fallback)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="packages/interface/src-tauri/target/release/bundle"
+          APP_SRC="${BUNDLE_DIR}/macos/ForgeaX Studio.app"
+          VERSION=$(node -p "require('./package.json').version")
+          ARCH=$(uname -m | sed 's/arm64/aarch64/;s/x86_64/x64/')
+          DMG_DIR="${BUNDLE_DIR}/dmg"
+          DMG_OUT="${DMG_DIR}/ForgeaX Studio_${VERSION}_${ARCH}.dmg"
+          if [ -f "$DMG_OUT" ]; then
+            echo "DMG already present: $DMG_OUT"
+            exit 0
+          fi
+          test -d "$APP_SRC" || { echo "missing .app at $APP_SRC"; exit 1; }
+          STAGE=$(mktemp -d)
+          cp -R "$APP_SRC" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          mkdir -p "$DMG_DIR"
+          hdiutil create -volname "ForgeaX Studio" -srcfolder "$STAGE" -ov -format UDZO "$DMG_OUT"
+          rm -rf "$STAGE"
+          ls -la "$DMG_DIR"
       - name: Collect artifacts
         run: |
           mkdir -p dist

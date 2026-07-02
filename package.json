@@ -1,6 +1,6 @@
 {
   "name": "forgeax-studio",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "type": "module",
   "description": "ForgeaX Studio — AI-native game development environment",
@@ -12,7 +12,8 @@
     "lint:boundaries": "bun run lint:boundaries:core && bun run lint:boundaries:cli && bun run lint:boundaries:agent-host",
     "lint:boundaries:core": "cd packages/core && bun run lint:boundaries",
     "lint:boundaries:cli": "cd packages/cli && bun run lint:boundaries",
-    "lint:boundaries:agent-host": "cd packages/agent-host && bun run lint:boundaries"
+    "lint:boundaries:agent-host": "cd packages/agent-host && bun run lint:boundaries",
+    "lint:node-runnable": "node scripts/check-node-runnable.mjs"
   },
   "workspaces": [
     "packages/contracts/types",
@@ -23,10 +24,6 @@
     "packages/platform-io",
     "packages/interface",
     "packages/interface/packages/design",
-    "packages/chat",
-    "packages/dashboard",
-    "packages/settings",
-    "packages/workbench",
     "packages/studio",
     "packages/server",
     "packages/cli",

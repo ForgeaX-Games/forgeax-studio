@@ -42,7 +42,7 @@ drop into a visual editor to tweak the scene directly at any time.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
-## 🆕 What's new in v0.3.8
+## 🆕 What's new in v0.3.9
 
 - **Visual scene editor (Edit/Play)** — dock-panel editor with gizmos, inspector, hierarchy and content browser; Edit and Play share one on-disk scene, no export round trip.
 - **ECS + WebGPU engine by default** — live preview runs forgeax-engine (Rust→wasm hot paths) with CSM shadows, PBR, particles and sprite-atlas animation.

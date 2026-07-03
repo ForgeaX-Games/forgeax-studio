@@ -35,7 +35,7 @@
   几秒就活。
 - **一份代码,Web 与桌面通吃。** 同一个 UI 既跑浏览器,也通过 Tauri 2 作为原生桌面应用运行。
 
-## 🆕 v0.3.8 更新
+## 🆕 v0.3.9 更新
 
 - **可视化场景编辑器(Edit/Play)** —— dock 面板编辑器,含 gizmo / inspector / 层级 / 内容浏览器;Edit 与 Play 共享同一份落盘场景,无需导出往返。
 - **ECS + WebGPU 引擎成为默认** —— 实时预览跑 forgeax-engine(Rust→wasm 热路径),CSM 阴影、PBR、粒子与 sprite atlas 动画齐备。

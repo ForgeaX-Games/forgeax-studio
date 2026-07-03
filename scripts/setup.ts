@@ -4,7 +4,7 @@
 // Idempotent — re-running picks up where it left off.
 //
 // Steps: [0] toolchain bootstrap (bootstrap.ts --toolchain-only) · [1] prereq
-// gate · [2] submodule init+align+harness sync · [3] engine pnpm build · [3b]
+// gate · [2] submodule init+harness sync · [3] engine pnpm build · [3b]
 // wgpu wasm · [4] root bun install · [5] marketplace plugin install+build ·
 // [6] .env scaffold · [7] seed sample games. --start then launches run.ts.
 //
@@ -128,7 +128,7 @@ const nodeMajor = Number.parseInt(
 if (nodeMajor < 22) fail(`Node ${nodeMajor} found; forgeax-server needs ≥22.`);
 ok(`git + bun + node v${nodeMajor} present`);
 
-// ── 2. submodule init + align + harness sync ─────────────────────────────────
+// ── 2. submodule init + harness sync ─────────────────────────────────────────
 bold('[2/6] Initialising submodules');
 
 // SSH fallback for private submodules (HTTPS→SSH rewrite, this run only).
@@ -172,12 +172,8 @@ const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
     });
   }
 }
-// Align each submodule onto local main (same pinned SHA — no fetch).
-spawnSync('git', ['submodule', 'foreach', '--recursive', '--quiet',
-  'git branch -f main HEAD >/dev/null 2>&1 || true; git checkout main >/dev/null 2>&1 || true'],
-  { stdio: 'ignore', cwd: ROOT });
 const failedSubmodules = setupResults.filter((row) => row.result === 'failed');
-if (failedSubmodules.length === 0) ok('submodules ready, aligned to local main');
+if (failedSubmodules.length === 0) ok('submodules ready');
 else warnY(`${failedSubmodules.length} submodule(s) failed; continuing and reporting at the end`);
 
 // .forgeax-harness floating clone (non-fatal).

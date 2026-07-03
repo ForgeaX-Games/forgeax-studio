@@ -29,6 +29,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDotenv } from './lib/env.ts';
@@ -106,6 +107,47 @@ if (!existsSync(envFile)) {
   }
 }
 const env = loadDotenv(envFile); // also injected into process.env
+
+// ── LLM egress capture proxy (opt-in) ─────────────────────────────────────────
+// FORGEAX_DEBUG_PROXY routes EVERY kernel's model traffic through a local capture
+// proxy (whistle) so requests/responses can be inspected. It works kernel-agnostic
+// because both egress shapes are covered by process.env inheritance:
+//   · forgeax-core (default) & external CLIs run as children of this process and
+//     inherit HTTPS_PROXY + NODE_EXTRA_CA_CERTS (scrubbedSecretEnv keeps proxy vars).
+//   · the in-process loopback cred proxies (agent-host cred-vault / cli cred-proxy)
+//     do their upstream fetch() inside the server (Bun) process, which also honors
+//     these vars — so credential-hidden turns get captured too.
+// Loopback is excluded via NO_PROXY so the CLI→cred-proxy hop is never double-proxied.
+// Values: "1" → http://127.0.0.1:8899 · bare port "8899" → http://127.0.0.1:8899 ·
+//         "host:port" · full "http://…" URL · "0"/unset → off.
+const proxyFlag = process.env.FORGEAX_DEBUG_PROXY?.trim();
+if (proxyFlag && proxyFlag !== '0') {
+  const authority =
+    proxyFlag === '1' ? '127.0.0.1:8899' : /^\d+$/.test(proxyFlag) ? `127.0.0.1:${proxyFlag}` : proxyFlag;
+  const proxyUrl = /^https?:\/\//.test(authority) ? authority : `http://${authority}`;
+  for (const k of ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'] as const) {
+    process.env[k] = process.env[k] || proxyUrl;
+  }
+  // Merge loopback into any pre-existing NO_PROXY (e.g. a shell-level Google/Vertex
+  // exception) rather than replacing it — intra-stack + cred-proxy hops must bypass.
+  const existingNoProxy = (process.env.NO_PROXY || process.env.no_proxy || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const noProxy = [...new Set([...existingNoProxy, '127.0.0.1', 'localhost', '::1'])].join(',');
+  process.env.NO_PROXY = noProxy;
+  process.env.no_proxy = noProxy;
+  // Trust the proxy's MITM root CA. Node & Bun honor NODE_EXTRA_CA_CERTS additively;
+  // auto-detect whistle's CA unless FORGEAX_PROXY_CA overrides it.
+  const ca =
+    process.env.FORGEAX_PROXY_CA ||
+    [join(homedir(), '.WhistleAppData/.whistle/certs/root.crt')].find((p) => existsSync(p));
+  if (ca) process.env.NODE_EXTRA_CA_CERTS = process.env.NODE_EXTRA_CA_CERTS || ca;
+  console.log(
+    `[proxy] LLM egress → ${proxyUrl}  NO_PROXY=${noProxy}  ` +
+      (ca ? `CA=${ca}` : '⚠ no CA found — TLS interception will fail (set FORGEAX_PROXY_CA)'),
+  );
+}
 
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error(`  ⚠ ANTHROPIC_API_KEY is not set in ${envFile} — chat/agent features will fail.`);

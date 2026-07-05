@@ -79,3 +79,34 @@ packages/server
 
 # brainstorming visual companion mockups
 .superpowers/
+
+# === 2026-07-05: local-only content (user-directed) ===
+
+# packages/kernel/ — local clone of forgeax-kernel (active platform-io dev);
+# not a registered submodule. Keep local, don't clutter status.
+/packages/kernel/
+
+# Local analysis / handoff / memory docs (not repo content)
+/outputs/
+/.workbuddy/
+
+# Local-only helper scripts (not for upstream)
+/scripts/build-desktop.sh
+/scripts/gen-hellforge-scene-assets.sh
+/scripts/gen-hellforge-scene-assets.py
+
+# .cursor/skills/* — local symlinks into vendored skills/ + harness + ~/.cc-switch
+# (machine-specific paths, not committable). Keep the tracked real dirs below.
+/.cursor/skills/*
+!/.cursor/skills/forgeax-editor-ui-pattern/
+!/.cursor/skills/forgeax-release/
+!/.cursor/skills/update-readme/
+
+# skills/workflow/feature-land — local symlink to ~/.cc-switch (machine-specific)
+/skills/workflow/feature-land
+
+# Misc dev artifacts
+/turnaround-front-view.png
+/turnaround-front.png
+/warrior-npu6-req.json
+/.tsc-out.txt

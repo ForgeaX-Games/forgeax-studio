@@ -4,11 +4,17 @@
 // This is where the studio→editor edge legally lives (studio aggregates
 // interface + apps). interface itself stays editor-agnostic; studio supplies
 // the real EditSurface/PlaySurface here and feeds them to <App panelRenderers>.
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { useAppStore } from '@forgeax/interface/store';
 import type { PanelRenderers } from '@forgeax/interface/components/DockShell/panelRenderers';
-import { EDITOR_PANELS } from '@forgeax/editor-shared/manifest';
-import { EditSurface } from '@forgeax/editor/edit';
+import { EDITOR_PANELS } from '@forgeax/editor-core/manifest';
+// Single-realm (feat-20260703): the editor engine boots IN-PROCESS in this
+// studio host window — viewport + ep:* panels are in-process React components,
+// not a /editor iframe. ViewportComponent (the in-process surface) + resetEditRealm
+// (cross-game teardown) come from edit-runtime's D8 subpath; EDITOR_PANEL_COMPONENTS
+// maps ep:<id> -> the panel component. Mirrors packages/editor/standalone/main.tsx.
+import { ViewportComponent, resetEditRealm } from '@forgeax/editor-edit-runtime/engine/viewport-component';
+import { EDITOR_PANEL_COMPONENTS } from '@forgeax/editor/panels';
 import { PlaySurface } from '@forgeax/editor/play';
 // studio→chat is a legal aggregation edge (studio composes interface + apps).
 // interface stays chat-agnostic (no @forgeax/chat import); studio injects the
@@ -83,24 +89,82 @@ function useActiveSlug(): string | null {
 }
 
 // Studio owns its on-disk game layout (`.forgeax/games/<slug>`, matching the
-// server's safe-path whitelist). The editor holds ZERO layout convention, so
-// the host must inject the game root: via the EditSurface `gameRoot` prop (main
-// viewport iframe) AND localStorage['forgeax.gameRoot'] (which EditorPanelFrame
-// reads to append `&gameRoot=` on the ep:* panel iframes). Both must agree.
+// server's safe-path whitelist). The editor holds ZERO layout convention, so the
+// host injects the game root. Single-realm: the in-process engine boot
+// (configureHostSession, host-boot) reads it ONLY from location.search
+// (?scene=<slug>&gameRoot=<root>); localStorage['forgeax.gameRoot'] is kept in
+// sync as the pre-boot signal (mirrors packages/editor/standalone/main.tsx:125).
 function studioGameRoot(slug: string): string {
   return `.forgeax/games/${slug}`;
 }
 
-function EditMode({ viewportOnly }: { viewportOnly?: boolean } = {}) {
+// Bridge the active game into location.search so the in-process engine boot reads
+// the right scene. configureHostSession() reads ONLY the URL, so this MUST run
+// before <ViewportComponent> mounts (and again before every re-mount on switch).
+// Returns true if the URL changed (used to force a full teardown on game switch).
+function bridgeGameToUrl(slug: string, gameRoot: string): boolean {
+  try {
+    const qp = new URLSearchParams(location.search);
+    if (qp.get('scene') === slug && qp.get('gameRoot') === gameRoot) return false;
+    qp.set('scene', slug);
+    qp.set('gameRoot', gameRoot);
+    history.replaceState(null, '', `${location.pathname}?${qp.toString()}${location.hash}`);
+    return true;
+  } catch { return false; }
+}
+
+// EditRealm — the in-process editor viewport surface (single realm). Replaces the
+// old EditSurface iframe. It owns the studio-only multi-game orchestration:
+//   - resolve the active slug (useActiveSlug: pinnedSlug + server active-slug,
+//     validated against the live game list),
+//   - keep localStorage['forgeax.gameRoot'] + ?scene=/?gameRoot= in sync,
+//   - on a CROSS-GAME switch, tear the engine realm down (resetEditRealm: releases
+//     the WebGPU device + resets the single-boot latch) and remount a fresh
+//     <ViewportComponent key={slug}> so the new game boots clean (physics backend
+//     + pack roots bind once at createApp, so a switch can't hot-swap).
+// viewportOnly is accepted for renderEdit signature parity but is a no-op — the
+// in-process component always renders the full surface.
+function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   const slug = useActiveSlug();
-  // Keep the panel-side gameRoot signal in sync with the active slug so ep:*
-  // panel iframes resolve to the same game the viewport does.
-  useEffect(() => {
+  // `bootedSlug` is the game the currently-mounted engine booted. null until the
+  // first game mounts. When slug !== bootedSlug we do a teardown+remount.
+  const [bootedSlug, setBootedSlug] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
     if (!slug) return;
-    try { localStorage.setItem('forgeax.gameRoot', studioGameRoot(slug)); } catch { /* no storage */ }
-  }, [slug]);
-  if (!slug) return null;
-  return <EditSurface slug={slug} gameRoot={studioGameRoot(slug)} viewportOnly={viewportOnly} />;
+    const gameRoot = studioGameRoot(slug);
+    try { localStorage.setItem('forgeax.gameRoot', gameRoot); } catch { /* no storage */ }
+    if (bootedSlug === slug) return;
+    // Cross-game switch (or first boot). On a real switch, destroy the previous
+    // engine realm BEFORE re-pointing the URL + remounting, so the old WebGPU
+    // device is released and the boot latch is clear for the new game. First boot
+    // (bootedSlug === null) has nothing to tear down.
+    if (bootedSlug !== null) resetEditRealm();
+    bridgeGameToUrl(slug, gameRoot);
+    setBootedSlug(slug);
+  }, [slug, bootedSlug]);
+
+  if (!slug || bootedSlug !== slug) return null;
+  // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm above
+  // guarantees the latch is clear so ViewportComponent actually re-boots.
+  return <ViewportComponent key={slug} />;
+}
+
+// The in-process body for a single ep:* editor panel. Resolves the panel's React
+// component from EDITOR_PANEL_COMPONENTS (editor-panels SSOT); ids with no
+// registered component (timeline / matgraph drift) fall back to a neutral
+// placeholder. Mirrors packages/editor/standalone/main.tsx:62-70. The panels read
+// the in-process @forgeax/editor-core store (same realm as ViewportComponent),
+// so no extra Provider is needed beyond the shell's PanelRenderersProvider +
+// <ContextMenu/> (both already mounted by interface App.tsx).
+function EditorPanelBody({ id }: { id: string }): ReactNode {
+  const Comp = EDITOR_PANEL_COMPONENTS[id];
+  if (Comp) return <Comp />;
+  return (
+    <div className="surface-placeholder" data-panel={id} data-panel-unmounted="1">
+      <div className="surface-placeholder-title">Panel not mounted</div>
+    </div>
+  );
 }
 
 function PreviewMode() {
@@ -128,7 +192,13 @@ const EDITOR_PANEL_TITLES: Record<string, string> = {
 export const editorRenderers: PanelRenderers = {
   editorPanelIds: [...EDITOR_PANELS],
   editorPanelTitles: EDITOR_PANEL_TITLES,
-  renderEdit: ({ viewportOnly }) => <EditMode viewportOnly={viewportOnly} />,
+  // Single realm: the viewport is the in-process ViewportComponent (via EditRealm,
+  // which owns multi-game teardown+remount), and each ep:* panel is an in-process
+  // component. renderEditorPanel is what the interface DockShell reads to mount
+  // Hierarchy/Inspector/Assets/... — its absence was why every panel showed
+  // "Panel not mounted" after the single-realm editor bump.
+  renderEdit: ({ viewportOnly }) => <EditRealm viewportOnly={viewportOnly} />,
+  renderEditorPanel: (id) => <EditorPanelBody id={id} />,
   renderPreview: () => <PreviewMode />,
   renderChat: () => <ChatPanel />,
   renderDashboard: () => <Dashboard />,

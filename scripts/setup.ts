@@ -206,9 +206,29 @@ if (skipEngineBuild) {
     '@forgeax/engine-vite-plugin-shader...', '@forgeax/engine-vite-plugin-pack...', '@forgeax/engine-shader-compiler...',
     '@forgeax/engine-naga...', '@forgeax/engine-wgpu-wasm...', '@forgeax/engine-gltf...', '@forgeax/engine-image...',
     '@forgeax/engine-pack...', '@forgeax/engine-project...',
+    // engine-fbx: editor-core's fbx-cook imports the ufbx WASM runtime
+    // (initFbxWasm / parseFbx) + the parse-* helpers from it — the engine
+    // collapsed the former engine-fbx-wasm package INTO engine-fbx (#603). Its
+    // tsup dist must exist or the editor iframe 500s at load ("Failed to resolve
+    // entry for package @forgeax/engine-fbx"). The wasm BINARY (pkg/fbx-wasm.
+    // {mjs,wasm}) is built separately in step 3c below.
+    '@forgeax/engine-fbx...',
   ].flatMap((f) => ['--filter', f]);
   if (!run('pnpm', [...filters, '-r', 'build'], { cwd: engineDir })) fail('engine submodule build failed.');
   ok('engine packages built');
+  // tsc -b emits the engine packages' dist/*.d.ts (the filtered tsup build above
+  // is dts:false — declarations come exclusively from the composite tsc graph,
+  // see engine tsup.base.ts §K-2). Editor's shared engine-shim now expects real
+  // .d.ts for every engine package EXCEPT engine-project / engine-fbx
+  // (which ship none via studio's tsup-only build); without this, the editor + studio typecheck
+  // fan-out reds out at TS7016 / TS2709. Incremental (.tsbuildinfo) so re-runs
+  // are near-instant. Non-fatal: a d.ts miss only breaks typecheck, not runtime
+  // (vite strips types), so warn rather than abort the whole setup.
+  if (!run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir })) {
+    warnY('engine tsc -b (d.ts generation) failed — typecheck will red out until fixed; runtime is unaffected.');
+  } else {
+    ok('engine .d.ts generated (tsc -b)');
+  }
 }
 
 // ── 3b. wgpu wasm ─────────────────────────────────────────────────────────────
@@ -237,6 +257,31 @@ if (!wgpuWasmStale()) {
     ok(`wgpu wasm built — ${wasmArtefact}`);
   } else {
     warnY('wgpu wasm build failed — preview engine will not start until fixed.');
+  }
+}
+
+// ── 3c. fbx wasm ──────────────────────────────────────────────────────────────
+// editor-core's fbx-cook needs pkg/fbx-wasm.mjs (the ufbx→wasm glue emitted by
+// emcc), now lazy-imported by @forgeax/engine-fbx at initFbxWasm() time (the
+// engine collapsed engine-fbx-wasm INTO engine-fbx, #603). Like wgpu-wasm, pkg/
+// is gitignored (zero-binary invariant), so it must be built here or FBX import
+// in the editor fails at runtime. build:wasm = fetch-ufbx (idempotent download of
+// ufbx.c) + emcc compile → pkg/fbx-wasm.{mjs,wasm}.
+bold('[3c/6] Building engine fbx wasm binary');
+const fbxWasmDir = join(engineDir, 'packages/fbx');
+const fbxWasmMjs = join(fbxWasmDir, 'pkg/fbx-wasm.mjs');
+const fbxWasmBin = join(fbxWasmDir, 'pkg/fbx-wasm.wasm');
+if (existsSync(fbxWasmMjs) && existsSync(fbxWasmBin)) {
+  ok(`fbx wasm already built (skip) — ${fbxWasmMjs}`);
+} else if (!has('emcc')) {
+  warnY('Emscripten (emcc) missing — skipping fbx wasm build.');
+  console.log('    FBX import in the editor will fail until this is built (brew install emscripten, then: pnpm -F @forgeax/engine-fbx build:wasm)');
+} else {
+  console.log(existsSync(fbxWasmBin) ? '  → fbx wasm stale — rebuilding' : '  → fbx wasm missing — building');
+  if (run('pnpm', ['-F', '@forgeax/engine-fbx', 'build:wasm'], { cwd: engineDir })) {
+    ok(`fbx wasm built — ${fbxWasmMjs}`);
+  } else {
+    warnY('fbx wasm build failed — FBX import in the editor will not work until fixed.');
   }
 }
 

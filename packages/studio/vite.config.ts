@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { vitePluginBrand } from './vite-plugin-brand';
+// Single-realm editor (feat-20260703): studio serves the forgeax engine
+// IN-PROCESS in the :18920 host window — the editor viewport + ep:* panels are
+// now in-process React components (renderEdit/renderEditorPanel), not a `/editor`
+// iframe. This shared serve fragment (shader manifest + optional pack catalog) is
+// the SAME one packages/editor/vite.config.ts consumes for its :15290 host; see
+// packages/editor/packages/edit-runtime/src/engine/engine-vite-preset.ts.
+import { engineVitePreset } from '../editor/packages/edit-runtime/src/engine/engine-vite-preset';
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_ENV = resolve(PACKAGE_DIR, '../../.env');
@@ -19,8 +26,19 @@ const SERVER = process.env.FORGEAX_SERVER_URL ?? 'http://127.0.0.1:18900';
 const SERVER_WS = SERVER.replace(/^http/, 'ws');
 const ENGINE = process.env.FORGEAX_ENGINE_URL ?? 'http://127.0.0.1:15173';
 const ENGINE_WS = ENGINE.replace(/^http/, 'ws');
-const EDITOR = process.env.FORGEAX_EDITOR_URL ?? 'http://127.0.0.1:15280';
 const REEL = process.env.FORGEAX_REEL_URL ?? 'http://127.0.0.1:15175';
+
+// Single-realm engine serve fragment. base '/' — studio's own origin serves both
+// the SPA and the engine modules, so shader/pack routes arrive un-prefixed (no
+// base-strip). gameDirAbs:null — studio is MULTI-game (slug switches at runtime,
+// not fixed at boot), so the in-process engine takes its per-game pack catalog
+// from the play engine (:15173) via the existing /preview + /__import proxies
+// (ViewportComponent fallback: /preview/pack-index/<slug>.json); the preset then
+// only serves /shaders/manifest.json (forgeaxShader). preserveSymlinks:false —
+// studio pulls dockview/@radix through packages/interface/node_modules; realpath
+// dedupe (resolve.dedupe) collapses the @forgeax family to one instance so the
+// in-process engine + editor + interface share ONE editor-shared store.
+const enginePreset = engineVitePreset({ base: '/', gameDirAbs: null, preserveSymlinks: false });
 
 const HTTPS_ENABLED = process.env.FORGEAX_INTERFACE_HTTPS === '1';
 
@@ -38,13 +56,31 @@ export default defineConfig({
   plugins: [
     vitePluginBrand({ packageDir: PACKAGE_DIR }),
     react(),
+    // Engine serve plugins (shader manifest; no pluginPack since gameDirAbs:null).
+    // AFTER react() so the SPA transform runs first.
+    ...enginePreset.plugins,
     ...(HTTPS_ENABLED && !useCustomCert ? [basicSsl()] : []),
   ],
+  // Expose the game slug + abs dir to the client bundle. Studio is multi-game, so
+  // both are null at build time (the active game is pinned at runtime via
+  // setPinnedSlug + ?scene=/?gameRoot= URL params in EditRealm). Null on
+  // __FORGEAX_GAME_DIR_ABS__ selects the in-process engine's multi-game fallback
+  // paths (/preview/pack-index/<slug>.json, root /__import).
+  define: {
+    __FORGEAX_GAME_SLUG__: JSON.stringify(null),
+    __FORGEAX_GAME_DIR_ABS__: JSON.stringify(null),
+  },
   resolve: {
     // dockview declares react as a peer dep; under bun's isolated node_modules it
     // can resolve a SECOND react copy → "Invalid hook call / resolveDispatcher
-    // null". Force a single react instance for all imports (incl. dockview).
-    dedupe: ['react', 'react-dom'],
+    // null". Force a single react instance for all imports (incl. dockview). The
+    // preset additionally dedupes the whole @forgeax family (engine-* + editor-*)
+    // so the in-process engine, editor packages, and interface resolve to ONE
+    // realpath — critical or the ep:* panels read a different editor-shared store
+    // than the viewport and blank out. preserveSymlinks:false (preset) because
+    // dockview/@radix nested deps live under the interface symlink target.
+    dedupe: ['react', 'react-dom', ...enginePreset.resolve.dedupe],
+    preserveSymlinks: enginePreset.resolve.preserveSymlinks,
     alias: {
       // More specific subpaths first — Vite matches string aliases by prefix
       // and uses the first hit, so '@forgeax/design' must come last.
@@ -128,10 +164,12 @@ export default defineConfig({
       // It is also outside /preview, so it must be proxied explicitly or the
       // studio SPA falls back to index.html and the runtime parses HTML as JSON.
       '/__forgeax-ddc': { target: ENGINE, changeOrigin: true },
-      // Editor runtime vite has `base: '/editor/'`; one proxy catches all its
-      // asset/dep URLs (forgeax/engine/*, node_modules/.vite/deps/*, @vite,
-      // @id, @fs) just like /preview. Mirrors the preview-runtime wiring.
-      '/editor': { target: EDITOR, changeOrigin: true, ws: true },
+      // NOTE: the `/editor` -> :15280 proxy is DELETED (single-realm,
+      // feat-20260703). The editor engine now boots IN-PROCESS in this :18920
+      // host window; there is no edit-runtime iframe to proxy to. The shader
+      // manifest is served locally by enginePreset.plugins; the per-game pack
+      // catalog + __import come from the play engine (:15173) via /preview +
+      // /__import above (ViewportComponent multi-game fallback).
       // Plugin iframe assets — the studio server's serveStatic mounts each
       // plugin's vite build dist under /plugins/<plugin-id>/*. Without this
       // proxy the interface dev server SPA-falls back to its own index.html
@@ -145,10 +183,20 @@ export default defineConfig({
       // the iframe's calls through to the backend instead of SPA-falling
       // back to interface/index.html.
       '/__ce-api__': { target: SERVER, changeOrigin: true },
-      // standalone-editor-demo proxy — dev serve at :15290, reachable
-      // through the studio dev server on :18920/standalone/editor
-      '/standalone/editor': { target: 'http://127.0.0.1:15290', changeOrigin: true, ws: true },
       '/__reel__': { target: REEL, changeOrigin: true },
     },
+  },
+  optimizeDeps: {
+    // Exclude the whole @forgeax workspace family (engine-* + editor-*) from
+    // pre-bundle — served as native ESM, single instance (SSOT-derived by the
+    // preset; pre-bundling under the nested symlink graph OOMs and would also
+    // fork the editor-shared singleton). react stays pre-bundled so the
+    // single-instance dedupe holds.
+    exclude: enginePreset.optimizeDeps.exclude,
+    include: ['react', 'react-dom', 'react-dom/client'],
+  },
+  build: {
+    // esnext: the in-process engine boot entry uses top-level await.
+    target: enginePreset.build.target,
   },
 });

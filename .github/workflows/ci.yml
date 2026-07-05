@@ -261,7 +261,7 @@ jobs:
       # the (red) subpackages.
       - name: Editor-core barrel-export contract
         run: bun test src/__tests__/barrel-export-contract.test.ts
-        working-directory: packages/editor/packages/editor-core
+        working-directory: packages/editor/packages/core
 
       # ── Vite builds for the two front-end shells ───────────────────────
       - name: Vite build packages/interface

@@ -42,14 +42,14 @@ drop into a visual editor to tweak the scene directly at any time.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
-## 🆕 What's new in v0.3.10
+## 🆕 What's new in v0.3.9
 
-- **TUI: keyboard-driven agent terminal** — drive Forge and the full agent runtime straight from a terminal (F1/F2/F3 acceptance passed); ideal for headless and SSH workflows.
-- **Full workbench internationalization** — the character, AI-asset and 3D-generation workbenches are now fully translated across every supported language.
-- **3D asset pipeline fixes** — generated 3D models render with correct PBR materials in the live viewport immediately on creation.
-- **Simplified API key setup** — Settings now uses a single LiteLLM proxy endpoint that routes to every model, replacing per-provider key management.
-- **More reliable CLI** — tool calls auto-inject the project slug (no more "project not found"), and handler errors return structured error codes.
-- **New game scene packs** — Slagdeep Hollow editable scenes and a Rogue Encampment floor model ship in the shared game library.
+- **Visual scene editor (Edit/Play)** — dock-panel editor with gizmos, inspector, hierarchy and content browser; Edit and Play share one on-disk scene, no export round trip.
+- **ECS + WebGPU engine by default** — live preview runs forgeax-engine (Rust→wasm hot paths) with CSM shadows, PBR, particles and sprite-atlas animation.
+- **Team multi-agent collaboration** — coordinator + specialist peers dispatch atomic tasks in parallel; on by default.
+- **New workbench plugins** — `wb-anim` / `wb-skill` / `wb-reel` split animation, VFX and interactive-film pipelines; `wb-ai-asset` for AI-generated 3D assets.
+- **Full-stack i18n** — English / 中文 switchable at runtime; editor and Studio UI follow the host language.
+- **Desktop + Android builds** — cross-platform Tauri 2 desktop packaging with nightly CI; Android export backend landed.
 
 → Full notes on the [Releases](https://github.com/ForgeaX-Games/forgeax-studio/releases) page.
 

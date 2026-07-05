@@ -21,7 +21,7 @@ const e = (k: string, v: string) => {
 e('FORGEAX_SERVER_PORT', '28900');
 e('FORGEAX_INTERFACE_PORT', '28920');
 e('FORGEAX_ENGINE_PORT', '25173');
-e('FORGEAX_EDITOR_PORT', '25280');
+// No editor port — the Edit engine boots in-process in the interface vite.
 e('NARRATIVE_PORT', '28930');
 e('FACE_MASK_PORT', '28931');
 e('FORGEAX_PLUGIN_PORT_OFFSET', '10000');
@@ -34,11 +34,10 @@ e('FORGEAX_REEL_URL', `http://127.0.0.1:${15175 + offset}`);
 e('FORGEAX_SERVER_HOST', '127.0.0.1');
 e('FORGEAX_SERVER_URL', `http://127.0.0.1:${process.env.FORGEAX_SERVER_PORT}`);
 e('FORGEAX_ENGINE_URL', `http://127.0.0.1:${process.env.FORGEAX_ENGINE_PORT}`);
-e('FORGEAX_EDITOR_URL', `http://127.0.0.1:${process.env.FORGEAX_EDITOR_PORT}`);
 
 // .env port-override detection — run.ts loads .env, an uncommented port line wins.
 const envFile = join(ROOT, '.env');
-if (existsSync(envFile) && /^\s*FORGEAX_(SERVER|INTERFACE|ENGINE|EDITOR)_PORT=/m.test(readFileSync(envFile, 'utf8'))) {
+if (existsSync(envFile) && /^\s*FORGEAX_(SERVER|INTERFACE|ENGINE)_PORT=/m.test(readFileSync(envFile, 'utf8'))) {
   console.error(`  ⚠ ${envFile} has an uncommented FORGEAX_*_PORT — it overrides this script's ports.`);
 }
 
@@ -47,7 +46,6 @@ console.log('  forgeax-studio · local ports (localhost only)');
 console.log(`    server     http://127.0.0.1:${process.env.FORGEAX_SERVER_PORT}`);
 console.log(`    interface  http://127.0.0.1:${process.env.FORGEAX_INTERFACE_PORT}   ← open this`);
 console.log(`    engine     http://127.0.0.1:${process.env.FORGEAX_ENGINE_PORT}`);
-console.log(`    editor     http://127.0.0.1:${process.env.FORGEAX_EDITOR_PORT}`);
 console.log(`    plugins    seed+${offset}`);
 console.log('──────────────────────────────────────────────────────────────');
 

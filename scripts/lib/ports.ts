@@ -17,29 +17,30 @@ const n = (v: string | undefined, dflt: number): number => {
 export const PORT_SERVER = n(process.env.FORGEAX_SERVER_PORT, 18900);
 export const PORT_INTERFACE = n(process.env.FORGEAX_INTERFACE_PORT, 18920);
 export const PORT_ENGINE = n(process.env.FORGEAX_ENGINE_PORT, 15173);
-export const PORT_EDITOR = n(process.env.FORGEAX_EDITOR_PORT, 15280);
 export const PORT_NARRATIVE = n(process.env.NARRATIVE_PORT, 8900);
 export const PORT_FACEMASK = n(process.env.FACE_MASK_PORT, 18930);
 
+// NOTE: the editor (:15280) port is gone — feat-20260703 single-realm serves the
+// Edit engine IN-PROCESS in the interface(studio) vite at :18920, so there is no
+// separate edit-runtime vite service to preflight or sweep.
+
 /**
  * Fixed ports stop.ts must always sweep, even when dev-stack.env is missing
- * (the F1 root cause: face-mask :18930 + editor :15280 were never in the table).
+ * (the F1 root cause: face-mask :18930 was never in the table).
  * Order mirrors FIXED_SVCS for the stop report.
  */
 export const FIXED_PORTS: readonly number[] = [
   PORT_SERVER,
   PORT_INTERFACE,
   PORT_ENGINE,
-  PORT_EDITOR,
   PORT_NARRATIVE,
   PORT_FACEMASK,
 ];
 
 export const FIXED_SVCS: readonly string[] = [
   'server     (forgeax-server / bun --watch)',
-  'interface  (vite)',
+  'interface  (vite — serves the editor engine in-process)',
   'engine     (vite — engine-src / play-runtime)',
-  'editor     (vite — edit-runtime / Edit mode)',
   'narrative  (wb-narrative API · optional)',
   'face-mask  (wb-reel python sidecar · optional)',
 ];

@@ -10,7 +10,7 @@ import { existsSync, openSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PORT_EDITOR, PORT_ENGINE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
+import { PORT_ENGINE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
 
 type ScriptPlan = { type: 'script'; script: string; args: string[] };
 type InternalPlan = { type: 'internal'; command: string; args: string[] };
@@ -37,7 +37,6 @@ const START_PORTS: readonly StartPort[] = [
   ['server', PORT_SERVER],
   ['interface', PORT_INTERFACE],
   ['engine', PORT_ENGINE],
-  ['editor', PORT_EDITOR],
 ];
 
 const script = (name: string): string => resolve(ROOT, 'scripts', name);
@@ -406,7 +405,6 @@ function status(): void {
     ['server', 18900],
     ['ui', 18920],
     ['engine', 15173],
-    ['editor', 15280],
     ['narrative', 8900],
     ['face-mask', 18930],
   ] as const) {

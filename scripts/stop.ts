@@ -248,7 +248,11 @@ function signatureMatchPids(root: string): number[] {
       .filter((p) => p > 0 && p !== process.pid);
   }
   // POSIX: pgrep -f for known stack signatures under this tree.
+  // `scripts/run.ts` is the launcher itself — it holds no port and records no
+  // pidfile for itself, so without this it survives `bun fx stop` as an idle
+  // orphan (defense-in-depth alongside listing its pid in dev-stack.env).
   const sigs = [
+    `${root}/scripts/run.ts`,
     `${root}/packages/server.*bun.*src/main.ts`,
     `${root}/packages/.*vite`,
     `${root}/packages/editor/packages/.*vite`,

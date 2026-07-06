@@ -6,7 +6,7 @@
 //   bun fx <command> [args...]
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, openSync, statSync, utimesSync } from 'node:fs';
+import { existsSync, openSync, readFileSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -330,8 +330,17 @@ function touchWgpuWasm(): void {
   utimesSync(wasm, now, now);
 }
 
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function tailLog(path: string, lines: number): string {
+  try {
+    const all = readFileSync(path, 'utf8').split(/\r?\n/);
+    return all.slice(-lines).join('\n');
+  } catch {
+    return '(log unavailable)';
+  }
 }
 
 function startStudio(args: string[]): never {
@@ -347,10 +356,12 @@ function startStudio(args: string[]): never {
   }
 
   const runArgs = maybeMode === 'web' ? rest : args;
-  startWeb(runArgs);
+  // Floating on purpose: startWeb awaits the UI port, then exits the process
+  // itself (open-web / error). The pending timer keeps the loop alive.
+  void startWeb(runArgs);
 }
 
-function startWeb(runArgs: string[]): never {
+async function startWeb(runArgs: string[]): Promise<never> {
   const uiPort = Number.parseInt(process.env.FORGEAX_INTERFACE_PORT ?? '18920', 10);
   const busyPorts = startBusyPorts();
   if (busyPorts.length > 0) {
@@ -372,6 +383,14 @@ function startWeb(runArgs: string[]): never {
     stdio: ['ignore', fd, fd],
   });
   child.unref();
+  // Track child death: run.ts fails fast (missing/stale engine dist, port
+  // conflict, preflight) by exiting non-zero within the first second. Without
+  // this, the loop below would poll the port for the full 180s and then print a
+  // generic timeout, burying the real error in the log.
+  let childExit: number | null = null;
+  child.on('exit', (code, signal) => {
+    childExit = code ?? (signal ? 1 : 0);
+  });
 
   process.stdout.write(`[start] waiting for UI :${uiPort}`);
   let up = false;
@@ -380,12 +399,21 @@ function startWeb(runArgs: string[]): never {
       up = true;
       break;
     }
+    if (childExit !== null) break; // stack process died before the UI came up
     process.stdout.write('.');
-    sleepSync(2000);
+    await sleep(2000); // async so the child 'exit' event can fire
   }
   console.log();
+
+  if (!up && childExit !== null) {
+    console.error(`[start] web stack process exited (code ${childExit}) before UI :${uiPort} came up.`);
+    console.error(`[start] last lines of ${stackLog}:\n`);
+    console.error(tailLog(stackLog, 25));
+    // exit 0 but UI never bound is still a failure → floor to 1
+    process.exit(childExit || 1);
+  }
   if (!up) {
-    console.error(`[start] web stack failed to come up — see ${stackLog}`);
+    console.error(`[start] web stack failed to come up within timeout — see ${stackLog}`);
     process.exit(1);
   }
 

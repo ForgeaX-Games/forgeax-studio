@@ -99,7 +99,8 @@ Usage:
 
 Common commands:
   setup                 Prepare deps, submodules, engine, plugins, .env scaffold
-  update                Pull latest root code and sync all submodules
+  update                Pull latest root code, sync submodules, rebuild stale plugin dists
+                        (--force-plugins = rebuild all plugin dists)
   clean [--deep|-x]     Restore a fully-clean git status across root + all
                         submodules. Discards uncommitted edits, scrubs submodule
                         interiors to bare pin state (incl. gitignored runtime
@@ -112,7 +113,7 @@ Common commands:
   restart               Stop then start web-dev stack
   status                Show git/submodule/port/artefact status
   doctor [--fix]        Diagnose common local setup problems
-  build plugins         Rebuild missing/broken marketplace plugin dists
+  build plugins         Rebuild stale/broken marketplace plugin dists (--force = all)
   build app             Package the desktop app
   version [args...]     Print version info
 
@@ -272,6 +273,23 @@ function updateSubmodules(dryRun: boolean): UpdateResult[] {
     else rows.push({ repoType: 'submodule', repo: path, result: 'failed', detail: `git submodule update exited ${status}` });
   }
   return rows;
+}
+
+function rebuildMarketplacePlugins(args: string[] = [], dryRun = false): UpdateResult {
+  const buildScript = script('build-plugins.ts');
+  if (!existsSync(buildScript)) {
+    return { repoType: 'root', repo: 'plugins', result: 'skipped', detail: 'build-plugins.ts missing' };
+  }
+  const buildArgs = args.includes('--force-plugins') ? ['--force'] : [];
+  if (dryRun) {
+    console.log(`[dry-run] bun ${buildScript} ${buildArgs.join(' ')}`.trim());
+    return { repoType: 'root', repo: 'plugins', result: 'planned', detail: 'rebuild stale plugin dists' };
+  }
+  console.log('[update] Rebuilding stale/broken marketplace plugin dists');
+  const r = spawnSync(BUN, [buildScript, ...buildArgs], { cwd: ROOT, stdio: 'inherit', env: process.env });
+  const status = r.status ?? 1;
+  if (status === 0) return { repoType: 'root', repo: 'plugins', result: 'ok', detail: 'plugin dists up to date' };
+  return { repoType: 'root', repo: 'plugins', result: 'failed', detail: `build-plugins exited ${status}` };
 }
 
 function currentBranch(): string {
@@ -489,6 +507,11 @@ function doctor(args: string[]): never {
     touchWgpuWasm();
     console.log('[ok] touched wgpu-wasm artefact');
   }
+  if (fix && existsSync(script('build-plugins.ts'))) {
+    console.log('[fix] Rebuilding stale/broken marketplace plugin dists');
+    const r = spawnSync(BUN, [script('build-plugins.ts')], { cwd: ROOT, stdio: 'inherit', env: process.env });
+    if ((r.status ?? 1) !== 0) failed++;
+  }
   process.exit(failed > 0 ? 1 : 0);
 }
 
@@ -540,6 +563,13 @@ function update(args: string[]): void {
     results.push({ repoType: 'submodule', repo: '(all)', result: 'skipped', detail: 'root update failed' });
   }
 
+  const subOk = !results.some((row) => row.repoType === 'submodule' && row.result === 'failed');
+  if (rootOk && subOk) {
+    results.push(rebuildMarketplacePlugins(args, dryRun));
+  } else {
+    results.push({ repoType: 'root', repo: 'plugins', result: 'skipped', detail: 'repo/submodule update failed' });
+  }
+
   if (stashedMessage) {
     console.log('[update] Restoring pre-update stash');
     results.push(restoreStashResult(stashedMessage, dryRun));
@@ -558,7 +588,7 @@ function update(args: string[]): void {
     if (dryRun) console.log('[dry-run] bun fx restart');
     else restartStack([]);
   } else {
-    console.log('[update] done (use --restart to restart the stack)');
+    console.log('[update] done — run `bun fx restart` if Studio is already open');
   }
 }
 

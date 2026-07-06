@@ -99,7 +99,9 @@ Usage:
 Common commands:
   setup                 Prepare deps, submodules, engine, plugins, .env scaffold
   update                Pull latest root code and sync all submodules
-  start [web|app]       Start Studio and open the selected client (default: web)
+  start [web|app|local] Start Studio and open the selected client (default: web)
+                        local = 127.0.0.1-only on a third port band (:38920) — use
+                        when default and dev-local ports are both taken
   stop                  Stop web-dev stack
   restart               Stop then start web-dev stack
   status                Show git/submodule/port/artefact status
@@ -335,9 +337,12 @@ function sleepSync(ms: number): void {
 function startStudio(args: string[]): never {
   const [maybeMode, ...rest] = args;
   if (maybeMode === 'app') runScript(script('app.ts'), rest);
+  // Local-only third port band (foreground, Ctrl-C to stop) for when the default
+  // and dev-local ports are both taken by other checkouts. See dev-local2.ts.
+  if (maybeMode === 'local') runScript(script('dev-local2.ts'), rest);
   if (maybeMode && maybeMode !== 'web' && !maybeMode.startsWith('-')) {
     console.error(`[start] unknown client: ${maybeMode}`);
-    console.error('[start] usage: bun fx start [web|app] [args...]');
+    console.error('[start] usage: bun fx start [web|app|local] [args...]');
     process.exit(2);
   }
 

@@ -224,8 +224,22 @@ if (skipEngineBuild) {
   // fan-out reds out at TS7016 / TS2709. Incremental (.tsbuildinfo) so re-runs
   // are near-instant. Non-fatal: a d.ts miss only breaks typecheck, not runtime
   // (vite strips types), so warn rather than abort the whole setup.
+  //
+  // Self-heal on stale/corrupt incremental cache: a `dist/.tsbuildinfo` left in a
+  // bad state (e.g. after a TS-version swap, or an interrupted build) can wedge
+  // `tsc -b` into "program needs to report errors" and make it treat its own
+  // emitted `dist/*.d.ts` as inputs → TS5055 "would overwrite input file". CI never
+  // hits this because it always runs `tsc -b --clean && tsc -b` (fresh); the local
+  // incremental path can. So on failure, clean the composite outputs and retry once
+  // — mirroring CI's clean-then-build. If it still fails, the error is real; warn.
   if (!run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir })) {
-    warnY('engine tsc -b (d.ts generation) failed — typecheck will red out until fixed; runtime is unaffected.');
+    warnY('engine tsc -b failed — clearing incremental cache (tsc -b --clean) and retrying once…');
+    run('pnpm', ['exec', 'tsc', '-b', '--clean'], { cwd: engineDir });
+    if (!run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir })) {
+      warnY('engine tsc -b (d.ts generation) still failing after clean — typecheck will red out until fixed; runtime is unaffected.');
+    } else {
+      ok('engine .d.ts generated (tsc -b, after clean retry)');
+    }
   } else {
     ok('engine .d.ts generated (tsc -b)');
   }

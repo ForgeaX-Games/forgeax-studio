@@ -192,6 +192,36 @@ for (const sub of ['editor']) {
 bold('[3/6] Building engine submodule packages');
 const engineDir = join(ROOT, 'packages/editor/packages/engine');
 if (!existsSync(engineDir)) fail('packages/editor/packages/engine (editor nested engine) submodule missing — run git submodule update --init --recursive');
+
+// The engine packages live in BOTH the engine's own pnpm workspace AND the
+// studio-root bun workspace glob (root package.json → packages/editor/packages/
+// engine/packages/*). A root `bun install` re-points each engine package's
+// node_modules/* at bun's .bun store; if that install was ever interrupted the
+// store is incomplete and those symlinks dangle. pnpm's `--frozen-lockfile`
+// then reports "Already up to date" and does NOT repair them, so the engine
+// build dies cryptically ("Could not resolve 'ajv-formats'"). Detect dangling
+// per-package symlinks and drop the affected node_modules so the pnpm install
+// below relinks them fresh from the intact .pnpm store.
+function healDanglingEngineSymlinks(dir: string): void {
+  const pkgsRoot = join(dir, 'packages');
+  if (!existsSync(pkgsRoot)) return;
+  let healed = 0;
+  for (const e of readdirSync(pkgsRoot, { withFileTypes: true })) {
+    if (!e.isDirectory()) continue;
+    const nm = join(pkgsRoot, e.name, 'node_modules');
+    if (!existsSync(nm)) continue;
+    const dangling = readdirSync(nm, { withFileTypes: true }).some(
+      (d) => d.isSymbolicLink() && !existsSync(join(nm, d.name)), // existsSync follows the link → false if target gone
+    );
+    if (dangling) {
+      rmSync(nm, { recursive: true, force: true });
+      healed++;
+    }
+  }
+  if (healed > 0) warnY(`engine: cleared ${healed} package node_modules with dangling symlinks (interrupted bun install) — pnpm will relink`);
+}
+healDanglingEngineSymlinks(engineDir);
+
 const skipEngineBuild =
   env.FORGEAX_SKIP_ENGINE_BUILD &&
   existsSync(join(engineDir, 'packages/app/dist')) &&

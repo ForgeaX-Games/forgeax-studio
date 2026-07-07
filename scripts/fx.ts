@@ -369,6 +369,8 @@ function startStudio(args: string[]): never {
 
 async function startWeb(runArgs: string[]): Promise<never> {
   const uiPort = Number.parseInt(process.env.FORGEAX_INTERFACE_PORT ?? '18920', 10);
+  const serverPort = Number.parseInt(process.env.FORGEAX_SERVER_PORT ?? '18900', 10);
+  const enginePort = Number.parseInt(process.env.FORGEAX_ENGINE_PORT ?? '15173', 10);
   const busyPorts = startBusyPorts();
   if (busyPorts.length > 0) {
     console.error('[start] dev stack already appears to be running:');
@@ -422,6 +424,22 @@ async function startWeb(runArgs: string[]): Promise<never> {
     console.error(`[start] web stack failed to come up within timeout — see ${stackLog}`);
     process.exit(1);
   }
+
+  // Advertise all listening ports to the foreground stdout. The stack's own
+  // stdout/stderr (vite "Local: http://..." lines, server startup logs) is
+  // redirected to `stackLog` — so IDE port-forwarders that scan the terminal
+  // stdout (VSCode Remote's `output` autoForwardPortsSource) only ever saw
+  // `:18920` from the "waiting for UI" line and missed the other two. Emitting
+  // each URL here on its own line lets the IDE detect + forward all three.
+  console.log(`[start] server   http://localhost:${serverPort}`);
+  console.log(`[start] UI       http://localhost:${uiPort}`);
+  console.log(`[start] engine   http://localhost:${enginePort}`);
+  // Optional upstream sidecars: only advertise when actually listening so the
+  // IDE doesn't try to forward ports that were never bound this run.
+  const narrativePort = 8900;
+  const faceMaskPort = 18930;
+  if (portOwner(narrativePort)) console.log(`[start] narrative http://localhost:${narrativePort}`);
+  if (portOwner(faceMaskPort)) console.log(`[start] face-mask http://localhost:${faceMaskPort}`);
 
   runScript(script('open-web.ts'), []);
 }

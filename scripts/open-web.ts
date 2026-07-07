@@ -33,10 +33,14 @@ if (!isPortBusy(port)) {
 // 2. locate Chrome per platform.
 const chrome = findChrome();
 if (!chrome) {
-  console.error('[web] Google Chrome not found.');
-  console.error(`[web] Install Chrome, or open ${url} in a WebGPU-capable browser yourself.`);
-  console.error('[web] (The desktop app works without Chrome: bun fx start app)');
-  process.exit(1);
+  // headless Linux server / minimal container: Chrome-not-installed is a valid
+  // deployment shape, not a startup failure — the stack is already up (fx.ts
+  // waits on the UI port before invoking us). Print the URL so the operator
+  // can browse in from another machine, and exit 0 so `bun fx start` succeeds.
+  console.log(`[web] Studio UI ready at ${url}`);
+  console.log('[web] no local Chrome/Chromium found — open the URL from a WebGPU-capable browser');
+  console.log('[web] (or use the desktop app on macOS/Windows: bun fx start app)');
+  process.exit(0);
 }
 
 mkdirSync(profile, { recursive: true });

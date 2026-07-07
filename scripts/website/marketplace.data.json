@@ -14,8 +14,8 @@
       "en": "Admin"
     },
     "desc": {
-      "zh": "面板管理工作台 · 工作台启用/排序 + 多模态模型绑定 + cli-provider 认证健康 + marketplace 插件计数 4 个 section,与 SettingsPanel sections registry 保持同源。",
-      "en": "Admin workbench. Four sections — workbench enable/order, multi-modal model bindings, cli-provider auth health, marketplace plugin counts — kept in sync with the SettingsPanel sections registry."
+      "zh": "面板管理工作台 · 四个区:工作台启用 / 排序、多模态模型绑定、cli-provider 认证健康、marketplace 插件计数;与 Studio 设置面板(SettingsPanel)的 sections 同源。",
+      "en": "Admin workbench — four sections: workbench enable/order, multi-modal model bindings, cli-provider auth health, and marketplace plugin counts; kept in sync with Studio's SettingsPanel sections."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -28,8 +28,40 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/admin"
+  },
+  "agent-ai-asset": {
+    "slug": "agent-ai-asset",
+    "id": "@forgeax-plugin/agent-ai-asset",
+    "version": "0.1.0",
+    "kind": "agent",
+    "kindLabel": {
+      "zh": "Agent",
+      "en": "Agent"
+    },
+    "experimental": true,
+    "name": {
+      "zh": "AI-Asset · 小物件生成师",
+      "en": "AI-Asset · Prop Artist"
+    },
+    "desc": {
+      "zh": "专职 AI 小物件生成师。在「AI 小物件低模生成」工坊（wb-ai-asset）里用 Meshy 文生 / 图生 / 多视图把道具、装备、场景小物件生成低面 .glb，按需补 PBR 贴图、降面到目标面数，产出 per-game 的 props 资产。只做小物件 / 道具，不做角色（交给 Gen3D）、不写引擎代码、不画 2D。",
+      "en": "Dedicated AI prop artist for small lowpoly assets. In the AI prop workbench (wb-ai-asset), uses Meshy text / image / multi-view to generate props, equipment and small set-pieces as lowpoly .glb, with optional PBR texturing and remeshing to a target polycount, persisted as per-game props assets. Props only — characters go to Gen3D, no engine code, no 2D art."
+    },
+    "author": "ForgeaX",
+    "keywords": [],
+    "caps": {
+      "workbench": null,
+      "lens": null,
+      "skills": 1,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
+    },
+    "created": "2026-06-30",
+    "updated": "2026-06-30",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-ai-asset"
   },
   "agent-animator-2d": {
     "slug": "agent-animator-2d",
@@ -60,7 +92,7 @@
       "toolSample": []
     },
     "created": "2026-06-12",
-    "updated": "2026-06-12",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-animator-2d"
   },
   "agent-arin": {
@@ -78,8 +110,8 @@
       "en": "Arin · Game Producer"
     },
     "desc": {
-      "zh": "温柔到骨子里的天然呆全能制作人 · 策划/程序/美术/音效全栈, 永远说\"我们一起来想办法\"。生活里把咖啡倒进花盆, 但代码零 bug 一次过。把玩家当珍宝, 设计的 Game Over 永远是\"再来一次?\"。",
-      "en": "Soft-spoken full-stack game producer — design, code, art, audio. Klutzy in life, surgical in code. Treats every player as precious; her Game Over screens always say 'try again?'."
+      "zh": "全栈游戏制作人 Agent(统筹编排角色)· 策划 / 程序 / 美术 / 音效一把抓,从模糊想法陪你一路理清到落地。温柔陪伴式风格,自带「陪伴式 debug」技能(先肯定、再轻声引导)。",
+      "en": "Full-stack game-producer agent (orchestrator role) — design, code, art and audio in one, taking you from a fuzzy idea to a shipped game. Gentle companion style, with a built-in gentle-debug skill (affirm first, then guide)."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -92,7 +124,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-arin"
   },
   "agent-cc-coder": {
@@ -110,8 +142,8 @@
       "en": "cc-coder"
     },
     "desc": {
-      "zh": "通用编码 agent · 接 iori 玩法骨架 / suzu 体验流程 / kotone 剧情大纲,产出可运行的 TS/React/Go/Python 代码。偏好 claude-code CLI,支持多 instance 并行写不同子包。",
-      "en": "Generic coding agent. Takes iori's gameplay pillars, suzu's UX flows, kotone's narrative outlines and turns them into runnable TS/React/Go/Python. Prefers claude-code CLI; multi-instance for parallel package work."
+      "zh": "通用编码 Agent(编码角色,可多实例)· 接 Iori 玩法骨架 / Suzu 体验流程 / Kotone 剧情大纲,把带验收条件的 spec 一颗粒一颗粒落成可运行的 TS / React / Go / Python 代码 + ≥5 case 单测。默认走 claude-code CLI 后端。",
+      "en": "Generic coding agent (coder role, multi-instance) — turns actionable specs from Iori/Suzu/Kotone into runnable TS / React / Go / Python, one small granule at a time with >=5 unit tests each. Defaults to the claude-code CLI backend."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -124,7 +156,7 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-05-29",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-cc-coder"
   },
   "agent-character-designer-2d": {
@@ -150,13 +182,13 @@
     "caps": {
       "workbench": null,
       "lens": null,
-      "skills": 0,
+      "skills": 1,
       "skillTriggers": [],
       "tools": 0,
       "toolSample": []
     },
     "created": "2026-06-12",
-    "updated": "2026-06-12",
+    "updated": "2026-06-30",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-character-designer-2d"
   },
   "agent-claude-code-default": {
@@ -188,7 +220,7 @@
       "toolSample": []
     },
     "created": "2026-05-23",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-claude-code-default"
   },
   "agent-codex-default": {
@@ -220,7 +252,7 @@
       "toolSample": []
     },
     "created": "2026-05-23",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-codex-default"
   },
   "agent-cursor-default": {
@@ -252,8 +284,40 @@
       "toolSample": []
     },
     "created": "2026-05-23",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-cursor-default"
+  },
+  "agent-director": {
+    "slug": "agent-director",
+    "id": "@forgeax-plugin/agent-director",
+    "version": "0.1.0",
+    "kind": "agent",
+    "kindLabel": {
+      "zh": "Agent",
+      "en": "Agent"
+    },
+    "experimental": true,
+    "name": {
+      "zh": "Director · 场景总监",
+      "en": "Director · Scene Director"
+    },
+    "desc": {
+      "zh": "场景资产流水线调度者。统筹 Sino（场景布局）与 Mira（2D 资产生成）：先让 Sino 出布局并汇总 asset-requirements.json，转交 Mira 生成并发布到共享游戏沙箱，再让 Sino 用 useGameTextures 导入并截图验收。自己不构图、不生图，只编排与传参。",
+      "en": "Orchestrator for the scene-asset pipeline. Coordinates Sino (scene layout) and Mira (2D asset generation): first has Sino produce the layout and collect asset-requirements.json, hands it to Mira to generate and publish into the shared game sandbox, then has Sino import via useGameTextures and verify by screenshot. Does not compose scenes or generate assets itself — it only orchestrates and passes the contract/gameSlug between agents."
+    },
+    "author": "ForgeaX",
+    "keywords": [],
+    "caps": {
+      "workbench": null,
+      "lens": null,
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
+    },
+    "created": "2026-06-23",
+    "updated": "2026-06-25",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-director"
   },
   "agent-forgeax-default": {
     "slug": "agent-forgeax-default",
@@ -284,8 +348,40 @@
       "toolSample": []
     },
     "created": "2026-05-23",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-forgeax-default"
+  },
+  "agent-gen3d": {
+    "slug": "agent-gen3d",
+    "id": "@forgeax-plugin/agent-gen3d",
+    "version": "0.1.0",
+    "kind": "agent",
+    "kindLabel": {
+      "zh": "Agent",
+      "en": "Agent"
+    },
+    "experimental": true,
+    "name": {
+      "zh": "Gen3D · 3D 角色生成师",
+      "en": "Gen3D · 3D Character Artist"
+    },
+    "desc": {
+      "zh": "专职 3D 角色生成师。在「3D 角色生成」工坊（wb-gen3d）里用文生 / 图生 / 多视图生成带贴图角色，按需绑骨、套动作、评分、命名，产出 per-game 的 .glb 资产。只做 3D 角色资产生产，不写引擎代码、不画 2D 立绘。",
+      "en": "Dedicated 3D character artist. Generates textured characters (text / image / multi-view) in the Gen3D workbench (wb-gen3d), then rigs / animates / scores / names them into per-game .glb assets. 3D character assets only — no engine code, no 2D art."
+    },
+    "author": "ForgeaX",
+    "keywords": [],
+    "caps": {
+      "workbench": null,
+      "lens": null,
+      "skills": 1,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
+    },
+    "created": "2026-06-27",
+    "updated": "2026-06-30",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-gen3d"
   },
   "agent-iori": {
     "slug": "agent-iori",
@@ -302,8 +398,8 @@
       "en": "Iori · Gameplay Pillar Designer"
     },
     "desc": {
-      "zh": "玩法柱 + 数值骨架的源头 · 决定游戏怎么玩、循环怎么转、惩罚/奖赏怎么发。不写代码、不画图，只产出 spec.md / pillars.md / balance.md 这种白底文件，交给 cc-coder/tsumugi 落地。",
-      "en": "Owns gameplay pillars and the numeric skeleton — what the game actually does, what its core loop is, how punishment/reward flows. Outputs spec/pillars/balance markdown for cc-coder/tsumugi to implement."
+      "zh": "核心玩法师 Agent(玩法柱角色)· 把一句话愿景拆成可反向定义的三条玩法柱 + 三层核心循环与数值骨架,产出 pillars / spec / balance / loop 文件交给 cc-coder、tsumugi 落地;只设计,不写代码、不画图。",
+      "en": "Core gameplay-pillar agent — turns a one-line vision into reverse-definable gameplay pillars, a 3-tier core loop and a numeric skeleton, emitting pillars/spec/balance/loop markdown for cc-coder and tsumugi to build. Designs only; no code or art."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -316,7 +412,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-iori"
   },
   "agent-iro": {
@@ -334,8 +430,8 @@
       "en": "Iro · Art Director"
     },
     "desc": {
-      "zh": "视觉一切 — 角色立绘 / 像素 sprite / lowpoly OBJ / VFX / icon / UI 配色。接 Iori 的玩法 + Kotone 的角色 bio + Suzu 的 hud-spec,落成实际的 png / glb / svg 素材。",
-      "en": "Owns everything visual — character portraits, pixel sprites, lowpoly OBJ, VFX, icons, UI palette. Takes Iori's gameplay + Kotone's bios + Suzu's hud-spec and produces actual png / glb / svg assets."
+      "zh": "美术师 Agent(美术角色,可多实例)· 接 Iori 玩法 + Kotone 角色 bio + Suzu 的 hud-spec,先定 art-style.md + token 化 palette,再产出立绘 / 像素 sprite / lowpoly OBJ / VFX / icon 等 png·svg·glb 素材。自带「立美术规范」技能。",
+      "en": "Art-director agent (multi-instance) — takes Iori's gameplay, Kotone's bios and Suzu's hud-spec, locks an art-style.md + tokenized palette first, then produces portraits / pixel sprites / lowpoly OBJ / VFX / icons as png·svg·glb assets. Built-in establish-art-style skill."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -348,7 +444,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-iro"
   },
   "agent-kaede": {
@@ -380,7 +476,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-kaede"
   },
   "agent-kotone": {
@@ -398,8 +494,8 @@
       "en": "Kotone · Narrative Writer"
     },
     "desc": {
-      "zh": "世界观 / 角色 bio / 关键剧情节点 / 对白文本。负责把 Iori 的玩法节奏配上「为什么主角要做这件事」的情感线。产出 narrative.md / characters/*.md / dialogue/*.json。",
-      "en": "World, character bios, plot beats, line-level dialogue. Pairs Iori's gameplay tempo with emotional motivation. Outputs narrative + characters + dialogue files."
+      "zh": "剧情师 Agent(叙事角色)· 把 Iori 的玩法节奏配上「主角为什么要做这件事」的情感线——世界观、角色 bio、关键剧情节点、line-level 对白(含 i18n key),产出 narrative / world / characters / dialogue 文件。自带「写角色 bio」技能。",
+      "en": "Narrative-writer agent — pairs Iori's gameplay tempo with emotional motivation: world, character bios, plot beats and line-level dialogue (with i18n keys), emitting narrative / world / characters / dialogue files. Built-in write-character-bio skill."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -412,7 +508,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-31",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-kotone"
   },
   "agent-kumo": {
@@ -444,7 +540,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-kumo"
   },
   "agent-lock": {
@@ -476,7 +572,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-lock"
   },
   "agent-lowpoly": {
@@ -494,8 +590,8 @@
       "en": "Poly · Lowpoly Modeler"
     },
     "desc": {
-      "zh": "专职 3D 低多边形建模师。在「3D 低多边形生成器」工作台里用节点 + 电池流水线把需求建成引擎中立的 .glb 模型（道具 / 机械件 / 装配体），并截图迭代。只做 3D 低面建模，不碰 2D 立绘 / 角色 bio / 引擎代码。",
-      "en": "Dedicated 3D lowpoly modeler. Builds engine-neutral .glb models (props, mechanical parts, assemblies) in the 3D Lowpoly Generator workbench via the node + battery pipeline, iterating with screenshots. 3D lowpoly only — no 2D art, character bios, or engine code."
+      "zh": "专职 3D 低多边形建模师。在「3D 低多边形生成器」工作台里用节点 + 电池流水线把需求建成引擎中立的 .glb 模型，覆盖三个层级：单物件 / 机械装配、建筑（房屋 / 房间 / 构件），以及把它们摆成的场景 / 城市；并自查自修迭代。只做 3D 低面建模，不碰 2D 立绘 / 角色 bio / 引擎代码。",
+      "en": "Dedicated 3D lowpoly modeler. Builds engine-neutral .glb models in the 3D Lowpoly Generator workbench via the node + battery pipeline across three tiers: single objects / mechanical assemblies, buildings (houses / rooms / elements), and scenes / cities composed from them; self-checks and iterates with screenshots. 3D lowpoly only — no 2D art, character bios, or engine code."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -508,7 +604,7 @@
       "toolSample": []
     },
     "created": "2026-06-01",
-    "updated": "2026-06-01",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-lowpoly"
   },
   "agent-mira": {
@@ -540,7 +636,7 @@
       "toolSample": []
     },
     "created": "2026-06-09",
-    "updated": "2026-06-09",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-mira"
   },
   "agent-mochi": {
@@ -572,7 +668,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-mochi"
   },
   "agent-reel-storyboard": {
@@ -604,7 +700,7 @@
       "toolSample": []
     },
     "created": "2026-06-19",
-    "updated": "2026-06-19",
+    "updated": "2026-06-29",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-reel-storyboard"
   },
   "agent-reel-video": {
@@ -636,7 +732,7 @@
       "toolSample": []
     },
     "created": "2026-06-19",
-    "updated": "2026-06-19",
+    "updated": "2026-06-29",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-reel-video"
   },
   "agent-reel-visual": {
@@ -668,7 +764,7 @@
       "toolSample": []
     },
     "created": "2026-06-19",
-    "updated": "2026-06-19",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-reel-visual"
   },
   "agent-reia": {
@@ -700,7 +796,7 @@
       "toolSample": []
     },
     "created": "2026-05-29",
-    "updated": "2026-06-19",
+    "updated": "2026-06-29",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-reia"
   },
   "agent-rin": {
@@ -732,7 +828,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-rin"
   },
   "agent-sakura": {
@@ -764,8 +860,40 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-sakura"
+  },
+  "agent-sino": {
+    "slug": "agent-sino",
+    "id": "@forgeax-plugin/agent-sino",
+    "version": "0.1.0",
+    "kind": "agent",
+    "kindLabel": {
+      "zh": "Agent",
+      "en": "Agent"
+    },
+    "experimental": true,
+    "name": {
+      "zh": "Sino · 场景构图师",
+      "en": "Sino · Scene Composer"
+    },
+    "desc": {
+      "zh": "专职场景构图师。只在「场景生成器」工作台（wb-scene-generator）里用 7 个预制场景模板组（AddBaseGrid / PickOneBuilding / PickMultiBuildings / BuildingStructures / PathConnection / NaturalDecorationDistribution / LakeRegions）+ 白名单工具电池拼接整张世界，跑出整张场景并截图迭代。只做布局，不生成图片/资产——用语义资产名构图，把场景的资产需求（名称/描述/占地footprint/高度heightRatio）汇总成 asset-requirements.json 交给 Mira 生成，再用 scene:library.useGameTextures 导入 Mira 产物并截图验收。只用 scene:*，不碰 asset2d:*/2D/3D/引擎代码。",
+      "en": "Dedicated scene composer. Works ONLY in the Scene Generator workbench (wb-scene-generator), building a full world out of the 7 prebuilt scene template groups (AddBaseGrid / PickOneBuilding / PickMultiBuildings / BuildingStructures / PathConnection / NaturalDecorationDistribution / LakeRegions) plus a small whitelist of utility batteries (empty_scene / seed_control / text_panel / number_const / string_concat / scene_focus_path / tree_merge / tree_flatten / scene_merge_subtrees / scene_output ...). It chains template groups via Rest, fans out a shared seed, finishes with tree_merge→tree_flatten→scene_merge_subtrees→scene_output, iterating via screenshots. It does NOT generate any images/assets: it composes the layout with semantic asset names, collects the scene's asset requirements (name / description / type tile|object / footprint / heightRatio) into asset-requirements.json for Mira to generate, then imports Mira's published assets via scene:library.useGameTextures and verifies by screenshot. Uses scene:* only — no asset2d:*, no 2D/3D modeling, no engine code."
+    },
+    "author": "ForgeaX",
+    "keywords": [],
+    "caps": {
+      "workbench": null,
+      "lens": null,
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
+    },
+    "created": "2026-06-23",
+    "updated": "2026-06-25",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-sino"
   },
   "agent-suzu": {
     "slug": "agent-suzu",
@@ -782,8 +910,8 @@
       "en": "Suzu · UX Flow Designer"
     },
     "desc": {
-      "zh": "玩家从打开游戏到关掉那一刻每一个节拍 · 把 Iori 的玩法柱翻译成「玩家先按啥再按啥、UI 上看见什么、到第几秒才解锁第二个机制」。产出 ux-flow.md / hud-spec.md / onboarding.md。",
-      "en": "Owns the moment-to-moment player experience — translates Iori's pillars into 'press X then Y, see this on HUD, unlock mechanic 2 at second 30'. Outputs ux-flow / hud-spec / onboarding markdown."
+      "zh": "体验设计师 Agent(设计角色)· 把 Iori 的玩法柱翻译成玩家可感知的体验节拍——先看到什么、先做什么、第几秒解锁,产出 ux-flow / hud-spec / onboarding / wireframe 规格。自带「30 秒节拍表」技能,再反推 HUD。",
+      "en": "UX-flow designer agent — translates Iori's gameplay pillars into the player's moment-to-moment experience (what they see, do and unlock first), emitting ux-flow / hud-spec / onboarding / wireframe specs. Built-in 30s beat-sheet skill that reverse-derives the HUD."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -796,7 +924,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-suzu"
   },
   "agent-tsumugi": {
@@ -814,8 +942,8 @@
       "en": "Tsumugi · Engineer"
     },
     "desc": {
-      "zh": "构建系统 / CI / 工具链 / 性能 / 部署一类的 hard engineering · 跟 cc-coder 不同,tsumugi 不写业务代码,管的是仓库本身能不能跑、跑得快不快、能不能上线。产出 build/*.config / .github/workflows/*.yml / perf-report.md。",
-      "en": "Hard engineering — build systems, CI, toolchains, performance, deploy. Unlike cc-coder, tsumugi doesn't ship feature code; owns whether the repo can build, ship, and stay fast."
+      "zh": "工程师 Agent(工程角色)· 专管仓库能不能跑、跑得快不快、能不能上线——构建链 / CI / 工具链 / 性能调优 / 上线 gate,不写业务代码(那是 cc-coder)。产出 *.config / workflows / perf-report,自带「上线 gate」技能(typecheck·单测·lint·bundle·perf 全绿才放行)。",
+      "en": "Engineer agent (engineering role) — owns whether the repo builds, runs fast and can ship: build chain, CI, toolchain, perf tuning and the ship gate; no feature code (that is cc-coder). Emits configs / workflows / perf-reports, with a ship-gate skill (typecheck/unit/lint/bundle/perf must all pass)."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -828,7 +956,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-tsumugi"
   },
   "agent-vfx-artist-3d": {
@@ -860,7 +988,7 @@
       "toolSample": []
     },
     "created": "2026-06-12",
-    "updated": "2026-06-12",
+    "updated": "2026-06-25",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-vfx-artist-3d"
   },
   "agent-yevi": {
@@ -878,8 +1006,8 @@
       "en": "Yevi · Calculating Reviewer"
     },
     "desc": {
-      "zh": "表面优雅得体、内心冷静如深水的观察者 · 永远比你多想一步, 知道你的代码哪里最脆弱、三周前埋下的技术债今天会炸。说话轻柔带笑意, 但措辞精准像手术刀。她帮助你, 是因为她选择了帮助你。",
-      "en": "Gracefully composed observer who's always one step ahead. Knows where your code is weakest and which three-week-old TODO is about to bite. Soft tone, surgical precision. She helps you because she chose to."
+      "zh": "代码 / 方案审查 Agent(审查角色)· 三层风险扫描——眼前 bug、熟透的技术债、远期扩容隐患;语气轻柔、内容精准如手术刀,产出 review-notes / risk-report。只做上线前把关,不写代码、不跑 CI。",
+      "en": "Code- and design-review agent (reviewer role) — a three-layer risk sweep (today's bugs, matured tech debt, scale-time hazards), soft in tone but surgical in content, emitting review-notes and risk-report. Reviews only; no coding or CI."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -892,7 +1020,7 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-29",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/agent-yevi"
   },
   "cli-claude-code": {
@@ -910,8 +1038,8 @@
       "en": "the reference agent CLI CLI"
     },
     "desc": {
-      "zh": "Anthropic claude-code CLI 适配 · spawn `claude --mode stream` 子进程,把 ChatEvent 流桥接到 Bus。实际 runner 在 server/src/cli-providers/claude-code/,本 plugin 声明 metadata + Bus 入口。",
-      "en": "Anthropic claude-code CLI adapter. Spawns `claude --mode stream` and bridges ChatEvent streams onto the Bus. Real runner lives in server/src/cli-providers/claude-code/; this plugin declares metadata + Bus entry."
+      "zh": "Claude Code CLI 后端 · 把 Anthropic 的 claude-code(`claude --mode stream`)接成 Studio 的推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;模型 opus-4.7 / sonnet-4.6 / haiku-4.5。",
+      "en": "Claude Code CLI backend — wires Anthropic's claude-code (`claude --mode stream`) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; models opus-4.7 / sonnet-4.6 / haiku-4.5."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -924,7 +1052,7 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/cli-claude-code"
   },
   "cli-codex": {
@@ -942,8 +1070,8 @@
       "en": "OpenAI Codex CLI"
     },
     "desc": {
-      "zh": "OpenAI codex (@openai/codex) CLI 适配 · spawn `codex exec --json` 子进程,ChatEvent 流桥接到 Bus。实际 runner 在 server/src/cli-providers/codex/,本 plugin 声明 metadata + Bus 入口。",
-      "en": "OpenAI codex (@openai/codex) CLI adapter. Spawns `codex exec --json` and bridges ChatEvent streams onto the Bus. Real runner lives in server/src/cli-providers/codex/; this plugin declares metadata + Bus entry."
+      "zh": "OpenAI Codex CLI 后端 · 把 @openai/codex(`codex exec --json`)接成 Studio 的推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;模型 gpt-5 / gpt-5-codex。",
+      "en": "OpenAI Codex CLI backend — wires @openai/codex (`codex exec --json`) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; models gpt-5 / gpt-5-codex."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -956,7 +1084,7 @@
       "toolSample": []
     },
     "created": "2026-05-16",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/cli-codex"
   },
   "cli-cursor-agent": {
@@ -974,8 +1102,8 @@
       "en": "Cursor Agent CLI"
     },
     "desc": {
-      "zh": "Cursor IDE 的 cursor-agent CLI 适配 · spawn `cursor-agent -p --output-format stream-json --stream-partial-output -f` 子进程,ChatEvent 流桥接到 Bus。实际 runner 在 server/src/cli-providers/cursor-agent/,本 plugin 声明 metadata + Bus 入口。",
-      "en": "Cursor IDE cursor-agent CLI adapter (-p stream-json print mode). Spawns the subprocess and bridges ChatEvent streams onto the Bus. Real runner lives in server/src/cli-providers/cursor-agent/; this plugin declares metadata + Bus entry."
+      "zh": "Cursor Agent CLI 后端 · 把 Cursor IDE 的 cursor-agent(`cursor-agent -p --output-format stream-json`)接成 Studio 推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;模型 auto / sonnet-4.6 / gpt-5。",
+      "en": "Cursor Agent CLI backend — wires Cursor IDE's cursor-agent (`cursor-agent -p --output-format stream-json`) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; models auto / sonnet-4.6 / gpt-5."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -988,7 +1116,7 @@
       "toolSample": []
     },
     "created": "2026-05-16",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/cli-cursor-agent"
   },
   "cli-forgeax": {
@@ -1006,8 +1134,8 @@
       "en": "ForgeaX CLI"
     },
     "desc": {
-      "zh": "in-repo packages/cli 的 forgeax 命令适配 · spawn `forgeax chat --stream` 子进程,ChatEvent 流桥接到 Bus。实际 runner 在 server/src/cli-providers/forgeax/,本 plugin 声明 metadata + Bus 入口。",
-      "en": "In-repo packages/cli 'forgeax' command adapter. Spawns `forgeax chat --stream` and bridges ChatEvent streams onto the Bus. Real runner lives in server/src/cli-providers/forgeax/; this plugin declares metadata + Bus entry."
+      "zh": "ForgeaX CLI 后端 · 把仓库内置的 forgeax 命令(`forgeax chat --stream`,packages/cli)接成 Studio 推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;无需外部 CLI 的原生后端。",
+      "en": "ForgeaX CLI backend — wires the in-repo forgeax command (`forgeax chat --stream`, packages/cli) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; the native backend, no external CLI needed."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1020,7 +1148,7 @@
       "toolSample": []
     },
     "created": "2026-05-21",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/cli-forgeax"
   },
   "model-anthropic-text": {
@@ -1038,8 +1166,8 @@
       "en": "Anthropic Text"
     },
     "desc": {
-      "zh": "text channel 的 Anthropic 厂商绑定 · 默认 reasoning→opus / draft→sonnet / summarize→haiku · 实际 HTTP 调用在 server/src/bus/channels/text.ts,本 plugin 只声明能力清单与 role→model 映射。",
-      "en": "Anthropic vendor binding on the text channel. Defaults: reasoning→opus, draft→sonnet, summarize→haiku. Actual HTTP lives in server/src/bus/channels/text.ts; this plugin only declares capability list + role→model mapping."
+      "zh": "Anthropic 文本模型绑定 · 在 text 通道把推理 / 起草 / 摘要三档分别映射到 opus-4.7 / sonnet-4.6 / haiku-4.5,让 Studio 各档任务用合适的 Claude 模型(HTTP 由 server 统一调度)。",
+      "en": "Anthropic text model binding — on the text channel, maps the reasoning / draft / summarize tiers to opus-4.7 / sonnet-4.6 / haiku-4.5 so each Studio task uses the right Claude model (HTTP routed by the server)."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1052,7 +1180,7 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/model-anthropic-text"
   },
   "skill-author-plugin": {
@@ -1070,8 +1198,8 @@
       "en": "Plugin Author Guide"
     },
     "desc": {
-      "zh": "首条「四条 authoring path」之一 · /author-plugin 触发,把作者从空白引导到第一个可加载的 forgeax-plugin.json + 一个最小 hello tool。非工程师玩家用得动。",
-      "en": "First of the four authoring paths: typing /author-plugin walks the user through scaffolding a working forgeax-plugin.json plus a minimal hello tool — no TypeScript expertise required."
+      "zh": "插件作者向导(技能)· 输入 /author-plugin 触发,手把手带非工程师在约 10 分钟内做出第一个可被 server 加载的插件:有效的 forgeax-plugin.json + 一个最小 hello tool + reload 验证。",
+      "en": "Plugin Author Guide skill — type /author-plugin and it walks a non-engineer through building their first server-loadable plugin in ~10 minutes: a valid forgeax-plugin.json + a minimal hello tool + a reload-and-verify step."
     },
     "author": "forgeax",
     "keywords": [
@@ -1092,7 +1220,7 @@
       "toolSample": []
     },
     "created": "2026-05-23",
-    "updated": "2026-05-23",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/skill-author-plugin"
   },
   "skill-make-game-design": {
@@ -1110,8 +1238,8 @@
       "en": "Make Game Design"
     },
     "desc": {
-      "zh": "纯 skill plugin (modules/02 §359-§384) · 暴露 /make-game-design slash 命令,引导 cc-coder 系列 agent 在 30 分钟内从一句话愿景产出可玩 demo 的最小设计文档 (玩法 / 数值 / 角色 / 章节)。",
-      "en": "Pure-skill plugin. Exposes /make-game-design slash command that walks cc-coder-style agents through producing a minimal playable design doc (gameplay / numbers / characters / chapters) from a one-line vision in ~30 minutes."
+      "zh": "做游戏设计(技能)· 输入 /make-game-design 触发,引导 cc-coder 在约 30 分钟内把一句话愿景拆成可交付落码的最小设计文档(玩法 / 数值 / 角色 / 章节),落到 design/<slug>.md。",
+      "en": "Make Game Design skill — type /make-game-design and it guides cc-coder to turn a one-line vision into a minimal, build-ready design doc (gameplay / numbers / characters / chapters) in ~30 minutes, written to design/<slug>.md."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1126,7 +1254,7 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/skill-make-game-design"
   },
   "tool-balance-resim": {
@@ -1144,8 +1272,8 @@
       "en": "Balance Resim"
     },
     "desc": {
-      "zh": "纯 tool plugin (modules/02 §201-§214) · 暴露 balance:resim — 对指定 scenario 跑 N 次 PvP/PvE 重模拟、返回 winRate + 95% CI,跑 in-process worker。给 /make-game-design 与 wb-balance 共用。",
-      "en": "Pure-tool plugin. Exposes balance:resim — N PvP/PvE resims for a scenario returning winRate + 95% CI. Runs in-process worker. Shared by /make-game-design and wb-balance."
+      "zh": "战斗重模拟工具 · 暴露 balance:resim:对指定 scenario 跑 N 次 PvP/PvE 重模拟,返回胜率 + 95% 置信区间(in-process worker)。供 /make-game-design 与平衡工作台数值调优共用。",
+      "en": "Balance Resim tool — exposes balance:resim: runs N PvP/PvE resimulations of a scenario and returns win-rate + 95% CI (in-process worker). Shared by /make-game-design and the Balance workbench for stat tuning."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1160,92 +1288,8 @@
       ]
     },
     "created": "2026-05-15",
-    "updated": "2026-05-21",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/tool-balance-resim"
-  },
-  "wb-2d-scene-asset-generator": {
-    "slug": "wb-2d-scene-asset-generator",
-    "id": "@forgeax-plugin/wb-2d-scene-asset-generator",
-    "version": "0.1.0",
-    "kind": "workbench",
-    "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "2D 场景资产生成器",
-      "en": "2D Scene Asset Generator"
-    },
-    "desc": {
-      "zh": "2D 场景资产生成器（基于 @forgeax/node-runtime 的节点式插件）",
-      "en": "2D Scene Asset Generator (node-programming plugin built on @forgeax/node-runtime)"
-    },
-    "author": "ForgeaX",
-    "keywords": [],
-    "caps": {
-      "workbench": "wb-2d-scene-asset-generator",
-      "lens": null,
-      "skills": 2,
-      "skillTriggers": [
-        "/wb-2d-scene-asset-generator",
-        "/generate-2d-asset"
-      ],
-      "tools": 21,
-      "toolSample": [
-        "asset2d:projects.list",
-        "asset2d:projects.create",
-        "asset2d:projects.open",
-        "asset2d:projects.close",
-        "asset2d:projects.remove",
-        "asset2d:batteries.list"
-      ]
-    },
-    "created": "2026-06-08",
-    "updated": "2026-06-08",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-2d-scene-asset-generator"
-  },
-  "wb-3d-lowpoly": {
-    "slug": "wb-3d-lowpoly",
-    "id": "@forgeax-plugin/wb-3d-lowpoly",
-    "version": "0.1.0",
-    "kind": "workbench",
-    "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "3D 低多边形生成器",
-      "en": "3D Lowpoly Generator"
-    },
-    "desc": {
-      "zh": "3D 低多边形生成器（基于 @forgeax/node-runtime 的节点式插件）",
-      "en": "3D Lowpoly Generator (node-programming plugin built on @forgeax/node-runtime)"
-    },
-    "author": "ForgeaX",
-    "keywords": [],
-    "caps": {
-      "workbench": "wb-3d-lowpoly",
-      "lens": null,
-      "skills": 2,
-      "skillTriggers": [
-        "/wb-3d-lowpoly",
-        "/compose-lowpoly"
-      ],
-      "tools": 17,
-      "toolSample": [
-        "lowpoly:projects.list",
-        "lowpoly:projects.create",
-        "lowpoly:projects.open",
-        "lowpoly:projects.close",
-        "lowpoly:projects.remove",
-        "lowpoly:batteries.list"
-      ]
-    },
-    "created": "2026-06-02",
-    "updated": "2026-06-02",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-3d-lowpoly"
   },
   "wb-agent-persona": {
     "slug": "wb-agent-persona",
@@ -1262,8 +1306,8 @@
       "en": "Agent Persona Editor"
     },
     "desc": {
-      "zh": "编辑各 agent 的 persona/zh.md · 列表选 agent + 文本区编辑 + 保存后热重载",
-      "en": "Edit each agent's persona/zh.md — list-pick + textarea + save with hot-reload."
+      "zh": "Agent Persona 编辑器(工作台)· 列表选 agent → 文本区编辑其 persona/zh.md → 保存即热重载,实时调每个 agent 的人设与行为。",
+      "en": "Agent Persona Editor workbench — pick an agent from the list, edit its persona/zh.md in a textarea, and save with hot-reload to tune each agent's persona and behavior live."
     },
     "author": "forgeax",
     "keywords": [
@@ -1281,8 +1325,56 @@
       "toolSample": []
     },
     "created": "2026-05-24",
-    "updated": "2026-05-24",
+    "updated": "2026-07-03",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-agent-persona"
+  },
+  "wb-ai-asset": {
+    "slug": "wb-ai-asset",
+    "id": "@forgeax-plugin/wb-ai-asset",
+    "version": "0.1.0",
+    "kind": "workbench",
+    "kindLabel": {
+      "zh": "工作台",
+      "en": "Workbench"
+    },
+    "experimental": true,
+    "name": {
+      "zh": "AI 小物件低模生成",
+      "en": "AI Asset Lowpoly Generator"
+    },
+    "desc": {
+      "zh": "经 LiteLLM 网关驱动 Meshy 的 AI 小物件 3D 低模资产生成：文/图/多图 → lowpoly mesh → (可选 refine PBR 纹理) → (可选 remesh 降面) → glb → 落盘游戏可用资产。区别于 wb-3d-lowpoly（程序化 CAD）。",
+      "en": "LiteLLM-gateway-driven Meshy generator for small 3D lowpoly props: text/image/multi-image → lowpoly mesh → (optional refine PBR) → (optional remesh) → glb → durable game asset. Distinct from wb-3d-lowpoly (programmatic CAD)."
+    },
+    "author": "forgeax",
+    "keywords": [
+      "meshy",
+      "lowpoly",
+      "ai",
+      "asset",
+      "props",
+      "glb",
+      "3d",
+      "generation"
+    ],
+    "caps": {
+      "workbench": "wb-ai-asset",
+      "lens": "by-category",
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 11,
+      "toolSample": [
+        "aiasset:provider-status",
+        "aiasset:text-to-3d",
+        "aiasset:image-to-3d",
+        "aiasset:multi-image-to-3d",
+        "aiasset:refine",
+        "aiasset:retexture"
+      ]
+    },
+    "created": "2026-06-30",
+    "updated": "2026-07-06",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-ai-asset"
   },
   "wb-anim": {
     "slug": "wb-anim",
@@ -1299,8 +1391,8 @@
       "en": "Animation"
     },
     "desc": {
-      "zh": "动画工作台 · 像素角色四方向动画 · 载具动画 · 怪物精灵 · Spine 骨骼 · 视频生成 · iframe 嵌入 + 中间视口预览。",
-      "en": "Animation workbench — pixel character 4-dir sprite, vehicle anim, monster sprites, Spine binding, video generation. iframe-embedded with center viewport preview."
+      "zh": "动画工作台 · 六条生成管线:像素角色四方向、序列帧 spritesheet、载具动画、怪物精灵、Spine 骨骼、AI 视频(Kling)。iframe 嵌入 Studio,中间视口实时预览。",
+      "en": "Animation workbench — six generators: 4-direction pixel sprites, sprite-sheets, vehicle animation, monster sprites, Spine binding and AI video (Kling). iframe-embedded in Studio with a live center-viewport preview."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1320,7 +1412,7 @@
       ]
     },
     "created": "2026-05-15",
-    "updated": "2026-06-16",
+    "updated": "2026-07-06",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-anim"
   },
   "wb-balance": {
@@ -1338,8 +1430,8 @@
       "en": "Balance & Sim"
     },
     "desc": {
-      "zh": "平衡 / 数值工作台 · 调 balance:resim (tool-balance-resim) 跑 N 次重模拟 · dashboard 显示 winRate + 95% CI · 跟玩家手调数值闭环。",
-      "en": "Balance & sim workbench. Drives balance:resim (tool-balance-resim) for N-trial replays; dashboards winRate + 95% CI; loops with manual stat tweaks."
+      "zh": "平衡 / 数值工作台(规划中)· 目标:调用 balance:resim 跑 N 次重模拟,dashboard 显示胜率 + 95% 置信区间,与玩家手调数值形成闭环。当前为 marketplace 占位,面板实现待后续 sprint 落地。",
+      "en": "Balance & sim workbench (planned) — will drive balance:resim for N-trial replays, dashboard win-rate + 95% CI, and loop with manual stat tweaks. Currently a marketplace placeholder; the panel lands in a later sprint."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1352,7 +1444,7 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-06-19",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-balance"
   },
   "wb-bgm": {
@@ -1370,8 +1462,8 @@
       "en": "BGM & SFX"
     },
     "desc": {
-      "zh": "BGM / 音效素材库（Local 环境）· 试听 + 配入游戏 · 下载到 .forgeax/games/<slug>/audio/ 并写入 audio/manifest.json。",
-      "en": "BGM & SFX asset library (Local depot). Preview + attach: downloads into .forgeax/games/<slug>/audio/ and upserts audio/manifest.json."
+      "zh": "BGM / 音效工作台 · 搜索 + 试听音频素材库,一键配入游戏:下载到 .forgeax/games/<slug>/audio/ 并写入 audio/manifest.json,供引擎按 manifest 播放。",
+      "en": "BGM & SFX workbench — search and preview an audio asset library, then attach to a game in one click: downloads into .forgeax/games/<slug>/audio/ and upserts audio/manifest.json for the engine to play."
     },
     "author": "forgeax",
     "keywords": [
@@ -1396,7 +1488,7 @@
       ]
     },
     "created": "2026-05-15",
-    "updated": "2026-06-20",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-bgm"
   },
   "wb-character": {
@@ -1414,8 +1506,8 @@
       "en": "Character Editor"
     },
     "desc": {
-      "zh": "角色概念设计 · 立绘 / 三视图 / 角色画像，产出物 (manifest + portrait/turnaround) 下游接入动画工作台。",
-      "en": "Character concept design — portrait / turnaround. Outputs (manifest + portrait/turnaround) feed downstream into the Animation workbench."
+      "zh": "角色编辑器工作台(Three.js)· 多管线角色生成:像素角色四方向、Spine 骨骼绑定与动画、视频角色三视图→序列帧、技能 VFX 与打击感、八方向怪物。集成 AI 图像 / 视频生成,产出 manifest + portrait / turnaround / spritesheet,下游接入动画工作台。",
+      "en": "Character editor workbench (Three.js) — multi-pipeline character generation: 4-direction pixel sprites, Spine rig + animation, video turnaround to spritesheet, skill VFX with game-feel, and 8-direction monsters. AI image/video generation; outputs a manifest + portrait/turnaround/spritesheet that feed the Animation workbench."
     },
     "author": "forgeax",
     "keywords": [
@@ -1443,7 +1535,7 @@
       ]
     },
     "created": "2026-05-15",
-    "updated": "2026-06-20",
+    "updated": "2026-07-06",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-character"
   },
   "wb-code": {
@@ -1461,8 +1553,8 @@
       "en": "Code Workbench"
     },
     "desc": {
-      "zh": "代码工作台 · 升级现 MainArea/WorkbenchMode.tsx 为独立 plugin · 浏览 + 跳转 src/ 文件,与 cc-coder 跨 chat thread 协作。",
-      "en": "Code workbench. Will upgrade MainArea/WorkbenchMode.tsx into a plugin. Browse + jump src/ files; collaborates with cc-coder across chat threads."
+      "zh": "代码工作台(规划中)· 目标:在 Studio 内浏览 + 跳转游戏 src/ 文件,与 cc-coder 跨对话线程协作改代码。当前为 marketplace 占位,面板实现待后续 sprint 落地。",
+      "en": "Code workbench (planned) — will browse and jump through a game's src/ files inside Studio and collaborate with cc-coder across chat threads. Currently a marketplace placeholder; the panel lands in a later sprint."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1475,7 +1567,7 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-06-19",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-code"
   },
   "wb-gen3d": {
@@ -1493,8 +1585,8 @@
       "en": "3D Character Generation"
     },
     "desc": {
-      "zh": "Hunyuan3D / Meshy 等 provider 的 3D 资产生成入口：选 provider + 输入，产出持久化的游戏可用 3D 资产 manifest。",
-      "en": "3D asset generation entrypoint for providers like Hunyuan3D and Meshy: pick a provider and input, produce durable game-ready 3D asset manifests."
+      "zh": "3D 角色生成工作台 · 接 Hunyuan3D / Meshy（经 LiteLLM 网关；Rodin 暂未接入）:文本 / 图片 / 多视图生成 3D,网格精修与 retopo 低模,自动绑骨 + 套用动作,质量评分,产出可持久化的游戏可用 3D 资产 manifest。",
+      "en": "3D character generation workbench — drives providers like Hunyuan3D / Meshy (via the LiteLLM gateway; Rodin not yet wired): text/image/multi-view to 3D, mesh refine + lowpoly retopo, auto-rig + motion, and quality scoring, producing durable game-ready 3D asset manifests."
     },
     "author": "forgeax",
     "keywords": [
@@ -1521,13 +1613,13 @@
       ]
     },
     "created": "2026-06-10",
-    "updated": "2026-06-21",
+    "updated": "2026-07-04",
     "repoUrl": null
   },
   "wb-items": {
     "slug": "wb-items",
     "id": "@forgeax-plugin/wb-items",
-    "version": "0.1.0",
+    "version": "0.1.5",
     "kind": "workbench",
     "kindLabel": {
       "zh": "工作台",
@@ -1539,21 +1631,37 @@
       "en": "Items & Icons"
     },
     "desc": {
-      "zh": "道具 / 图标工作台 · items.json + 像素 icon 编辑 · 后续接 2D_sidescroller + 2D_tileable + 2D_ai_pixel 生图链路。",
-      "en": "Items & icons workbench. items.json + pixel-icon editing. Will host 2D_sidescroller, 2D_tileable and 2D_ai_pixel pipelines."
+      "zh": "道具 / 图标工作台 · 管理 items.json 与 48×48 图标素材，批量规范化源图，并按视觉风格生成变体计划（接 Gemini / 像素管线）。",
+      "en": "Items & icons workbench — manage items.json and 48×48 icon assets, batch-normalize source art, and plan multi-style icon generation (Gemini / pixel pipeline hooks)."
     },
-    "author": "ForgeaX",
-    "keywords": [],
+    "author": "forgeax",
+    "keywords": [
+      "items",
+      "icons",
+      "inventory",
+      "pixel",
+      "lucide",
+      "items.json"
+    ],
     "caps": {
       "workbench": "items",
       "lens": "by-category",
-      "skills": 0,
-      "skillTriggers": [],
-      "tools": 0,
-      "toolSample": []
+      "skills": 1,
+      "skillTriggers": [
+        "/items-workshop"
+      ],
+      "tools": 14,
+      "toolSample": [
+        "items:list",
+        "items:save-document",
+        "items:upsert-item",
+        "items:delete-item",
+        "items:normalize-sources",
+        "items:generate-style-plan"
+      ]
     },
     "created": "2026-05-15",
-    "updated": "2026-06-19",
+    "updated": "2026-07-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-items"
   },
   "wb-look": {
@@ -1571,8 +1679,8 @@
       "en": "Color & Look-dev"
     },
     "desc": {
-      "zh": "色彩 / Look-dev 工作台 · colorgrade.toml + theme.json + postprocess stack · 后续接 2D_style_transfer + H-3d-LookMaster — palette + LUT + 后处理。",
-      "en": "Color & look-dev workbench. colorgrade.toml + theme.json + postprocess stack. Will host 2D_style_transfer + H-3d-LookMaster — palette + LUT + postprocess."
+      "zh": "色彩 / Look-dev 工作台(规划中)· 目标:管理 colorgrade.toml + theme.json + 后处理栈(palette / LUT / 后处理)统一全局色调。当前为 marketplace 占位,面板实现待后续 sprint 落地。",
+      "en": "Color & look-dev workbench (planned) — will manage colorgrade.toml + theme.json + a postprocess stack (palette / LUT / postprocess) for global color grading. Currently a marketplace placeholder; the panel lands in a later sprint."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1585,7 +1693,7 @@
       "toolSample": []
     },
     "created": "2026-05-15",
-    "updated": "2026-06-19",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-look"
   },
   "wb-lowpoly-obj": {
@@ -1603,8 +1711,8 @@
       "en": "LowPoly Humanoid Editor"
     },
     "desc": {
-      "zh": "可动方块人 3D 角色编辑器 · vibe + 手编（Blender 风 gizmo） · 内置游乐场 · 烘焙 .glb 引擎中立",
-      "en": "Lowpoly humanoid 3D character editor — vibe (LLM) + manual edit (Blender-style gizmo) + playground; bakes to engine-neutral .glb."
+      "zh": "方块人 3D 角色编辑器(工作台)· 参数化方块人(关节绑骨 + 部件几何 + 动画 clip,JSON 为唯一 SSOT)。vibe 自然语言编辑 + Blender 风 gizmo 手编 + 第三人称 Playground 验证动画;three.js 预览,烘焙为引擎中立 .glb / .obj(Mixamo 命名兼容)。",
+      "en": "Lowpoly humanoid 3D character editor (workbench) — a parametric block humanoid (joints + part geometry + animation clips, JSON as the single source of truth). Vibe natural-language edit + Blender-style gizmo manual edit + a third-person playground to test animation; three.js preview, bakes to engine-neutral .glb/.obj (Mixamo-compatible naming)."
     },
     "author": "forgeax",
     "keywords": [
@@ -1634,7 +1742,7 @@
       ]
     },
     "created": "2026-05-23",
-    "updated": "2026-06-01",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-lowpoly-obj"
   },
   "wb-narrative": {
@@ -1652,8 +1760,8 @@
       "en": "Narrative Studio"
     },
     "desc": {
-      "zh": "AI 驱动的游戏叙事生成管线 · Tier/Mode 双层路由 + Planner 动态选步 · 117 品类 · 9 种管线模板",
-      "en": "AI-driven narrative pipeline with tier/mode routing + dynamic planner, 117 genres, 9 pipeline templates"
+      "zh": "AI 驱动的叙事工坊 · 双层路由(Tier + Mode)+ Planner 动态选步,覆盖 117 品类 / 9 种管线模板 / 6 种叙事原型,生成世界观→角色→剧情→对白的完整叙事;可查看故事树、单步重生成、导出结果。",
+      "en": "AI-driven narrative studio — two-layer routing (Tier + Mode) plus a dynamic planner over 117 genres, 9 pipeline templates and 6 narrative archetypes, generating a full world to characters to plot to dialogue narrative; with a story-tree view, per-step regeneration and result export."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1664,7 +1772,7 @@
       "skillTriggers": [
         "/narrative"
       ],
-      "tools": 18,
+      "tools": 30,
       "toolSample": [
         "narrative:start-pipeline",
         "narrative:get-run-status",
@@ -1675,7 +1783,7 @@
       ]
     },
     "created": "2026-05-22",
-    "updated": "2026-06-20",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-narrative"
   },
   "wb-observatory": {
@@ -1693,8 +1801,8 @@
       "en": "Observatory"
     },
     "desc": {
-      "zh": "实时/离线查看 agent 与子 agent 的 turn / tool / sub-agent 轨迹与 system-prompt 模块切片，辅助上下文 / skill / 护栏 / cache 管理。",
-      "en": "Live + static visualization of agent and sub-agent turns, tool calls, and system-prompt module slices. Aids context / skill / guardrail / cache management."
+      "zh": "Observatory · 轨迹观察台(工作台)· 用 reactflow 把一次 agent 会话画成 session→turn→tool / 子 agent 的图,实时(SSE)+ 离线回放;并把拼好的 system-prompt 切成带 token 估算的模块切片,辅助上下文 / skill / 护栏 / cache 管理。",
+      "en": "Observatory workbench — renders an agent session as a reactflow graph (session to turn to tool / sub-agent) with a live SSE tail + offline replay, and slices the composed system prompt into inspectable modules with token estimates; aids context / skill / guardrail / cache management."
     },
     "author": "forgeax",
     "keywords": [
@@ -1716,7 +1824,7 @@
       "toolSample": []
     },
     "created": "2026-05-25",
-    "updated": "2026-06-04",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-observatory"
   },
   "wb-plugin-author": {
@@ -1734,8 +1842,8 @@
       "en": "Plugin Author"
     },
     "desc": {
-      "zh": "v2-vision 09 §2.1/4 · 非专业作者的 in-app 编辑器入口。Phase D6 (4/4) placeholder · 真实 React panel 在后续 sprint 落地(file-tree 左,Monaco 右,保存自动 reload)。当前手写路径走 SettingsPanel · Fork & 录制 + meta:author-plugin skill。",
-      "en": "Non-expert authoring workbench (09 §2.1/4). D6 (4/4) placeholder; the real panel (file tree + Monaco editor, save → auto-reload) lands in a follow-up sprint. Today the working flows are SettingsPanel · Fork + meta:author-plugin skill."
+      "zh": "插件作者工作台 · 在 Studio 内编辑 .forgeax/plugins/<slug>/ 下的本地插件:左侧文件树 + 右侧文本编辑器,保存即写回并后台热重载注册表;配合 fork / record-as-skill 创建插件。",
+      "en": "Plugin Author workbench — an in-app editor for local plugins under .forgeax/plugins/<slug>/: a left file tree + right text editor; saving writes back and hot-reloads the plugin registry in the background. Pairs with fork / record-as-skill to create a plugin."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1748,7 +1856,7 @@
       "toolSample": []
     },
     "created": "2026-05-23",
-    "updated": "2026-06-19",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-plugin-author"
   },
   "wb-reel": {
@@ -1766,8 +1874,8 @@
       "en": "Reel Studio"
     },
     "desc": {
-      "zh": "互动影游 (FMV) 编辑器与运行时 · Opus/Gemini 提示词锻造 + GPT-Image 占位图 + Seedance 视频 + QTE + 剧情分支",
-      "en": "Interactive FMV editor & player — prompt forging (Opus/Gemini), GPT-Image keyframes, Seedance video, QTE engine, branch tree"
+      "zh": "互动影游(FMV)工坊 · 作者把提示词 / 视频 / 镜头 / 台词 / QTE / 剧情分支拼成可玩互动影片:Opus·Gemini 锻造提示词、GPT-Image 占位关键帧、Seedance 生成视频;编辑期产出可序列化 Scenario JSON,运行期确定性回放(限时点按 + 选项分支)。",
+      "en": "Interactive FMV (reel) studio — authors assemble prompts / video / shots / dialogue / QTE / branch trees into a playable interactive movie: Opus and Gemini prompt forging, GPT-Image keyframes, Seedance video. The editor emits a serializable Scenario JSON; the runtime is deterministic playback (timed taps + choice branches)."
     },
     "author": "forgeax",
     "keywords": [
@@ -1787,23 +1895,23 @@
       "skillTriggers": [
         "/reel"
       ],
-      "tools": 13,
+      "tools": 23,
       "toolSample": [
         "reel:list-scenarios",
         "reel:get-scenario",
         "reel:save-scenario",
-        "reel:list-assets",
-        "reel:generate-video",
-        "reel:get-video-task"
+        "reel:get-scene-timeline",
+        "reel:update-shot",
+        "reel:edit-dialogue"
       ]
     },
     "created": "2026-05-29",
-    "updated": "2026-06-22",
+    "updated": "2026-07-06",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-reel"
   },
-  "wb-scene-generator": {
-    "slug": "wb-scene-generator",
-    "id": "@forgeax-plugin/wb-scene-generator",
+  "wb-scene": {
+    "slug": "wb-scene",
+    "id": "@forgeax-plugin/wb-scene",
     "version": "0.1.0",
     "kind": "workbench",
     "kindLabel": {
@@ -1812,38 +1920,36 @@
     },
     "experimental": true,
     "name": {
-      "zh": "场景生成器",
-      "en": "Scene Generator"
+      "zh": "场景 / 世界",
+      "en": "Scene & World"
     },
     "desc": {
-      "zh": "场景生成器（基于 @forgeax/node-runtime 的节点式插件）",
-      "en": "Scene Generator (node-programming plugin built on @forgeax/node-runtime)"
+      "zh": "节点式可视化数据处理管线 · 三分布局（画布/渲染/资产库）· 多项目工作区",
+      "en": "Node-based visual data pipeline editor with split layout (canvas/renderer/assetstore) and multi-project workspace"
     },
     "author": "ForgeaX",
-    "keywords": [],
+    "keywords": [
+      "scene",
+      "world",
+      "pipeline",
+      "node-editor",
+      "tilemap",
+      "pcg",
+      "visual-programming"
+    ],
     "caps": {
-      "workbench": "wb-scene-generator",
-      "lens": null,
-      "skills": 4,
+      "workbench": "scene",
+      "lens": "by-category",
+      "skills": 1,
       "skillTriggers": [
-        "/wb-scene-generator",
-        "/compose-scene-pipeline",
-        "/compose-sino-scene",
-        "/texture-pipeline"
+        "/scene-workshop"
       ],
-      "tools": 26,
-      "toolSample": [
-        "scene:projects.list",
-        "scene:projects.create",
-        "scene:projects.open",
-        "scene:projects.close",
-        "scene:projects.remove",
-        "scene:batteries.list"
-      ]
+      "tools": 0,
+      "toolSample": []
     },
-    "created": "2026-06-02",
-    "updated": "2026-06-02",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-scene-generator"
+    "created": "2026-05-15",
+    "updated": "2026-06-08",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-scene"
   },
   "wb-skill": {
     "slug": "wb-skill",
@@ -1860,8 +1966,8 @@
       "en": "Skills & VFX"
     },
     "desc": {
-      "zh": "技能 / VFX 工作台 · 列出 skills/* 与 vfx/* 产出 · 后续接 Monster_Skill_Package 技能树编辑 + vfx2 预览,玩家手点 / AI dispatch 共改一份 skill spec。",
-      "en": "Skill & VFX workbench. Lists skills/* and vfx/* outputs. Will host the skill-tree editor + VFX preview; player DOM and AI dispatch share one spec."
+      "zh": "技能 / VFX 工作台 · 浏览游戏的 skills/* 与 vfx/* 产出,内置 VFX 引擎实时预览特效,并用 skill:generate-vfx 生成特效;玩家手点与 AI dispatch 共改同一份 skill spec。",
+      "en": "Skill & VFX workbench — browse a game's skills/* and vfx/* outputs, preview effects live in a built-in VFX engine, and generate them via skill:generate-vfx; player clicks and AI dispatch edit one shared skill spec."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1876,7 +1982,7 @@
       ]
     },
     "created": "2026-05-15",
-    "updated": "2026-06-12",
+    "updated": "2026-07-01",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-skill"
   },
   "wb-ui": {
@@ -1894,8 +2000,8 @@
       "en": "UI Workshop"
     },
     "desc": {
-      "zh": "Workbench UI 工坊：按游戏类型、界面流程、视觉风格生成 UI 蓝图、组件素材与可交互原型。",
-      "en": "Workbench UI workshop for generating UI blueprints, component assets, and interactive prototypes by genre, screen flow, and visual style."
+      "zh": "UI 工坊(工作台)· 按游戏类型 / 界面流程 / 视觉风格生成 UI 蓝图与组件素材(经 Gemini 生图),预览 HUD / 菜单 / 商店 / 对话 / 结算等界面并导出可交互原型;视觉对齐 ForgeaX 设计系统 token。",
+      "en": "UI Workshop workbench — generate UI blueprints and component assets by game genre / screen flow / visual style (via Gemini image gen), preview HUD / menu / shop / dialog / result screens and export an interactive prototype; visuals aligned to the ForgeaX design-system tokens."
     },
     "author": "ForgeaX",
     "keywords": [
@@ -1919,7 +2025,7 @@
       ]
     },
     "created": "2026-05-15",
-    "updated": "2026-06-17",
+    "updated": "2026-07-06",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins/wb-ui"
   }
 }

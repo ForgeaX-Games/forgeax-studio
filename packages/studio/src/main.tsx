@@ -26,6 +26,7 @@ import { subscribeNarrativeCopilot } from '@forgeax/interface/lib/narrative-copi
 import { subscribeFileActivityStream } from '@forgeax/interface/lib/file-activity-stream';
 import { subscribePermissionStream } from '@forgeax/interface/lib/permission-stream';
 import { subscribePerceptionStream } from '@forgeax/interface/lib/perception-stream';
+import { bootUiBridge } from '@forgeax/interface/lib/ui-bridge';
 import { syncBrowserPrefsFromServer, startBrowserPrefsSync } from '@forgeax/interface/lib/browser-prefs-sync';
 import { useAppStore } from '@forgeax/interface/store';
 import { decodeSurfaceFromLocation, getWindowManager, surfaceKey } from '@forgeax/interface/lib/platform';
@@ -99,6 +100,7 @@ function bootStore() {
   subscribeFileActivityStream();
   subscribePermissionStream(); // 权限审批卡订阅(此前 studio bootStore 漏挂 → 默认内核 ask 卡从不渲染)
   subscribePerceptionStream();
+  bootUiBridge(); // UI 语义操作层(ActionRegistry + lease + ui_* 应答;方案:产品AI化-语义操作层)
   void useAppStore.getState().initSessions();
 }
 

@@ -56,6 +56,7 @@ const SCRIPT_COMMANDS = new Map<string, string>([
 const BUILTIN_COMMANDS = new Set([
   // git update orchestration
   'update',
+  'clean',
 
   // dev lifecycle orchestration
   'start',
@@ -99,6 +100,11 @@ Usage:
 Common commands:
   setup                 Prepare deps, submodules, engine, plugins, .env scaffold
   update                Pull latest root code and sync all submodules
+  clean [--deep|-x]     Restore a fully-clean git status across root + all
+                        submodules. Discards uncommitted edits, scrubs submodule
+                        interiors to bare pin state (incl. gitignored runtime
+                        products), syncs pins. Root keeps node_modules/dist/.env
+                        unless --deep. --dry-run/-n previews. Keeps .forgeax-harness.
   start [web|app|local] Start Studio and open the selected client (default: web)
                         local = 127.0.0.1-only on a third port band (:38920) — use
                         when default and dev-local ports are both taken
@@ -544,6 +550,84 @@ function restartStack(args: string[]): never {
   startStudio(args);
 }
 
+// ── clean ──────────────────────────────────────────────────────────────────
+// Restore the working tree to a fully-clean `git status`, recursively across the
+// root repo AND every submodule (incl. the editor→engine nesting).
+//
+// Root vs submodule asymmetry (deliberate):
+//   • ROOT stays conservative by default — keeps gitignored artefacts
+//     (node_modules / dist / .env / wgpu-wasm pkg) so no re-setup is needed.
+//   • SUBMODULES are always deep-cleaned (`-fdx`). A submodule reports itself
+//     "modified" to the superproject whenever its tree has ANY untracked content
+//     — and the only untracked content left after a normal clean is gitignored
+//     runtime products (engine packages/*/build, games <slug>/workbench + reel/,
+//     sessions/). Those are always regenerable, and leaving them keeps the
+//     superproject stuck at `M packages/<sub>`. So to actually reach a clean
+//     `git status`, submodule interiors must be scrubbed to bare pin state.
+//
+// `--deep`/-x extends the deep clean to the ROOT too (wipe node_modules/dist/.env;
+// re-run setup after). `--dry-run`/-n previews without deleting.
+// `.forgeax-harness` (floating loop-state clone, gitignored, own .git) is ALWAYS
+// preserved — it holds unpushed closed-loop state and must never be wiped here.
+//
+// NOTE: this function discards ALL uncommitted work (git reset --hard). Commit
+// anything worth keeping — including edits to this very file — before running it.
+function clean(args: string[]): never {
+  const dryRun = args.includes('--dry-run') || args.includes('-n');
+  const deepRoot = args.includes('--deep') || args.includes('-x');
+  const rootCleanFlags = deepRoot ? '-fdx' : '-fd';
+  // Submodule interiors are always deep-cleaned; -ff to descend into any nested
+  // git dirs (e.g. an uninitialised nested submodule) rather than skip them.
+  const subForeachCmd = dryRun
+    ? 'git reset --hard -q && git clean -ffndx'
+    : 'git reset --hard -q && git clean -ffdx';
+
+  const results: UpdateResult[] = [];
+  const step = (repo: string, gitArgs: string[], okDetail: string): void => {
+    if (dryRun) {
+      console.log(`[dry-run] git ${gitArgs.join(' ')}`);
+      results.push({ repoType: repo === '.' ? 'root' : 'submodule', repo, result: 'planned', detail: `git ${gitArgs.join(' ')}` });
+      return;
+    }
+    console.log(`[clean] ${repo}: git ${gitArgs.join(' ')}`);
+    const r = spawnSync('git', gitArgs, { cwd: ROOT, stdio: 'inherit' });
+    const status = r.status ?? 1;
+    results.push({
+      repoType: repo === '.' ? 'root' : 'submodule',
+      repo,
+      result: status === 0 ? 'ok' : 'failed',
+      detail: status === 0 ? okDetail : `git ${gitArgs.join(' ')} exited ${status}`,
+    });
+  };
+
+  console.log(`[clean] root mode: ${deepRoot ? 'deep (removes gitignored artefacts — re-run setup after)' : 'standard (keeps node_modules/dist/.env)'} · submodules: always deep${dryRun ? ' · DRY RUN' : ''}`);
+
+  // 1. discard tracked edits + reset submodule pointers to recorded pins.
+  step('.', ['reset', '--hard'], 'reset tracked changes');
+  // 2. sync submodule checkouts to the recorded pins (init any missing / nested).
+  step('submodules', ['submodule', 'update', '--init', '--recursive', '--force'], 'checkouts synced to pins');
+  // 3. scrub every submodule working tree to bare pin state (tracked + untracked
+  //    + gitignored, recursively) so none reports "modified content" upward.
+  step('submodules', ['submodule', 'foreach', '--recursive', subForeachCmd], 'submodule trees scrubbed');
+  // 4. remove root untracked files, always preserving the harness floating clone.
+  step('.', ['clean', rootCleanFlags, '-e', '.forgeax-harness', ...(dryRun ? ['-n'] : [])], 'root untracked removed');
+
+  console.log(`\n${formatUpdateReport(results)}`);
+
+  if (!dryRun) {
+    const stillDirty = gitOut(['status', '--porcelain']);
+    if (stillDirty === '') {
+      console.log('\n[clean] working tree is now completely clean ✓');
+    } else {
+      console.log('\n[clean] remaining after clean (inspect manually):');
+      console.log(stillDirty);
+    }
+  }
+
+  const failed = results.filter((r) => r.result === 'failed').length;
+  process.exit(failed > 0 ? 1 : 0);
+}
+
 function main(): void {
   const plan = resolveCommand(process.argv.slice(2));
   if (plan.type === 'script') runScript(plan.script, plan.args);
@@ -569,6 +653,9 @@ function main(): void {
       break;
     case 'update':
       update(plan.args);
+      break;
+    case 'clean':
+      clean(plan.args);
       break;
     case 'restart':
       restartStack(plan.args);

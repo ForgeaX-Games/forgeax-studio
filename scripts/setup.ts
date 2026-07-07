@@ -15,7 +15,8 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync,
 import { createInterface } from 'node:readline';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { has, IS_WIN, resolvePython, run } from './lib/sh.ts';
+import { has, resolvePython, run } from './lib/sh.ts';
+import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -131,22 +132,21 @@ ok(`git + bun + node v${nodeMajor} present`);
 // ── 2. submodule init + harness sync ─────────────────────────────────────────
 bold('[2/6] Initialising submodules');
 
-// SSH fallback for private submodules (HTTPS→SSH rewrite, this run only).
-const gitEnv: NodeJS.ProcessEnv = { ...env, GIT_TERMINAL_PROMPT: '0' };
-if (!IS_WIN) {
-  const gm = spawnSync('git', ['config', '--file', '.gitmodules', '--get-regexp', 'url'], { cwd: ROOT, encoding: 'utf8' });
-  if ((gm.stdout ?? '').includes('https://github.com/')) {
-    const ssh = spawnSync('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-T', 'git@github.com'], {
-      encoding: 'utf8',
-    });
-    if (`${ssh.stdout ?? ''}${ssh.stderr ?? ''}`.includes('successfully authenticated')) {
-      gitEnv.GIT_CONFIG_COUNT = '1';
-      gitEnv.GIT_CONFIG_KEY_0 = 'url.git@github.com:.insteadOf';
-      gitEnv.GIT_CONFIG_VALUE_0 = 'https://github.com/';
-      ok('GitHub SSH key detected — using SSH for private submodules');
-    }
-  }
-}
+// Never let git block on a TTY prompt (username/password) or shell out to a
+// GUI credential helper (osxkeychain / manager-core). Submodule URLs in
+// .gitmodules are relative — git expands them against the parent origin — so
+// when the parent was HTTPS-cloned every private submodule fetch will drop
+// into a credential prompt without these guards. Fail fast over silent hang.
+// Full policy + branch matrix lives in scripts/lib/git-credential.ts.
+const parentOrigin = (spawnSync('git', ['config', '--get', 'remote.origin.url'], {
+  cwd: ROOT,
+  encoding: 'utf8',
+}).stdout ?? '').trim();
+const cred = resolveCredentialConfig(parentOrigin, env, probeGitHubSsh);
+const gitEnv: NodeJS.ProcessEnv = { ...hardenedGitEnv(env), ...cred.gitConfig };
+const noCredHelper = [...NO_CRED_ARGV];
+if (cred.branch === 'ssh-rewrite' || cred.branch === 'pat-rewrite') ok(cred.message!);
+else if (cred.branch === 'loud-warn-no-cred') warnY(cred.message!);
 const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
 {
   const paths = parseSubmodulePaths(
@@ -159,7 +159,7 @@ const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
     setupResults.push({ repoType: 'submodule', repo: '(none)', result: 'skipped', detail: 'no submodules configured' });
   }
   for (const path of paths) {
-    const r = spawnSync('git', ['submodule', 'update', '--init', '--recursive', ...depth, '--', path], {
+    const r = spawnSync('git', [...noCredHelper, 'submodule', 'update', '--init', '--recursive', ...depth, '--', path], {
       stdio: 'inherit',
       cwd: ROOT,
       env: gitEnv,
@@ -184,7 +184,11 @@ installHarnessSkills();
 for (const sub of ['editor']) {
   if (existsSync(join(ROOT, 'packages', sub, 'scripts/sync-harness.mjs'))) {
     bold(`  → packages/${sub} harness sync`);
-    spawnSync('node', ['scripts/sync-harness.mjs'], { stdio: 'inherit', cwd: join(ROOT, 'packages', sub) });
+    spawnSync('node', ['scripts/sync-harness.mjs'], {
+      stdio: 'inherit',
+      cwd: join(ROOT, 'packages', sub),
+      env: gitEnv,
+    });
   }
 }
 
@@ -450,7 +454,7 @@ function readJson(file: string): unknown {
 
 function syncHarness(cwd: string, label: string): void {
   console.log(`  → node scripts/sync-harness.mjs (${label})`);
-  const r = spawnSync('node', [join(cwd, 'scripts/sync-harness.mjs')], { stdio: 'inherit', cwd });
+  const r = spawnSync('node', [join(cwd, 'scripts/sync-harness.mjs')], { stdio: 'inherit', cwd, env: gitEnv });
   if (r.status === 0) ok(`${label} synced`);
   else warnY(`${label} sync failed — continuing`);
 }

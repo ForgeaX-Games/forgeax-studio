@@ -31,31 +31,63 @@ const root = resolve(__dirname, '..');
 const DIR = resolve(root, '.forgeax-harness');
 const REPO = 'https://github.com/ForgeaX-Games/forgeax-studio-harness.git';
 
-if (process.env.FORGEAX_SKIP_HARNESS_SYNC) {
-  process.stdout.write('[harness:sync] FORGEAX_SKIP_HARNESS_SYNC set — skipped\n');
-  process.exit(0);
-}
+// Never let git block on a TTY prompt or a GUI credential helper. Every git
+// invocation below inherits these — a fresh HTTPS clone without a working SSH
+// key / PAT will fail fast (warnExit0) instead of hanging waiting on stdin.
+const gitEnv = {
+  ...process.env,
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_ASKPASS: 'echo',
+  GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -o BatchMode=yes',
+};
+const NO_CRED = ['-c', 'credential.helper='];
 
 function git(args, opts = {}) {
-  return spawnSync('git', args, { encoding: 'utf8', ...opts });
+  return spawnSync('git', [...NO_CRED, ...args], { encoding: 'utf8', env: gitEnv, ...opts });
 }
 
 // SSH fallback for the private forgeax-studio-harness repo.
 // REPO is an HTTPS URL but the repo is private; accounts with 2FA can't auth
 // over HTTPS without a PAT. If a working GitHub SSH key is present (the common
-// case), clone over SSH instead. Mirrors the HTTPS→SSH logic in deploy.sh.
-function cloneUrl() {
-  if (!REPO.startsWith('https://github.com/')) return REPO;
+// case), clone over SSH instead. If neither SSH nor a token is available, fall
+// through to HTTPS — the clone will fail fast (prompts disabled) with a clear
+// warning rather than hang.
+//
+// Exported so specs can exercise the branch table without touching the network.
+// Injectable deps (env / sshProbe / warn) keep the function pure.
+export function resolveCloneUrl(
+  repo = REPO,
+  env = process.env,
+  sshProbe = defaultSshProbe,
+  warn = (msg) => process.stdout.write(msg),
+) {
+  if (!repo.startsWith('https://github.com/')) return { url: repo, strategy: 'https-noauth' };
+  if (sshProbe()) return { url: repo.replace('https://github.com/', 'git@github.com:'), strategy: 'ssh' };
+  const tok = env.GH_TOKEN ?? env.GITHUB_TOKEN;
+  if (tok) {
+    return {
+      url: repo.replace('https://github.com/', `https://x-access-token:${tok}@github.com/`),
+      strategy: 'pat',
+    };
+  }
+  warn(
+    '[harness:sync] no GitHub SSH key or GH_TOKEN detected; HTTPS clone of ' +
+      'private forgeax-studio-harness will fail without prompting.\n',
+  );
+  return { url: repo, strategy: 'https-noauth' };
+}
+
+function defaultSshProbe() {
   const probe = spawnSync(
     'ssh',
     ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-T', 'git@github.com'],
     { encoding: 'utf8' },
   );
-  const out = `${probe.stdout || ''}${probe.stderr || ''}`;
-  if (out.includes('successfully authenticated')) {
-    return REPO.replace('https://github.com/', 'git@github.com:');
-  }
-  return REPO;
+  return `${probe.stdout || ''}${probe.stderr || ''}`.includes('successfully authenticated');
+}
+
+function cloneUrl() {
+  return resolveCloneUrl().url;
 }
 
 function warnExit0(msg) {
@@ -66,6 +98,18 @@ function warnExit0(msg) {
 function failLoud(msg) {
   process.stderr.write(`[harness:sync] FORGEAX_HARNESS_DIVERGED: ${msg}\n`);
   process.exit(1);
+}
+
+// Only run the main sync flow when invoked directly (not when a spec imports
+// resolveCloneUrl / other exports). Compare argv[1]'s file URL to import.meta.url.
+if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  main();
+}
+
+function main() {
+if (process.env.FORGEAX_SKIP_HARNESS_SYNC) {
+  process.stdout.write('[harness:sync] FORGEAX_SKIP_HARNESS_SYNC set — skipped\n');
+  process.exit(0);
 }
 
 if (!existsSync(resolve(DIR, '.git'))) {
@@ -145,3 +189,4 @@ if (aheadN > 0) {
 warnExit0(
   `ff-only no-op (already up to date or detached); leaving as-is:\n${(ff.stderr || '').trim()}`,
 );
+}

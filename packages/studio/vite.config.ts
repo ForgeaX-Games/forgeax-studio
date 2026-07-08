@@ -10,8 +10,8 @@ import { vitePluginBrand } from './vite-plugin-brand';
 // now in-process React components (renderEdit/renderEditorPanel), not a `/editor`
 // iframe. This shared serve fragment (shader manifest + optional pack catalog) is
 // the SAME one packages/editor/vite.config.ts consumes for its :15290 host; see
-// packages/editor/packages/edit-runtime/src/engine/engine-vite-preset.ts.
-import { engineVitePreset } from '../editor/packages/edit-runtime/src/engine/engine-vite-preset';
+// packages/editor/packages/edit-runtime/src/viewport/engine-vite-preset.ts.
+import { engineVitePreset } from '../editor/packages/edit-runtime/src/viewport/engine-vite-preset';
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_ENV = resolve(PACKAGE_DIR, '../../.env');

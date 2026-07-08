@@ -13,7 +13,7 @@ import { EDITOR_PANELS } from '@forgeax/editor-core/manifest';
 // not a /editor iframe. ViewportComponent (the in-process surface) + resetEditRealm
 // (cross-game teardown) come from edit-runtime's D8 subpath; EDITOR_PANEL_COMPONENTS
 // maps ep:<id> -> the panel component. Mirrors packages/editor/standalone/main.tsx.
-import { ViewportComponent, resetEditRealm } from '@forgeax/editor-edit-runtime/engine/viewport-component';
+import { ViewportComponent, resetEditRealm } from '@forgeax/editor-edit-runtime/viewport/viewport-component';
 import { EDITOR_PANEL_COMPONENTS } from '@forgeax/editor/panels';
 import { PlaySurface } from '@forgeax/editor/play';
 // import { ReelPlaySurface } from './ReelPlaySurface';

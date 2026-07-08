@@ -114,7 +114,7 @@ export function createPluginPort(opts: CreatePluginPortOptions): PluginPort {
 
   // Auto-handshake: when the plugin asks, reply with stored initial state.
   channel.on('handshake.request', (env) => {
-    const { locale = 'zh', theme = 'dark', sessionId, threadId, pane } = opts.initial ?? {};
+    const { locale = 'en', theme = 'dark', sessionId, threadId, pane } = opts.initial ?? {};
     channel.reply(env, {
       kind: 'handshake.response',
       protocol: 1,

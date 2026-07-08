@@ -91,7 +91,7 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['restart'])).toEqual({ type: 'internal', command: 'restart', args: [] });
   });
 
-  it('keeps update separate from setup and build work', () => {
+  it('keeps update separate from full setup but rebuilds stale plugin dists', () => {
     const source = readFileSync(script('fx.ts'), 'utf8');
     const updateBody = source.slice(source.indexOf('function update('), source.indexOf('function restartStack('));
 
@@ -99,6 +99,7 @@ describe('scripts/fx.ts command routing', () => {
     expect(updateBody).not.toContain('Running setup');
     expect(updateBody).not.toContain('--no-plugins');
     expect(updateBody).not.toContain('--skip-bootstrap');
+    expect(updateBody).toContain('rebuildMarketplacePlugins');
   });
 
   it('updates submodules explicitly after updating the root repo', () => {

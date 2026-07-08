@@ -376,13 +376,18 @@ if (skipPlugins) {
 
     const pkg = readJson(join(d, 'package.json')) as { scripts?: Record<string, string> } | null;
     if (pkg?.scripts?.build) {
-      if (pluginBuildFresh(d)) ok(`${e.name}  build cache fresh, skip`);
-      else {
-        console.log(`  → bun run build (${e.name})`);
-        if (run('bun', ['run', 'build'], { cwd: d })) ok(`${e.name}  built`);
-        else warnY(`${e.name}  build failed — continuing`);
-      }
+      // Build is handled once below via build-plugins (stale/broken detection).
     }
+  }
+
+  if (existsSync(join(ROOT, 'scripts/build-plugins.ts'))) {
+    console.log('  → rebuilding stale/broken wb-* plugin dists');
+    const r = spawnSync(process.execPath, [join(ROOT, 'scripts/build-plugins.ts')], {
+      stdio: 'inherit',
+      cwd: ROOT,
+    });
+    if ((r.status ?? 0) === 0) ok('marketplace plugin dists ready');
+    else warnY('some plugin builds failed — run: bun fx build plugins --force');
   }
 }
 
@@ -538,30 +543,6 @@ function installDir(dir: string): void {
   console.log(`  → bun install (${dir})`);
   if (bunInstallWithRetry(dir)) ok(`${dir}  installed`);
   else warnY(`${dir}  install failed — continuing`);
-}
-
-function pluginBuildFresh(dir: string): boolean {
-  const pkgMs = statSync(join(dir, 'package.json')).mtimeMs;
-  const topDist = join(dir, 'dist');
-  if (existsSync(topDist)) return statSync(topDist).mtimeMs > pkgMs;
-  // workspace plugin: scan leaf dists (prune node_modules)
-  let found = false;
-  const walk = (d: string, depth: number): boolean => {
-    if (depth > 4) return true;
-    for (const e of readdirSync(d, { withFileTypes: true })) {
-      if (e.name === 'node_modules') continue;
-      const p = join(d, e.name);
-      if (e.isDirectory()) {
-        if (e.name === 'dist') {
-          found = true;
-          if (pkgMs > statSync(p).mtimeMs) return false;
-        } else if (!walk(p, depth + 1)) return false;
-      }
-    }
-    return true;
-  };
-  if (!walk(dir, 0)) return false;
-  return found;
 }
 
 function upsertEnv(file: string, key: string, val: string): void {

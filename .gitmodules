@@ -24,7 +24,7 @@
 	branch = main
 [submodule "packages/marketplace"]
 	path = packages/marketplace
-	url = https://github.com/ForgeaX-Games/forgeax-marketplace.git
+	url = https://github.com/Eling0716/forgeax-marketplace.git
 	branch = main
 [submodule "packages/editor"]
 	path = packages/editor

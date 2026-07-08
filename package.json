@@ -23,6 +23,7 @@
     "packages/agent-host",
     "packages/core",
     "packages/host-sdk",
+    "packages/ui-asset-cleanup",
     "packages/platform-io",
     "packages/interface",
     "packages/interface/packages/design",

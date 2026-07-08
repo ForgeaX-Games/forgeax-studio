@@ -459,9 +459,9 @@ function status(): void {
   console.log();
   console.log('ports:');
   for (const [name, port] of [
-    ['server', 18900],
-    ['ui', 18920],
-    ['engine', 15173],
+    ['server', PORT_SERVER],
+    ['ui', PORT_INTERFACE],
+    ['engine', PORT_ENGINE],
     ['narrative', 8900],
     ['face-mask', 18930],
   ] as const) {

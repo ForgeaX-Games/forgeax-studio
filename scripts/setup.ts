@@ -226,6 +226,45 @@ function healDanglingEngineSymlinks(dir: string): void {
 }
 healDanglingEngineSymlinks(engineDir);
 
+// ── wgpu wasm binary (pkg/) — MUST exist before the engine `pnpm -r build` ─────
+// The engine's wgpu-wasm package no longer commits pkg/ (zero-binary invariant:
+// pkg/ is a gitignored wasm-pack artifact, built from Rust or fetched from the
+// wasm-artifacts release). `@forgeax/engine-app`'s bundle imports
+// `../pkg/wgpu_wasm.js` (via @forgeax/engine-wgpu-wasm's dist), so if pkg/ is
+// absent when step [3] builds engine-app, esbuild fails "Could not resolve
+// ../pkg/wgpu_wasm.js". Therefore build the binary in step [3a], BEFORE [3]'s
+// package build — not after. (Older engine pins shipped a checked-in pkg/, which
+// masked this ordering requirement.)
+const wgpuDir = join(engineDir, 'packages/wgpu-wasm');
+const wasmArtefact = join(wgpuDir, 'pkg/wgpu_wasm_bg.wasm');
+const wasmSentinel = join(ROOT, '.forgeax/sentinels/wgpu-wasm.built');
+const touchSentinel = () => {
+  mkdirSync(dirname(wasmSentinel), { recursive: true });
+  writeFileSync(wasmSentinel, '');
+};
+function buildWgpuWasm(): void {
+  bold('[3a/6] Building engine wgpu wasm binary');
+  if (!wgpuWasmStale()) {
+    ok(`wgpu wasm already built and fresh (skip) — ${wasmArtefact}`);
+    if (!existsSync(wasmSentinel)) touchSentinel();
+  } else if (!has('rustc') || !has('wasm-pack')) {
+    warnY('Rust→wasm toolchain missing — skipping wgpu wasm build.');
+    console.log('    The preview engine + engine-app build will fail until this is built (install rust + wasm-pack, then: pnpm -F @forgeax/engine-wgpu-wasm build:wasm)');
+  } else {
+    console.log(existsSync(wasmArtefact) ? '  → wgpu wasm stale — rebuilding' : '  → wgpu wasm missing — building');
+    if (has('rustup')) {
+      const t = spawnSync('rustup', ['target', 'list', '--installed'], { encoding: 'utf8' });
+      if (!(t.stdout ?? '').includes('wasm32-unknown-unknown')) run('rustup', ['target', 'add', 'wasm32-unknown-unknown']);
+    }
+    if (run('pnpm', ['-F', '@forgeax/engine-wgpu-wasm', 'build:wasm'], { cwd: engineDir })) {
+      touchSentinel();
+      ok(`wgpu wasm built — ${wasmArtefact}`);
+    } else {
+      warnY('wgpu wasm build failed — engine-app build + preview engine will not start until fixed.');
+    }
+  }
+}
+
 const skipEngineBuild =
   env.FORGEAX_SKIP_ENGINE_BUILD &&
   existsSync(join(engineDir, 'packages/app/dist')) &&
@@ -235,6 +274,8 @@ if (skipEngineBuild) {
   ok('engine build skipped — FORGEAX_SKIP_ENGINE_BUILD set and dist/ present');
 } else {
   if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed.');
+  // pkg/wgpu_wasm.js must exist before the engine-app bundle below imports it.
+  buildWgpuWasm();
   const filters = [
     '@forgeax/engine-app...', '@forgeax/engine-runtime...', '@forgeax/engine-ecs...', '@forgeax/engine-types...',
     '@forgeax/engine-vite-plugin-shader...', '@forgeax/engine-vite-plugin-pack...', '@forgeax/engine-shader-compiler...',
@@ -279,34 +320,10 @@ if (skipEngineBuild) {
   }
 }
 
-// ── 3b. wgpu wasm ─────────────────────────────────────────────────────────────
-bold('[3b/6] Building engine wgpu wasm binary');
-const wgpuDir = join(engineDir, 'packages/wgpu-wasm');
-const wasmArtefact = join(wgpuDir, 'pkg/wgpu_wasm_bg.wasm');
-const wasmSentinel = join(ROOT, '.forgeax/sentinels/wgpu-wasm.built');
-const touchSentinel = () => {
-  mkdirSync(dirname(wasmSentinel), { recursive: true });
-  writeFileSync(wasmSentinel, '');
-};
-if (!wgpuWasmStale()) {
-  ok(`wgpu wasm already built and fresh (skip) — ${wasmArtefact}`);
-  if (!existsSync(wasmSentinel)) touchSentinel();
-} else if (!has('rustc') || !has('wasm-pack')) {
-  warnY('Rust→wasm toolchain missing — skipping wgpu wasm build.');
-  console.log('    The preview engine will fail until this is built (install rust + wasm-pack, then: pnpm -F @forgeax/engine-wgpu-wasm build:wasm)');
-} else {
-  console.log(existsSync(wasmArtefact) ? '  → wgpu wasm stale — rebuilding' : '  → wgpu wasm missing — building');
-  if (has('rustup')) {
-    const t = spawnSync('rustup', ['target', 'list', '--installed'], { encoding: 'utf8' });
-    if (!(t.stdout ?? '').includes('wasm32-unknown-unknown')) run('rustup', ['target', 'add', 'wasm32-unknown-unknown']);
-  }
-  if (run('pnpm', ['-F', '@forgeax/engine-wgpu-wasm', 'build:wasm'], { cwd: engineDir })) {
-    touchSentinel();
-    ok(`wgpu wasm built — ${wasmArtefact}`);
-  } else {
-    warnY('wgpu wasm build failed — preview engine will not start until fixed.');
-  }
-}
+// wgpu wasm for the FORGEAX_SKIP_ENGINE_BUILD path: the else-branch above builds
+// it before its package build, but the skip path doesn't run that. Ensure pkg/ is
+// present (built/fetched) so the preview engine + any later app rebuild resolve it.
+if (skipEngineBuild) buildWgpuWasm();
 
 // ── 3c. fbx wasm ──────────────────────────────────────────────────────────────
 // editor-core's fbx-cook needs pkg/fbx-wasm.mjs (the ufbx→wasm glue emitted by

@@ -10,8 +10,8 @@ import { vitePluginBrand } from './vite-plugin-brand';
 // now in-process React components (renderEdit/renderEditorPanel), not a `/editor`
 // iframe. This shared serve fragment (shader manifest + optional pack catalog) is
 // the SAME one packages/editor/vite.config.ts consumes for its :15290 host; see
-// packages/editor/packages/edit-runtime/src/engine/engine-vite-preset.ts.
-import { engineVitePreset } from '../editor/packages/edit-runtime/src/engine/engine-vite-preset';
+// packages/editor/packages/edit-runtime/src/viewport/engine-vite-preset.ts.
+import { engineVitePreset } from '../editor/packages/edit-runtime/src/viewport/engine-vite-preset';
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_ENV = resolve(PACKAGE_DIR, '../../.env');
@@ -134,6 +134,35 @@ export default defineConfig({
     host: '0.0.0.0',
     strictPort: true,
     open: false,
+    // Vite 5+ rejects requests whose Host header isn't localhost/127.0.0.1
+    // by default. When the dev server is fronted by a platform-provided
+    // domain (e.g. cloud dev-environment gateway), that Host header check
+    // fails and the SPA gets "Blocked request. This host is not allowed."
+    //
+    // Set FORGEAX_INTERFACE_ALLOWED_HOSTS to a comma-separated host list,
+    // or to the literal value "true" (case-insensitive) to allow every
+    // Host. Unset — or a value that reduces to zero non-empty hosts —
+    // keeps vite's safer default (localhost only).
+    //
+    // Vite matches each host entry as follows:
+    //   - exact match          "api.example.com"    -> api.example.com
+    //   - leading-dot wildcard ".example.com"       -> example.com AND
+    //                                                  *.example.com
+    ...(() => {
+      const raw = process.env.FORGEAX_INTERFACE_ALLOWED_HOSTS;
+      if (raw === undefined) return {};
+      const trimmed = raw.trim();
+      if (trimmed === '') return {};
+      if (trimmed.toLowerCase() === 'true') return { allowedHosts: true as const };
+      const hosts = trimmed
+        .split(',')
+        .map((h) => h.trim())
+        .filter(Boolean);
+      // Empty after filter means the value was pure whitespace/commas — fall
+      // back to vite's safe default (skip the key entirely) rather than
+      // silently forbidding every non-loopback request.
+      return hosts.length > 0 ? { allowedHosts: hosts } : {};
+    })(),
     ...(httpsServerOption !== undefined ? { https: httpsServerOption } : {}),
     watch: { usePolling: true, interval: 300, ignored: ['**/src-tauri/**'] },
     // Vite 5+ restricts file access to its project root by default.  Marketplace

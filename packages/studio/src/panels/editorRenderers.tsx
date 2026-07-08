@@ -13,9 +13,11 @@ import { EDITOR_PANELS } from '@forgeax/editor-core/manifest';
 // not a /editor iframe. ViewportComponent (the in-process surface) + resetEditRealm
 // (cross-game teardown) come from edit-runtime's D8 subpath; EDITOR_PANEL_COMPONENTS
 // maps ep:<id> -> the panel component. Mirrors packages/editor/standalone/main.tsx.
-import { ViewportComponent, resetEditRealm } from '@forgeax/editor-edit-runtime/engine/viewport-component';
+import { ViewportComponent, resetEditRealm } from '@forgeax/editor-edit-runtime/viewport/viewport-component';
 import { EDITOR_PANEL_COMPONENTS } from '@forgeax/editor/panels';
 import { PlaySurface } from '@forgeax/editor/play';
+// import { ReelPlaySurface } from './ReelPlaySurface';
+import { GameVideoPlaySurface } from './GameVideoPlaySurface';
 // studio→chat is a legal aggregation edge (studio composes interface + apps).
 // interface stays chat-agnostic (no @forgeax/chat import); studio injects the
 // chat surface here through the renderChat slot, exactly like edit/preview.
@@ -172,6 +174,10 @@ function PreviewMode() {
   if (!slug) {
     return <div className="preview-mode"><div className="preview-frame preview-frame--waiting"><div className="preview-center"><div className="preview-title">Loading...</div></div></div></div>;
   }
+  // TODO gamevidoe play
+  // if (entry?.projectType === 'game-video' && entry.reelScenarioId) {
+  //   return <GameVideoPlaySurface scenarioId={entry.reelScenarioId} slug={slug} />;
+  // }
   // Opening a project renders that project. Play always shows the game's own
   // engine PlaySurface — it does NOT reinterpret a game as an interactive-film
   // (影游) from a side-file. 影游 is its own independent project type and should
@@ -212,8 +218,8 @@ export const editorRenderers: PanelRenderers = {
   ),
   renderWorkbench: (variant) =>
     variant === 'agents' ? <AgentsMainArea />
-    : variant === 'files' ? <WorkbenchModeDefault showGalleryWhenEmpty={false} />
-    : <WorkbenchMode />,
+      : variant === 'files' ? <WorkbenchModeDefault showGalleryWhenEmpty={false} />
+        : <WorkbenchMode />,
   // Inline (non-iframe) workbench panels, keyed by bus plugin id.
   workbenchPanels: { [WB_PLUGIN_AUTHOR_ID]: PluginAuthorPanel },
   // Host-SDK port factories for the wb:* plugin iframe RPC (studio-only).

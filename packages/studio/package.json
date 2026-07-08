@@ -41,6 +41,7 @@
     "@forgeax/engine-rhi-wgpu": "workspace:*",
     "@forgeax/engine-runtime": "workspace:*",
     "@forgeax/engine-shader": "workspace:*",
+    "@forgeax/engine-state": "workspace:*",
     "@forgeax/engine-types": "workspace:*",
     "@forgeax/engine-fbx": "workspace:*",
     "@forgeax/engine-vite-plugin-pack": "workspace:*",

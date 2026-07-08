@@ -118,20 +118,31 @@ export const NO_CRED_ARGV = ['-c', 'credential.helper='] as const;
  * This is the same policy as `resolveCredentialConfig`, but expressed as a URL
  * transform for scripts (sync-harness) that build a clone URL up-front rather
  * than relying on git's insteadOf rewrite.
+ *
+ * Accepts already-tokenized inputs (`https://x-access-token:$OLD@github.com/…`)
+ * — strips the embedded token before re-injecting the current one, so a token
+ * rotation actually takes effect on a repo cloned with a stale PAT baked into
+ * its remote URL.
  */
 export function rewriteCloneUrl(
   httpsUrl: string,
   env: NodeJS.ProcessEnv,
   sshProbe: SshProbe,
 ): { url: string; strategy: 'ssh' | 'pat' | 'https-noauth' } {
-  if (!httpsUrl.startsWith('https://github.com/')) return { url: httpsUrl, strategy: 'https-noauth' };
-  if (sshProbe()) return { url: httpsUrl.replace('https://github.com/', 'git@github.com:'), strategy: 'ssh' };
+  // Normalize away any pre-embedded token so downstream rewrites operate on a
+  // clean `https://github.com/…` shape.
+  const canonical = httpsUrl.replace(
+    /^https:\/\/x-access-token:[^@]+@github\.com\//,
+    'https://github.com/',
+  );
+  if (!canonical.startsWith('https://github.com/')) return { url: httpsUrl, strategy: 'https-noauth' };
+  if (sshProbe()) return { url: canonical.replace('https://github.com/', 'git@github.com:'), strategy: 'ssh' };
   const tok = env.GH_TOKEN ?? env.GITHUB_TOKEN;
   if (tok) {
     return {
-      url: httpsUrl.replace('https://github.com/', `https://x-access-token:${tok}@github.com/`),
+      url: canonical.replace('https://github.com/', `https://x-access-token:${tok}@github.com/`),
       strategy: 'pat',
     };
   }
-  return { url: httpsUrl, strategy: 'https-noauth' };
+  return { url: canonical, strategy: 'https-noauth' };
 }

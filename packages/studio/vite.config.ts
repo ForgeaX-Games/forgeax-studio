@@ -134,6 +134,35 @@ export default defineConfig({
     host: '0.0.0.0',
     strictPort: true,
     open: false,
+    // Vite 5+ rejects requests whose Host header isn't localhost/127.0.0.1
+    // by default. When the dev server is fronted by a platform-provided
+    // domain (e.g. cloud dev-environment gateway), that Host header check
+    // fails and the SPA gets "Blocked request. This host is not allowed."
+    //
+    // Set FORGEAX_INTERFACE_ALLOWED_HOSTS to a comma-separated host list,
+    // or to the literal value "true" (case-insensitive) to allow every
+    // Host. Unset — or a value that reduces to zero non-empty hosts —
+    // keeps vite's safer default (localhost only).
+    //
+    // Vite matches each host entry as follows:
+    //   - exact match          "api.example.com"    -> api.example.com
+    //   - leading-dot wildcard ".example.com"       -> example.com AND
+    //                                                  *.example.com
+    ...(() => {
+      const raw = process.env.FORGEAX_INTERFACE_ALLOWED_HOSTS;
+      if (raw === undefined) return {};
+      const trimmed = raw.trim();
+      if (trimmed === '') return {};
+      if (trimmed.toLowerCase() === 'true') return { allowedHosts: true as const };
+      const hosts = trimmed
+        .split(',')
+        .map((h) => h.trim())
+        .filter(Boolean);
+      // Empty after filter means the value was pure whitespace/commas — fall
+      // back to vite's safe default (skip the key entirely) rather than
+      // silently forbidding every non-loopback request.
+      return hosts.length > 0 ? { allowedHosts: hosts } : {};
+    })(),
     ...(httpsServerOption !== undefined ? { https: httpsServerOption } : {}),
     watch: { usePolling: true, interval: 300, ignored: ['**/src-tauri/**'] },
     // Vite 5+ restricts file access to its project root by default.  Marketplace

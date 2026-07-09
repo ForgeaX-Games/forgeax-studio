@@ -8,12 +8,20 @@ import { createRoot } from 'react-dom/client';
 import '@forgeax/interface/styles/global.css';
 import { applyTheme } from '@forgeax/design/theme';
 import { App } from '@forgeax/interface/App';
+import { initI18n } from '@forgeax/interface/i18n';
 
 // Dark-only today; dual-marks data-theme + .dark so tokens.css selectors and
 // Tailwind's `dark:` variant stay in lockstep. A light skin later only adds
 // token overrides — no .tsx change. index.html already sets these for no-flash;
 // this keeps it correct if the attribute is ever cleared.
 applyTheme('dark');
+
+// Restore locale from localStorage, or detect the OS/browser locale on first run
+// (zh* → Chinese, else English). MUST run before first paint so the shell renders
+// in the right language. (Was missing on the studio entry — the app was stuck on
+// the module-default 'en' regardless of system locale.) Re-run after the server
+// prefs restore below in case an imported snapshot carries an explicit choice.
+initI18n();
 
 import { BrandProvider } from '@forgeax/interface/brand';
 import { ErrorBoundary } from '@forgeax/interface/components/ErrorBoundary';
@@ -75,6 +83,9 @@ if (detachedSurface) {
 } else {
   // Restore UI layout prefs from server snapshot (export/import migration path).
   void syncBrowserPrefsFromServer().finally(() => {
+    // Re-init locale: the restored snapshot may carry an explicit language choice
+    // that should win over the first-paint system detection above.
+    initI18n();
     startBrowserPrefsSync();
   });
   bootStageEntry();

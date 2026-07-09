@@ -44,7 +44,12 @@
     "packages/build/engine-src"
   ],
   "comment_dependencies": "react-dom 19 declares scheduler as a peer dep, but bun (≥1.3) does not auto-install peer deps the way npm/pnpm do. Without an explicit dependency here, esbuild fails resolving 'scheduler' from inside react-dom-client.development.js on Windows + bun (Windows GAP-13). Pinning it at the workspace root hoists it where every consumer can find it.",
+  "comment_forgeax_deps": "forgeax-cli became a self-contained npm tarball (bun build, files:['dist']) and dropped its @forgeax/* workspace dep declarations — its deps are bundled into dist for external consumers. But in-repo, server consumes cli as SOURCE (via forgeax-cli/* tsconfig paths), so cli/src's own imports of these @forgeax packages must resolve at runtime. tsc handles it via server's tsconfig paths, but bun resolves cli/src's imports from cli's own node_modules context, where they are no longer linked. Hoist them at the workspace root — same pattern as `scheduler` above — so every source consumer (cli/src, agent-host/src) finds them without re-adding workspace:* deps to cli's publishable manifest.",
   "dependencies": {
-    "scheduler": "^0.27.0"
+    "scheduler": "^0.27.0",
+    "@forgeax/types": "workspace:*",
+    "@forgeax/agent-runtime": "workspace:*",
+    "@forgeax/platform-io": "workspace:*",
+    "@forgeax/agent-host": "workspace:*"
   }
 }

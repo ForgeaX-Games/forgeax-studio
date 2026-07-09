@@ -333,6 +333,12 @@ if (skipEngineBuild) {
     // entry for package @forgeax/engine-fbx"). The wasm BINARY (pkg/fbx-wasm.
     // {mjs,wasm}) is built separately in step 3c below.
     '@forgeax/engine-fbx...',
+    // engine-vite-plugin-rhi-debug: the editor's engine-vite-preset (studio's
+    // vite.config imports it) unconditionally imports this plugin (editor #117
+    // opt-in RHI-debug switch). Its exports point at ./dist/index.mjs, so the
+    // dist must exist or the studio vite config load 500s with "Failed to
+    // resolve entry for package @forgeax/engine-vite-plugin-rhi-debug".
+    '@forgeax/engine-vite-plugin-rhi-debug...',
   ].flatMap((f) => ['--filter', f]);
   if (!run('pnpm', [...filters, '-r', 'build'], { cwd: engineDir })) fail('engine submodule build failed.');
   ok('engine packages built');

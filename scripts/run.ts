@@ -106,6 +106,12 @@ if (!existsSync(envFile)) {
   }
 }
 const env = loadDotenv(envFile); // also injected into process.env
+// Anchor the credentials file for /api/settings. It's INSTALL-GLOBAL: the
+// server loaded these creds into process.env once, here; a workspace hot-switch
+// only remaps FORGEAX_PROJECT_ROOT, so Settings must keep reading/writing THIS
+// file (not <active-root>/.env) or creds/FORGEAX_MODEL appear to vanish after a
+// switch. Inherited by every launched child via `...process.env` below.
+process.env.FORGEAX_ENV_FILE = envFile;
 
 // ── LLM egress capture proxy (opt-in) ─────────────────────────────────────────
 // FORGEAX_DEBUG_PROXY routes EVERY kernel's model traffic through a local capture

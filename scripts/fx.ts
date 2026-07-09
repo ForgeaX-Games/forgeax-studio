@@ -6,7 +6,7 @@
 //   bun fx <command> [args...]
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, openSync, readFileSync, statSync, utimesSync } from 'node:fs';
+import { existsSync, openSync, readFileSync, renameSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -383,7 +383,20 @@ async function startWeb(runArgs: string[]): Promise<never> {
 
   console.log('[start] starting web stack in background...');
   const stackLog = resolve(tmpdir(), 'forgeax-stack.log');
-  const fd = openSync(stackLog, 'a');
+  // Rotate: archive any prior log to forgeax-stack-<timestamp>.log instead of
+  // appending. Appending across every start/stop grew this to >1GB and mixed
+  // multiple runs' timelines, making a crash post-mortem impossible. A fresh
+  // file per start means `tailLog(stackLog)` and manual reads only ever see the
+  // current run. (Old archives are left for the user to inspect/delete.)
+  if (existsSync(stackLog)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    try {
+      renameSync(stackLog, resolve(tmpdir(), `forgeax-stack-${stamp}.log`));
+    } catch {
+      /* best-effort rotation; fall through to a fresh truncating open below */
+    }
+  }
+  const fd = openSync(stackLog, 'w');
   const child = spawn(BUN, [script('run.ts'), ...runArgs], {
     cwd: ROOT,
     detached: true,
@@ -423,6 +436,30 @@ async function startWeb(runArgs: string[]): Promise<never> {
   if (!up) {
     console.error(`[start] web stack failed to come up within timeout — see ${stackLog}`);
     process.exit(1);
+  }
+
+  // Engine readiness (:15173) — the UI (:18920) proxies /preview + /__import to
+  // the play engine (studio/vite.config.ts). If the engine service died on boot
+  // (e.g. crashed during first dep re-optimize, or lost a port race) the UI
+  // still binds, so waiting on the UI alone declared success while every
+  // engine-proxied request 500'd. Poll the engine port too and WARN loudly if
+  // it never binds — don't fail the whole start (the editor UI is usable; Play/
+  // preview are the degraded surface), but never report a half-up stack as clean.
+  let engineUp = false;
+  for (let i = 0; i < 60; i++) {
+    if (portOwner(enginePort)) {
+      engineUp = true;
+      break;
+    }
+    if (childExit !== null) break;
+    await sleep(1000);
+  }
+  if (!engineUp) {
+    console.error(`\n[start] ⚠ engine :${enginePort} did NOT come up — Play / preview will 500`);
+    console.error('[start]   (the editor UI works; only the play-engine-proxied routes fail)');
+    console.error(`[start]   last lines of ${stackLog}:\n`);
+    console.error(tailLog(stackLog, 30));
+    console.error('[start]   fix: bun fx restart   (if it persists: bun fx setup to rebuild engine dist)');
   }
 
   // Advertise all listening ports to the foreground stdout. The stack's own

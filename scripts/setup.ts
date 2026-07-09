@@ -226,6 +226,49 @@ function healDanglingEngineSymlinks(dir: string): void {
 }
 healDanglingEngineSymlinks(engineDir);
 
+// ── engine wasm provisioning: fetch prebuilt release BEFORE compiling ──────────
+// The three engine wasm bundles (wgpu-wasm / fbx / codec) are gitignored
+// zero-binary artifacts. Each ships a `fetch-wasm` script that pulls a
+// content-keyed asset from the engine's `wasm-artifacts` GitHub Release, and a
+// `build:wasm` script that compiles from source (Rust+wasm-pack / emcc). The
+// release path is FAR more reliable than compiling: it downloads one prebuilt
+// tarball from the Releases CDN, sidestepping (a) multi-minute -O3 emcc/Rust
+// compiles and (b) the flaky per-file source downloads that compiling needs —
+// e.g. fbx's fetch-ufbx hits raw.githubusercontent 429 rate-limits on the 1.2 MB
+// ufbx.c. So for every wasm bundle we `tryFetchWasm()` first and only
+// `build:wasm` on miss (no published asset for this pin, offline, or hash drift).
+//
+// The engine repo is private, so fetch-wasm needs a GitHub token. Resolve one
+// from the env or the gh CLI once and thread it into each fetch attempt; without
+// a token fetch 403s and we fall back to compiling (still correct, just slower).
+function resolveGithubToken(): string | undefined {
+  for (const k of ['GITHUB_TOKEN', 'GH_TOKEN']) {
+    const v = process.env[k];
+    if (v && v.trim()) return v.trim();
+  }
+  if (has('gh')) {
+    const r = spawnSync('gh', ['auth', 'token'], { encoding: 'utf8' });
+    if (r.status === 0 && r.stdout?.trim()) return r.stdout.trim();
+  }
+  return undefined;
+}
+const githubToken = resolveGithubToken();
+
+/**
+ * Try to fetch a prebuilt wasm bundle from the wasm-artifacts release.
+ * Returns true on success. Non-fatal: any failure (no token, offline, no
+ * published asset for this content key) returns false so the caller compiles.
+ */
+function tryFetchWasm(pkgFilter: string, label: string): boolean {
+  const fetchEnv = { ...process.env };
+  if (githubToken) fetchEnv.GITHUB_TOKEN = githubToken;
+  console.log(`  → ${label}: trying prebuilt release (fetch-wasm)…`);
+  const okFetch = run('pnpm', ['-F', pkgFilter, 'fetch-wasm'], { cwd: engineDir, env: fetchEnv });
+  if (okFetch) ok(`${label}: fetched prebuilt wasm from release`);
+  else console.log(`  → ${label}: no prebuilt release available — will compile from source`);
+  return okFetch;
+}
+
 // ── wgpu wasm binary (pkg/) — MUST exist before the engine `pnpm -r build` ─────
 // The engine's wgpu-wasm package no longer commits pkg/ (zero-binary invariant:
 // pkg/ is a gitignored wasm-pack artifact, built from Rust or fetched from the
@@ -243,10 +286,12 @@ const touchSentinel = () => {
   writeFileSync(wasmSentinel, '');
 };
 function buildWgpuWasm(): void {
-  bold('[3a/6] Building engine wgpu wasm binary');
+  bold('[3a/6] Provisioning engine wgpu wasm binary');
   if (!wgpuWasmStale()) {
     ok(`wgpu wasm already built and fresh (skip) — ${wasmArtefact}`);
     if (!existsSync(wasmSentinel)) touchSentinel();
+  } else if (tryFetchWasm('@forgeax/engine-wgpu-wasm', 'wgpu wasm')) {
+    touchSentinel();
   } else if (!has('rustc') || !has('wasm-pack')) {
     warnY('Rust→wasm toolchain missing — skipping wgpu wasm build.');
     console.log('    The preview engine + engine-app build will fail until this is built (install rust + wasm-pack, then: pnpm -F @forgeax/engine-wgpu-wasm build:wasm)');
@@ -332,12 +377,15 @@ if (skipEngineBuild) buildWgpuWasm();
 // is gitignored (zero-binary invariant), so it must be built here or FBX import
 // in the editor fails at runtime. build:wasm = fetch-ufbx (idempotent download of
 // ufbx.c) + emcc compile → pkg/fbx-wasm.{mjs,wasm}.
-bold('[3c/6] Building engine fbx wasm binary');
+bold('[3c/6] Provisioning engine fbx wasm binary');
 const fbxWasmDir = join(engineDir, 'packages/fbx');
 const fbxWasmMjs = join(fbxWasmDir, 'pkg/fbx-wasm.mjs');
 const fbxWasmBin = join(fbxWasmDir, 'pkg/fbx-wasm.wasm');
 if (existsSync(fbxWasmMjs) && existsSync(fbxWasmBin)) {
   ok(`fbx wasm already built (skip) — ${fbxWasmMjs}`);
+} else if (tryFetchWasm('@forgeax/engine-fbx', 'fbx wasm')) {
+  // fetched prebuilt release — no emcc compile, no flaky raw.githubusercontent
+  // ufbx.c download (which 429-rate-limits; see the provisioning note above).
 } else if (!has('emcc')) {
   warnY('Emscripten (emcc) missing — skipping fbx wasm build.');
   console.log('    FBX import in the editor will fail until this is built (brew install emscripten, then: pnpm -F @forgeax/engine-fbx build:wasm)');
@@ -347,6 +395,34 @@ if (existsSync(fbxWasmMjs) && existsSync(fbxWasmBin)) {
     ok(`fbx wasm built — ${fbxWasmMjs}`);
   } else {
     warnY('fbx wasm build failed — FBX import in the editor will not work until fixed.');
+  }
+}
+
+// ── 3d. codec (basis) wasm ─────────────────────────────────────────────────────
+// @forgeax/engine-codec needs pkg/basis_transcoder.{mjs,wasm} +
+// pkg/encode/basis_encoder.{mjs,wasm} — the KTX2/BasisU transcoder + encoder,
+// emcc-compiled from the pinned basis_universal source (fetch-basis + build-wasm).
+// This is the HEAVIEST engine wasm compile (~30 encoder C++ units at -O3, several
+// minutes), so the release-fetch path matters most here. pkg/ is gitignored
+// (zero-binary invariant), so provision it or asset compression / KTX2 loading
+// fails at runtime. Same fetch-first-then-compile shape as wgpu/fbx above.
+bold('[3d/6] Provisioning engine codec (basis) wasm binary');
+const codecDir = join(engineDir, 'packages/codec');
+const codecTranscoderWasm = join(codecDir, 'pkg/basis_transcoder.wasm');
+const codecEncoderWasm = join(codecDir, 'pkg/encode/basis_encoder.wasm');
+if (existsSync(codecTranscoderWasm) && existsSync(codecEncoderWasm)) {
+  ok(`codec wasm already built (skip) — ${codecTranscoderWasm}`);
+} else if (tryFetchWasm('@forgeax/engine-codec', 'codec wasm')) {
+  // fetched prebuilt release — skips the multi-minute -O3 basis encoder compile.
+} else if (!has('emcc')) {
+  warnY('Emscripten (emcc) missing — skipping codec wasm build.');
+  console.log('    Asset compression / KTX2 loading will fail until this is built (brew install emscripten, then: pnpm -F @forgeax/engine-codec build:wasm)');
+} else {
+  console.log(existsSync(codecTranscoderWasm) ? '  → codec wasm stale — rebuilding' : '  → codec wasm missing — building');
+  if (run('pnpm', ['-F', '@forgeax/engine-codec', 'build:wasm'], { cwd: engineDir })) {
+    ok(`codec wasm built — ${codecTranscoderWasm}`);
+  } else {
+    warnY('codec wasm build failed — asset compression / KTX2 loading will not work until fixed.');
   }
 }
 

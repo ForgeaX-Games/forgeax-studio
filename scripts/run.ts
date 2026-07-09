@@ -441,6 +441,22 @@ const launch = (name: string, cmd: string, args: string[], opts: SpawnOpts): num
     children.push(pid);
     recordPid(ROOT, name, pid);
   }
+  // Monitor unexpected death. `launch()` previously fire-and-forgot: a service
+  // that crashed AFTER boot (e.g. the engine vite dying mid-session) vanished
+  // silently — run.ts never noticed, so `/preview` + `/__import` (proxied to the
+  // dead engine) 500'd with no signal anywhere. Surface it loudly on stdout (the
+  // fd is captured into forgeax-stack.log, and `fx start`'s engine-readiness
+  // poll tails that). NOT auto-restarted by design: a crash-looping service
+  // should be seen and fixed, not silently respawned into a hot loop.
+  child.on('exit', (code, signal) => {
+    if (cleanedUp) return; // expected teardown — say nothing
+    const how = signal ? `signal ${signal}` : `code ${code}`;
+    console.error(`[run] ⚠ service '${name}' (pid ${pid}) exited unexpectedly (${how}) — not restarting; run \`bun fx restart\` after fixing the cause`);
+  });
+  child.on('error', (err: unknown) => {
+    if (cleanedUp) return;
+    console.error(`[run] ⚠ service '${name}' failed to spawn:`, err instanceof Error ? err.message : String(err));
+  });
   return pid;
 };
 

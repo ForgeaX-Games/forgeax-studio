@@ -35,7 +35,7 @@ function allowlist() {
   } catch { return []; }                                       // malformed → fail SAFE: publish nothing
 }
 // Static game rendering depends on engine asset support that isn't available in a static build
-// (loadByGuid needs the dev ImportTransport/DDC; see ENGINE-ISSUES). Until that lands, ship an
+// (loadByGuid needs the dev ImportTransport/DDC; reported to engine upstream). Until that lands, ship an
 // honest "coming soon" gallery instead of black demo pages. Flip GAMES_LIVE=1 once supported.
 const LIVE = process.env.GAMES_LIVE === '1';
 const log = (...a) => console.log('\x1b[36m[games]\x1b[0m', ...a);

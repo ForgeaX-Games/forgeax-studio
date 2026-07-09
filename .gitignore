@@ -57,15 +57,6 @@ forgeax-studio-ca.crt
 # Local-only patches handed back to other submodule owners (never upstream)
 /.local-patches/
 .env8888
-/e1-day.png
-/e1-night.png
-/fix-ca-night.png
-/fix-ca.png
-/skills-demo.png
-/skills-discard.png
-/skills-fight.png
-/skills-fix.png
-/skills.png
 
 # studio-qa automated-test artifacts (screenshots + reports)
 /.forgeax-qa/

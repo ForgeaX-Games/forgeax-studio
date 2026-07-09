@@ -11,10 +11,6 @@
   },
   "dependencies": {
     "@forgeax/interface": "workspace:*",
-    "@forgeax/chat": "workspace:*",
-    "@forgeax/dashboard": "workspace:*",
-    "@forgeax/settings": "workspace:*",
-    "@forgeax/workbench": "workspace:*",
     "@forgeax/editor": "workspace:*",
     "@forgeax/editor-edit-runtime": "workspace:*",
     "@forgeax/editor-panels": "workspace:*",

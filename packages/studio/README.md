@@ -21,8 +21,8 @@ packages/studio/
 | Mode | Command | What loads |
 |:--|:--|:--|
 | Web / dev | `bun fx start` (default) | Vite dev server from `packages/studio/` at `:18920` |
-| Desktop / dev | `bun fx start app` | Tauri window pointing at the dev server |
-| Desktop / packaged | `bun fx build app` then open | Tauri loads the built `packages/studio/dist/` |
+| Desktop / dev | `bun fx start desktop` | Tauri window pointing at the dev server |
+| Desktop / packaged | `bun fx build desktop` then open | Tauri loads the built `packages/studio/dist/` |
 
 `STUDIO=1` (the default) serves this package; set `STUDIO=0` to serve the thinner
 [`@forgeax/interface`](../interface) package directly instead.

@@ -3,7 +3,7 @@ name: Desktop release
 # Builds the ForgeaX Studio desktop app installers and attaches them to a GitHub
 # Release. Runs ONLY on a version tag (v*) or manual dispatch — never on every push.
 #
-# macOS is wired up today (mirrors the local `bun fx build app` path). Windows is
+# macOS is wired up today (mirrors the local `bun fx build desktop` path). Windows is
 # scaffolded but commented until the sidecar/build is validated there. The produced
 # installers are unsigned dev builds for now — see docs/desktop distribution notes
 # for signing/notarization before a public 1.0.
@@ -36,8 +36,8 @@ jobs:
         run: bun fx setup
         env:
           FORGEAX_SKIP_HARNESS_SYNC: "1"
-      - name: Package desktop app (bun fx build app)
-        run: bun fx build app
+      - name: Package desktop app (bun fx build desktop)
+        run: bun fx build desktop
         env:
           CI: "true"
       - name: Create DMG (macOS hdiutil fallback)

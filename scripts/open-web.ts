@@ -7,7 +7,7 @@
 // backend". Chrome also ignores flags when an instance for that profile already
 // runs. So we launch Chrome on a DEDICATED persistent profile (flags always
 // apply) with --enable-unsafe-webgpu --ignore-gpu-blocklist. The desktop app
-// (bun fx start app, WebKit/Metal) already has WebGPU and is unaffected.
+// (bun fx start desktop, WebKit/Metal) already has WebGPU and is unaffected.
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -26,7 +26,7 @@ const profile = join(ROOT, '.forgeax/chrome-webgpu-profile'); // .forgeax/ is gi
 // 1. stack must be running (this opens a client; it doesn't boot the server).
 if (!isPortBusy(port)) {
   console.error(`[web] Studio UI (:${port}) is not up.`);
-  console.error('[web]   start the stack first:  bun fx start      (or: bun fx start app)');
+  console.error('[web]   start the stack first:  bun fx start      (or: bun fx start desktop)');
   process.exit(1);
 }
 
@@ -46,7 +46,7 @@ if (!chrome) {
 mkdirSync(profile, { recursive: true });
 console.log(`[web] launching Chrome (WebGPU forced) → ${url}`);
 console.log('[web]   flags: --enable-unsafe-webgpu --ignore-gpu-blocklist');
-console.log("[web] If the viewport shows 'no usable backend': check chrome://gpu, or use bun fx start app.");
+console.log("[web] If the viewport shows 'no usable backend': check chrome://gpu, or use bun fx start desktop.");
 
 // Launch detached so this process can exit while Chrome keeps running. A
 // dedicated --user-data-dir guarantees the flags take effect.

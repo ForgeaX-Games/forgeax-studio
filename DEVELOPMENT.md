@@ -12,12 +12,22 @@ where your games/.env live, plus ports).
 | Mode | How | server | engine | UI origin |
 |---|---|:--:|:--:|---|
 | **web-dev** | `bun fx start` | 18900 | 15173 | vite `:18920` |
-| **desktop-dev** | `bun fx start app` | 18900 | 15173 | webview → vite `:18920` |
+| **desktop-dev** | `bun fx start desktop` | 18900 | 15173 | webview → vite `:18920` |
 | **desktop app** (.app) | double-click the built `.app` | **18810** | **15273** | server serves SPA single-origin |
 
 > Desktop ports (18810/15273) are deliberately offset from the dev ports so a
 > running dev stack and the `.app` never collide. Override with
 > `FORGEAX_DESKTOP_SERVER_PORT` / `FORGEAX_DESKTOP_ENGINE_PORT`.
+
+Two mode caveats worth internalizing:
+
+- **Source edits go to the dev repo only** (`packages/*/src`, version-controlled) —
+  never hand-edit inside a built `.app`. web-dev and desktop-dev pick changes up
+  **live** (HMR/watch); the packaged `.app` runs a **build-time frozen copy** and
+  must be **repackaged** (`bun fx build desktop`) to pick anything up.
+- **desktop-dev and the `.app` are both WKWebView** → 3D rendering is bounded by
+  **WebKit WebGPU** (weaker than Chrome's Dawn). Details:
+  [`docs/deploy-notes.md`](./docs/deploy-notes.md) §".app 渲染: WebKit WebGPU vs 新引擎".
 
 ## Prerequisites
 
@@ -55,14 +65,14 @@ shared game library, then runs all services with `bun --watch` / `vite` (live HM
 ## Desktop — one command (recommended)
 
 ```bash
-bun fx start app          # dev app: native window + live source (HMR). First run auto-installs;
+bun fx start desktop          # dev app: native window + live source (HMR). First run auto-installs;
                      # auto-starts the web stack; auto-stops it when you close the window.
-bun fx build app    # package a distributable .app / .dmg
-bun scripts/app.ts open     # open the last-built .app
+bun fx build desktop    # package a distributable .app / .dmg
+bun scripts/desktop.ts open     # open the last-built .app
 bun fx stop     # stop the dev web stack
 ```
 
-`bun fx start app` wraps the manual steps below — use those if you want the pieces separately.
+`bun fx start desktop` wraps the manual steps below — use those if you want the pieces separately.
 
 ## Desktop — develop the shell (manual)
 
@@ -79,7 +89,7 @@ reachable).
 ## Desktop — build the `.app` / `.dmg` (manual)
 
 ```bash
-bun fx build app                 # assemble Resources (bun runtime +
+bun fx build desktop                 # assemble Resources (bun runtime +
                               # server src + engine + marketplace +
                               # games + SPA dist) under src-tauri/resources
 cd packages/interface && bunx tauri build     # compile the shell + bundle

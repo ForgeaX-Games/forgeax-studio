@@ -118,7 +118,7 @@ function parentMap(): Map<number, number> {
  * The pid chain from `pid` (default: this process) up to the OS root, inclusive.
  *
  * stop.ts uses this to never reap the very command that launched it: when
- * `bun fx start app` runs, the parent `app.ts` (and its bun ancestors) carry the
+ * `bun fx start desktop` runs, the parent `desktop.ts` (and its bun ancestors) carry the
  * repo's absolute path on their command line, so stop's signature scan would
  * otherwise match and SIGKILL them — killing the launcher mid-reap (the stack
  * services it should target are spawned detached as *children*, never ancestors).

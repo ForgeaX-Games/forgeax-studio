@@ -432,7 +432,7 @@ console.log(
 );
 if (narrativeWillStart()) console.log(`[run] + narrative API :${PORT_NARRATIVE} (wb-narrative standalone)`);
 console.log(`[run] open http://localhost:${PORT_INTERFACE} to use the Studio UI`);
-console.log('[run]   浏览器(WebGPU): bun fx start   ·   桌面 App: bun fx start app');
+console.log('[run]   浏览器(WebGPU): bun fx start   ·   桌面 App: bun fx start desktop');
 
 const launch = (name: string, cmd: string, args: string[], opts: SpawnOpts): number => {
   const child = spawnService(cmd, args, opts);

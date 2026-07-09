@@ -11,6 +11,11 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PORT_ENGINE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
+import { parseSubmodulePaths } from './lib/repos.ts';
+
+// Re-exported so existing consumers/specs keep one import site; the
+// implementation's SSOT is scripts/lib/repos.ts (shared with repos.ts).
+export { parseSubmodulePaths };
 
 type ScriptPlan = { type: 'script'; script: string; args: string[] };
 type InternalPlan = { type: 'internal'; command: string; args: string[] };
@@ -53,6 +58,12 @@ const SCRIPT_COMMANDS = new Map<string, string>([
   ['version', 'lib/version.ts'],
 ]);
 
+// Multi-repo lifecycle commands, all implemented in scripts/repos.ts over one
+// shared scan (scripts/lib/repos.ts). `update` stays separate below: update is
+// the CONSUMER verb (align worktrees to the recorded pins, detaching), these
+// are the DEVELOPER/INTEGRATOR verbs (branches, gates, commits, pin bumps).
+const REPO_COMMANDS = new Set(['sync', 'check', 'commit', 'bump', 'versions']);
+
 const BUILTIN_COMMANDS = new Set([
   // git update orchestration
   'update',
@@ -80,10 +91,13 @@ export function resolveCommand(argv: string[]): CommandPlan {
   const route = SCRIPT_COMMANDS.get(cmd);
   if (route) return { type: 'script', script: script(route), args };
 
+  // multi-repo lifecycle — thin shells over scripts/lib/repos.ts's single scan
+  if (REPO_COMMANDS.has(cmd)) return { type: 'script', script: script('repos.ts'), args: [cmd, ...args] };
+
   if (cmd === 'build') {
     const [target = 'help', ...rest] = args;
     if (target === 'plugins') return { type: 'script', script: script('build-plugins.ts'), args: rest };
-    if (target === 'app') return { type: 'script', script: script('app.ts'), args: ['build', ...rest] };
+    if (target === 'desktop') return { type: 'script', script: script('desktop.ts'), args: ['build', ...rest] };
     return { type: 'internal', command: 'build', args };
   }
 
@@ -100,6 +114,7 @@ Usage:
 Common commands:
   setup                 Prepare deps, submodules, engine, plugins, .env scaffold
   update                Pull latest root code and sync all submodules
+  sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
   clean [--deep|-x]     Restore a fully-clean git status across root + all
                         submodules. Discards uncommitted edits, scrubs submodule
                         interiors to bare pin state (incl. gitignored runtime
@@ -110,17 +125,23 @@ Common commands:
                         when default and dev-local ports are both taken
   stop                  Stop web-dev stack
   restart               Stop then start web-dev stack
-  status                Show git/submodule/port/artefact status
+  status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)
+  versions              Derived version manifest: pin / branch / nearest tag per submodule
+  check [--all]         Run each dirty repo's own gates (lint/test); --all gates everything
+  commit -m "msg"       Leaf-first multi-repo commit [path...] [--push] [--dry-run] [--no-verify]
+  bump <path...>        Advance a submodule (fetch+ff) and stage its new pin in root
   doctor [--fix]        Diagnose common local setup problems
   build plugins         Rebuild missing/broken marketplace plugin dists
-  build app             Package the desktop app
+  build desktop         Package the desktop app
   version [args...]     Print version info
 
 Examples:
   bun fx setup
   bun fx update
   bun fx start
-  bun fx start app debug
+  bun fx start desktop debug
+  bun fx sync --dry-run
+  bun fx commit -m "fix: adjust dock layout" --push
   bun fx status
 `);
 }
@@ -174,13 +195,6 @@ export function stashPopArgsForRef(ref: string): string[] {
 
 export function updateShouldStash(args: string[]): boolean {
   return !args.includes('--no-stash');
-}
-
-export function parseSubmodulePaths(output: string): string[] {
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trim().split(/\s+/)[1])
-    .filter(Boolean);
 }
 
 function submodulePaths(): string[] {
@@ -351,13 +365,10 @@ function tailLog(path: string, lines: number): string {
 
 function startStudio(args: string[]): never {
   const [maybeMode, ...rest] = args;
-  if (maybeMode === 'app') runScript(script('app.ts'), rest);
-  // Local-only third port band (foreground, Ctrl-C to stop) for when the default
-  // and dev-local ports are both taken by other checkouts. See dev-local2.ts.
-  if (maybeMode === 'local') runScript(script('dev-local2.ts'), rest);
+  if (maybeMode === 'desktop') runScript(script('desktop.ts'), rest);
   if (maybeMode && maybeMode !== 'web' && !maybeMode.startsWith('-')) {
     console.error(`[start] unknown client: ${maybeMode}`);
-    console.error('[start] usage: bun fx start [web|app|local] [args...]');
+    console.error('[start] usage: bun fx start [web|desktop] [args...]');
     process.exit(2);
   }
 
@@ -413,14 +424,42 @@ async function startWeb(runArgs: string[]): Promise<never> {
     childExit = code ?? (signal ? 1 : 0);
   });
 
+  // detached: true + unref() disowns the child, so child.exitCode may stay null
+  // even after the child exits, and Atomics.wait blocks the event loop so
+  // .on('exit') listeners don't fire between sleeps. Zombie state also fools
+  // kill(pid, 0). So probe process state directly via `ps -o state=` which
+  // returns 'R'/'S'/'D'/etc for alive processes and 'Z' for zombies (or empty
+  // when the pid no longer exists).
+  const childPid = child.pid!;
+  const isAlive = (): boolean => {
+    try {
+      const state = execFileSync('ps', ['-o', 'state=', '-p', String(childPid)], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+        .toString()
+        .trim();
+      return state.length > 0 && !state.startsWith('Z');
+    } catch {
+      // ps exits non-zero when pid not found — process is gone
+      return false;
+    }
+  };
+
   process.stdout.write(`[start] waiting for UI :${uiPort}`);
   let up = false;
+  let crashed = false;
   for (let i = 0; i < 90; i++) {
     if (portOwner(uiPort)) {
       up = true;
       break;
     }
+    // Detect child death — run.ts may exit early on stale-dist / env / port
+    // errors. Without this check we'd wait the full 3 minutes before failing.
     if (childExit !== null) break; // stack process died before the UI came up
+    if (!isAlive()) {
+      crashed = true;
+      break;
+    }
     process.stdout.write('.');
     await sleep(2000); // async so the child 'exit' event can fire
   }
@@ -434,7 +473,21 @@ async function startWeb(runArgs: string[]): Promise<never> {
     process.exit(childExit || 1);
   }
   if (!up) {
-    console.error(`[start] web stack failed to come up within timeout — see ${stackLog}`);
+    if (crashed) {
+      console.error(`[start] run.ts exited early (pid ${childPid}) before UI came up.`);
+    } else {
+      console.error(`[start] web stack timed out after 3 min waiting for UI :${uiPort} — see ${stackLog}`);
+    }
+    console.error(`[start] tail of ${stackLog}:`);
+    console.error('─'.repeat(60));
+    try {
+      const lines = readFileSync(stackLog, 'utf-8').split('\n');
+      const tail = lines.slice(Math.max(0, lines.length - 40)).join('\n');
+      console.error(tail || '(log empty)');
+    } catch (err) {
+      console.error(`(unable to read ${stackLog}: ${(err as Error).message})`);
+    }
+    console.error('─'.repeat(60));
     process.exit(1);
   }
 
@@ -506,7 +559,7 @@ function status(): void {
     console.log(`  ${name.padEnd(9)} :${port} ${pid ? `listening pid=${pid}` : 'free'}`);
   }
   console.log();
-  console.log('commands: bun fx setup | update | start [web|app] | stop | build app | status | doctor');
+  console.log('commands: bun fx setup | update | sync | start [web|desktop] | stop | status [--repos] | versions | check | commit | bump | build desktop | doctor');
 }
 
 function doctor(args: string[]): never {
@@ -698,6 +751,7 @@ function main(): void {
       usage();
       break;
     case 'status':
+      if (plan.args.includes('--repos')) runScript(script('repos.ts'), ['status']);
       status();
       break;
     case 'start':

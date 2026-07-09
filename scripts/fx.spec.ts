@@ -49,7 +49,7 @@ describe('scripts/fx.ts command routing', () => {
   it('keeps start as the single client-launching lifecycle command', () => {
     expect(resolveCommand(['start'])).toEqual({ type: 'internal', command: 'start', args: [] });
     expect(resolveCommand(['start', 'web', '--fresh'])).toEqual({ type: 'internal', command: 'start', args: ['web', '--fresh'] });
-    expect(resolveCommand(['start', 'app', 'debug'])).toEqual({ type: 'internal', command: 'start', args: ['app', 'debug'] });
+    expect(resolveCommand(['start', 'desktop', 'debug'])).toEqual({ type: 'internal', command: 'start', args: ['desktop', 'debug'] });
   });
 
   it('checks every fixed stack port before start launches a new stack', () => {
@@ -72,14 +72,22 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['stop'])).toEqual({ type: 'script', script: script('stop.ts'), args: [] });
   });
 
+  it('routes multi-repo lifecycle commands to repos.ts with the subcommand prepended', () => {
+    expect(resolveCommand(['sync', '--dry-run'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['sync', '--dry-run'] });
+    expect(resolveCommand(['check', '--all'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['check', '--all'] });
+    expect(resolveCommand(['commit', '-m', 'msg', '--push'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['commit', '-m', 'msg', '--push'] });
+    expect(resolveCommand(['bump', 'packages/interface'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['bump', 'packages/interface'] });
+    expect(resolveCommand(['versions'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['versions'] });
+  });
+
   it('routes build and version aliases', () => {
     expect(resolveCommand(['build', 'plugins', '--force'])).toEqual({
       type: 'script',
       script: script('build-plugins.ts'),
       args: ['--force'],
     });
-    expect(resolveCommand(['build', 'app'])).toEqual({ type: 'script', script: script('app.ts'), args: ['build'] });
-    expect(resolveCommand(['build', 'desktop'])).toEqual({ type: 'internal', command: 'build', args: ['desktop'] });
+    expect(resolveCommand(['build', 'desktop'])).toEqual({ type: 'script', script: script('desktop.ts'), args: ['build'] });
+    expect(resolveCommand(['build', 'app'])).toEqual({ type: 'internal', command: 'build', args: ['app'] });
     expect(resolveCommand(['build:plugins'])).toEqual({ type: 'script', script: script('build-plugins.ts'), args: [] });
     expect(resolveCommand(['version', 'json'])).toEqual({ type: 'script', script: script('lib/version.ts'), args: ['json'] });
   });

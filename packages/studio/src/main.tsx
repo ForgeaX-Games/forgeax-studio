@@ -1,6 +1,6 @@
 // L3 product entry — thin assembly. All real implementation lives in
 // `forgeax-interface` (L1 framework + chrome). When P1+ extracts L2 packages
-// (@forgeax/editor / @forgeax/chat / @forgeax/workbench), import them here too
+// (@forgeax/editor / @forgeax/chat / @forgeax/ai-workbench), import them here too
 // and feed into AppKit composition API. Currently only a single editor app is
 // verified; multi-app composition is a planned API surface (not yet wired).
 import { StrictMode } from 'react';
@@ -27,16 +27,27 @@ import { BrandProvider } from '@forgeax/interface/brand';
 import { ErrorBoundary } from '@forgeax/interface/components/ErrorBoundary';
 import { bootStageEntry } from '@forgeax/interface/boot/driver';
 import { bootBroadcast } from '@forgeax/interface/boot/broadcast';
-import { subscribeSessionStream, subscribeDaemonTick } from '@forgeax/chat/session-store';
+import {
+  subscribeSessionStream,
+  subscribeDaemonTick,
+  fetchSessionList,
+  createSession,
+  deleteSession,
+  emitForgeaXMessage,
+  listSessionAgents,
+  connectForgeaXWs,
+  disconnectForgeaXWs,
+  onSessionEvent,
+} from '@forgeax/chat/session-store';
 import { initAgentPrefs } from '@forgeax/settings';
-import { initFilePreview } from '@forgeax/workbench';
+import { initFilePreview, createRestWorkbenchClient } from '@forgeax/ai-workbench';
 import { subscribeNarrativeCopilot } from '@forgeax/interface/lib/narrative-copilot';
 import { subscribeFileActivityStream } from '@forgeax/interface/lib/file-activity-stream';
 import { subscribePermissionStream } from '@forgeax/interface/lib/permission-stream';
 import { subscribePerceptionStream } from '@forgeax/interface/lib/perception-stream';
 import { bootUiBridge } from '@forgeax/interface/lib/ui-bridge';
 import { syncBrowserPrefsFromServer, startBrowserPrefsSync } from '@forgeax/interface/lib/browser-prefs-sync';
-import { useAppStore } from '@forgeax/interface/store';
+import { configureSessionClient, configureWorkbenchClient, useShellStore } from '@forgeax/interface/store';
 import { decodeSurfaceFromLocation, getWindowManager, surfaceKey } from '@forgeax/interface/lib/platform';
 import { DetachedSurface } from '@forgeax/interface/components/DetachedSurface';
 import { PanelRenderersProvider } from '@forgeax/interface/components/DockShell/panelRenderers';
@@ -49,6 +60,21 @@ import { editorRenderers } from './panels/editorRenderers';
 // or dev with VITE_AEGIS_DEV=1). studio is the default served package (STUDIO=1)
 // so the .env* it reads live in packages/studio, not interface.
 initAegis();
+
+configureSessionClient({
+  fetchSessionList,
+  createSession,
+  deleteSession,
+  emitForgeaXMessage,
+  listSessionAgents,
+  connectForgeaXWs,
+  disconnectForgeaXWs,
+  onSessionEvent,
+});
+
+// Inject the workbench REST implementation before bootStore() — store.switchGame
+// triggers activateGame() via the workbench client, so it must be wired first.
+configureWorkbenchClient(createRestWorkbenchClient());
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('#root missing');
@@ -112,7 +138,7 @@ function bootStore() {
   subscribePermissionStream(); // 权限审批卡订阅(此前 studio bootStore 漏挂 → 默认内核 ask 卡从不渲染)
   subscribePerceptionStream();
   bootUiBridge(); // UI 语义操作层(ActionRegistry + lease + ui_* 应答;方案:产品AI化-语义操作层)
-  void useAppStore.getState().initSessions();
+  void useShellStore.getState().initSessions();
 }
 
 function bootFullShell(el: HTMLElement) {
@@ -124,14 +150,14 @@ function bootFullShell(el: HTMLElement) {
   // (the main window re-mounts its keep-alive iframe). No-op in the browser
   // (WindowManager.onSurfaceWindowClosed never fires there).
   getWindowManager().onSurfaceWindowClosed((d) => {
-    useAppStore.getState().markSurfaceDocked(surfaceKey(d));
+    useShellStore.getState().markSurfaceDocked(surfaceKey(d));
   });
 
   if (import.meta.env.DEV) {
     // DevTools bridge — exposes the Zustand store to window.__dev so that the
     // external forgeax-devtools panel (~/Dev/forgeax-devtools/) can read and
     // patch store state without being part of this repo. Stripped in production.
-    (window as unknown as Record<string, unknown>)['__dev'] = useAppStore;
+    (window as unknown as Record<string, unknown>)['__dev'] = useShellStore;
   }
 
   createRoot(el).render(

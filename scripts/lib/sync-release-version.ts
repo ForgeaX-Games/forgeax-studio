@@ -1,9 +1,14 @@
 // scripts/lib/sync-release-version.ts — keep shipping version in sync across artifacts.
 //
 // SSOT: root package.json "version" (semver x.y.z). Propagates to the Tauri shell
-// (tauri.conf.json + Cargo.toml), interface package.json, and README.md status line.
+// (tauri.conf.json + Cargo.toml) before desktop builds.
+//
+// Deliberately does NOT touch packages/interface/package.json: that version field
+// is the SSOT of interface's OWN release name (`interface-vX.Y.Z` tags are derived
+// from it by the subrepo's tag-release.yml — ADR 0022). Verified 2026-07-03 that
+// nothing reads it for desktop builds; the old write (d10c105) was tidiness only.
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export function readRootVersion(root: string): string {
@@ -27,38 +32,5 @@ export function syncReleaseVersion(root: string): string {
   const nextCargo = cargo.replace(/^version = "[^"]+"/m, `version = "${version}"`);
   if (nextCargo !== cargo) writeFileSync(cargoPath, nextCargo);
 
-  const ifacePkgPath = join(ifaceDir, 'package.json');
-  const ifacePkg = JSON.parse(readFileSync(ifacePkgPath, 'utf8'));
-  if (ifacePkg.version !== version) {
-    ifacePkg.version = version;
-    writeFileSync(ifacePkgPath, `${JSON.stringify(ifacePkg, null, 2)}\n`);
-  }
-
-  syncReadmeVersion(root, version);
-
   return version;
-}
-
-/**
- * Update version/date markers in README.md and mirror READMEs.
- *
- * README.md status line format (between markers):
- *   <!-- RELEASE_STATUS_START -->...<!-- RELEASE_STATUS_END -->
- */
-function syncReadmeVersion(root: string, version: string): void {
-  const date = new Date().toISOString().slice(0, 10);
-
-  const readmePath = join(root, 'README.md');
-  if (existsSync(readmePath)) {
-    let readme = readFileSync(readmePath, 'utf8');
-    const startMarker = '<!-- RELEASE_STATUS_START -->';
-    const endMarker = '<!-- RELEASE_STATUS_END -->';
-    const si = readme.indexOf(startMarker);
-    const ei = readme.indexOf(endMarker);
-    if (si !== -1 && ei !== -1) {
-      const replacement = `${startMarker}\nCurrent release: **v${version}** (${date}). Private repos under \`github.com/ForgeaX-Games/\`, all lowercase-hyphen naming.\n${endMarker}`;
-      readme = readme.slice(0, si) + replacement + readme.slice(ei + endMarker.length);
-      writeFileSync(readmePath, readme);
-    }
-  }
 }

@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 // @ts-nocheck
-// scripts/app.ts — ForgeaX Studio desktop app, one command (Tauri 2).
-// Replaces app.sh (`bun fx start app`, `bun fx build app`).
+// scripts/desktop.ts — ForgeaX Studio desktop mode, one command (Tauri 2).
+// Replaces app.sh (`bun fx start desktop`, `bun fx build desktop`).
 //
-//   bun fx start app          # dev app: native window running LIVE source (HMR).
-//   bun fx start app debug    #   same + auto-open DevTools
-//   bun fx build app          # package a distributable .app/.dmg (macOS)
-//   bun scripts/app.ts open   # open the last-built .app (macOS)
+//   bun fx start desktop          # dev app: native window running LIVE source (HMR).
+//   bun fx start desktop debug    #   same + auto-open DevTools
+//   bun fx build desktop          # package a distributable .app/.dmg (macOS)
+//   bun scripts/desktop.ts open   # open the last-built .app (macOS)
 //   bun fx stop               # stop the dev web stack
 //
 // dev runs on macOS and Windows (Git-Bash no longer needed — pure Bun). build/
@@ -52,7 +52,7 @@ switch (mode) {
     runScript('stop.ts', args.slice(1));
     break;
   default:
-    console.error('usage: bun fx start app [debug]  |  bun fx build app');
+    console.error('usage: bun fx start desktop [debug]  |  bun fx build desktop');
     process.exit(2);
 }
 
@@ -60,24 +60,24 @@ switch (mode) {
 async function devMode(): Promise<void> {
   // First run on a fresh clone: deps + engine build (idempotent).
   if (!existsSync(join(ROOT, 'packages/editor/packages/engine/packages/runtime/dist/index.mjs'))) {
-    console.log('[app] first run — installing deps + building engine (setup)…');
+    console.log('[desktop] first run — installing deps + building engine (setup)…');
     runScript('setup.ts', []);
   }
 
   // The desktop app OWNS the full dev-stack lifecycle: reap any existing/stale
   // stack, start fresh, and tear it all down when the window closes.
-  console.log('[app] clean restart — reaping any existing/stale web stack first…');
+  console.log('[desktop] clean restart — reaping any existing/stale web stack first…');
   runScript('stop.ts', ['--force'], true);
 
-  console.log('[app] clearing webview HTTP cache (force fresh source load)…');
+  console.log('[desktop] clearing webview HTTP cache (force fresh source load)…');
   clearWebviewCache();
 
-  console.log('[app] starting web stack (run.ts) in background…');
+  console.log('[desktop] starting web stack (run.ts) in background…');
   const stackLog = join(tmpdir(), 'forgeax-stack.log');
   const fd = openSync(stackLog, 'a');
   spawnService(process.execPath, [join(ROOT, 'scripts/run.ts')], { cwd: ROOT, detach: true, logFd: fd });
 
-  process.stdout.write('[app] waiting for UI :18920');
+  process.stdout.write('[desktop] waiting for UI :18920');
   let up = false;
   for (let i = 0; i < 90; i++) {
     if (isPortBusy(18920)) {
@@ -89,14 +89,14 @@ async function devMode(): Promise<void> {
   }
   console.log();
   if (!up) {
-    console.error(`[app] web stack failed to come up — see ${stackLog}`);
+    console.error(`[desktop] web stack failed to come up — see ${stackLog}`);
     runScript('stop.ts', ['--force'], true);
     process.exit(1);
   }
 
   // Tear the whole stack down when the app window (tauri:dev) exits.
   const teardown = () => {
-    console.log('[app] app closed — stopping the whole web stack…');
+    console.log('[desktop] app closed — stopping the whole web stack…');
     runScript('stop.ts', ['--force'], true);
   };
   process.on('exit', teardown);
@@ -110,7 +110,7 @@ async function devMode(): Promise<void> {
   reapDevWindows();
   ensureCcToolchain();
 
-  console.log(`[app] launching desktop dev window (tauri:dev — live HMR, DevTools ${devtools ? 'ON' : 'off'})…`);
+  console.log(`[desktop] launching desktop dev window (tauri:dev — live HMR, DevTools ${devtools ? 'ON' : 'off'})…`);
   // tauri:dev always runs from packages/interface (src-tauri lives there).
   const r = spawnSync(process.execPath, ['run', 'tauri:dev'], { cwd: ifaceDir, stdio: 'inherit', windowsHide: true });
   process.exit(r.status ?? 0);
@@ -120,7 +120,7 @@ async function devMode(): Promise<void> {
 function buildMode(): void {
   const inCi = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
   const releaseVer = syncReleaseVersion(ROOT);
-  console.log(`[app] packaging desktop app v${releaseVer} (build-desktop.ts assembles Resources, then tauri build)…`);
+  console.log(`[desktop] packaging desktop app v${releaseVer} (build-desktop.ts assembles Resources, then tauri build)…`);
   // Payload assembly is now cross-platform Bun (build-desktop.ts replaced the
   // bash build-desktop.sh). On Windows it also stages MinGW for the Rust link.
   if (IS_WIN) ensureCcToolchain();
@@ -134,10 +134,10 @@ function buildMode(): void {
   if (!IS_WIN && inCi) createMacDmgWithHdiutil();
   const bundleDir = join(ifaceDir, 'src-tauri/target/release/bundle');
   const app = join(bundleDir, 'macos/ForgeaX Studio.app');
-  if (existsSync(app)) console.log(`[app] ✓ built: ${app}   (run: bun scripts/app.ts open)`);
-  else if (existsSync(bundleDir)) console.log(`[app] ✓ build finished — installers in ${bundleDir}`);
+  if (existsSync(app)) console.log(`[desktop] ✓ built: ${app}   (run: bun scripts/desktop.ts open)`);
+  else if (existsSync(bundleDir)) console.log(`[desktop] ✓ build finished — installers in ${bundleDir}`);
   else {
-    console.log('[app] build finished but no bundle dir found (check tauri output)');
+    console.log('[desktop] build finished but no bundle dir found (check tauri output)');
     process.exit(1);
   }
 }
@@ -147,7 +147,7 @@ function createMacDmgWithHdiutil(): void {
   const bundleDir = join(ifaceDir, 'src-tauri/target/release/bundle');
   const appSrc = join(bundleDir, 'macos/ForgeaX Studio.app');
   if (!existsSync(appSrc)) {
-    console.error(`[app] missing .app for DMG staging: ${appSrc}`);
+    console.error(`[desktop] missing .app for DMG staging: ${appSrc}`);
     process.exit(1);
   }
   const version = readRootVersion(ROOT);
@@ -161,23 +161,23 @@ function createMacDmgWithHdiutil(): void {
   const rCp = spawnSync('cp', ['-R', appSrc, stage], { stdio: 'inherit' });
   if (rCp.status !== 0) process.exit(rCp.status ?? 1);
   spawnSync('ln', ['-s', '/Applications', join(stage, 'Applications')], { stdio: 'inherit' });
-  console.log(`[app] creating DMG via hdiutil: ${dmgOut}`);
+  console.log(`[desktop] creating DMG via hdiutil: ${dmgOut}`);
   const rDmg = spawnSync('hdiutil', ['create', '-volname', 'ForgeaX Studio', '-srcfolder', stage, '-ov', '-format', 'UDZO', dmgOut], {
     stdio: 'inherit',
   });
   rmSync(stage, { recursive: true, force: true });
   if (rDmg.status !== 0) process.exit(rDmg.status ?? 1);
-  console.log(`[app] ✓ DMG: ${dmgOut}`);
+  console.log(`[desktop] ✓ DMG: ${dmgOut}`);
 }
 
 function openMode(): void {
   const app = join(ifaceDir, 'src-tauri/target/release/bundle/macos/ForgeaX Studio.app');
   if (!existsSync(app)) {
-    console.error('[app] no built .app — run: bun fx build app');
+    console.error('[desktop] no built .app — run: bun fx build desktop');
     process.exit(1);
   }
-  spawnSync('open', [app], { stdio: 'inherit' });
-  console.log(`[app] opened ${app}`);
+  spawnSync('open', [desktop], { stdio: 'inherit' });
+  console.log(`[desktop] opened ${app}`);
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
@@ -194,13 +194,13 @@ function reapDevWindows(): void {
   if (IS_WIN) {
     const r = spawnSync('tasklist', [], { encoding: 'utf8', windowsHide: true });
     if ((r.stdout ?? '').toLowerCase().includes('forgeax-studio-desktop')) {
-      console.log('[app] closing previous dev window(s) so you get the latest code…');
+      console.log('[desktop] closing previous dev window(s) so you get the latest code…');
       spawnSync('taskkill', ['/IM', 'forgeax-studio-desktop.exe', '/F'], { stdio: 'ignore', windowsHide: true });
     }
   } else {
     const r = spawnSync('pgrep', ['-f', 'forgeax-studio-desktop'], { encoding: 'utf8' });
     if ((r.stdout ?? '').trim()) {
-      console.log('[app] closing previous dev window(s) so you get the latest code…');
+      console.log('[desktop] closing previous dev window(s) so you get the latest code…');
       spawnSync('pkill', ['-f', 'forgeax-studio-desktop'], { stdio: 'ignore' });
     }
   }
@@ -234,7 +234,7 @@ function stageTauriSidecar(): void {
   if (existsSync(bunBin)) {
     mkdirSync(binDir, { recursive: true });
     copyFileSync(bunBin, dest);
-    console.log(`[app] staged tauri sidecar: bun-${triple}${EXE}`);
+    console.log(`[desktop] staged tauri sidecar: bun-${triple}${EXE}`);
   }
 }
 
@@ -259,12 +259,12 @@ function ensureCcToolchain(): void {
   for (const d of candidates) {
     if (existsSync(join(d, 'dlltool.exe')) && existsSync(join(d, 'gcc.exe'))) {
       process.env.PATH = `${d};${process.env.PATH ?? ''}`;
-      console.log(`[app] MinGW-w64 on PATH: ${d}`);
+      console.log(`[desktop] MinGW-w64 on PATH: ${d}`);
       return;
     }
   }
-  console.error("[app] WARNING: MinGW-w64 (gcc/dlltool) not found — 'tauri dev' can't link the Rust shell.");
-  console.error('[app]          install once:  winget install BrechtSanders.WinLibs.POSIX.MSVCRT');
+  console.error("[desktop] WARNING: MinGW-w64 (gcc/dlltool) not found — 'tauri dev' can't link the Rust shell.");
+  console.error('[desktop]          install once:  winget install BrechtSanders.WinLibs.POSIX.MSVCRT');
 }
 
 /** Find BrechtSanders WinLibs mingw64/bin dirs under the WinGet packages base. */

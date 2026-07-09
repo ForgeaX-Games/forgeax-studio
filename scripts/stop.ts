@@ -81,7 +81,7 @@ for (let i = 0; i < ports.length; i++) console.log(`  :${String(ports[i]).padEnd
 console.log();
 
 // ── discover pids: ports → dev-stack.env pids → pidfiles → signature match ──
-// Never reap our own launcher chain (e.g. `bun fx start app` → app.ts → stop.ts):
+// Never reap our own launcher chain (e.g. `bun fx start desktop` → desktop.ts → stop.ts):
 // those ancestors carry the repo path on their command line and would otherwise
 // be caught by the signature scan, killing the very command doing the reaping.
 const protectedPids = selfAndAncestors();

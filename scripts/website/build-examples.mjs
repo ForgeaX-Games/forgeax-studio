@@ -75,7 +75,7 @@ if (typeof window === 'undefined') {
 }
 `;
 
-// ENGINE BUG WORKAROUND (filed in ENGINE-ISSUES-for-ubpa.md): forgeaxShader hardcodes
+// ENGINE BUG WORKAROUND (reported to engine upstream): forgeaxShader hardcodes
 // SHADER_MANIFEST_URL = '/shaders/manifest.json' (root-absolute, ignores vite `base`), so a
 // demo served under /examples/<id>/ fetches /shaders/manifest.json → 404 → "manifest-malformed"
 // → no usable backend → black canvas. Rewrite the absolute engine fetch paths to base-relative

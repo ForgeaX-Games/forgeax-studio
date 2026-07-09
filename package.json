@@ -15,7 +15,8 @@
     "lint:boundaries:core": "cd packages/core && bun run lint:boundaries",
     "lint:boundaries:cli": "cd packages/cli && bun run lint:boundaries",
     "lint:boundaries:agent-host": "cd packages/agent-host && bun run lint:boundaries",
-    "lint:node-runnable": "node scripts/check-node-runnable.mjs"
+    "lint:node-runnable": "node scripts/check-node-runnable.mjs",
+    "lint:pins": "bun scripts/check-submodule-pins.ts"
   },
   "workspaces": [
     "packages/contracts/types",

@@ -443,8 +443,19 @@ if (!force && existsSync(fbxWasmMjs) && existsSync(fbxWasmBin)) {
 bold('[2d/5] Provisioning engine codec (basis) wasm binary');
 const codecDir = join(engineDir, 'packages/codec');
 const codecTranscoderWasm = join(codecDir, 'pkg/basis_transcoder.wasm');
+const codecTranscoderMjs = join(codecDir, 'pkg/basis_transcoder.mjs');
 const codecEncoderWasm = join(codecDir, 'pkg/encode/basis_encoder.wasm');
-if (!force && existsSync(codecTranscoderWasm) && existsSync(codecEncoderWasm)) {
+const codecEncoderMjs = join(codecDir, 'pkg/encode/basis_encoder.mjs');
+// Gate on the .mjs glue too, not just the .wasm — engine-codec imports the mjs
+// loaders, so a pkg/ with the .wasm but a missing .mjs (partial provision) must
+// re-provision instead of being treated as fresh (same trap as wgpu above).
+if (
+  !force &&
+  existsSync(codecTranscoderWasm) &&
+  existsSync(codecTranscoderMjs) &&
+  existsSync(codecEncoderWasm) &&
+  existsSync(codecEncoderMjs)
+) {
   ok(`codec wasm already built (skip) — ${codecTranscoderWasm}`);
 } else if (tryFetchWasm('@forgeax/engine-codec', 'codec wasm')) {
   // fetched prebuilt release — skips the multi-minute -O3 basis encoder compile.
@@ -583,9 +594,15 @@ function installHarnessSkills(): void {
 }
 
 function wgpuWasmStale(): boolean {
-  if (!existsSync(wasmArtefact)) return true;
+  const wgpuJs = join(wgpuDir, 'pkg/wgpu_wasm.js');
+  // An INCOMPLETE pkg/ counts as stale. engine-app's bundle imports
+  // `../pkg/wgpu_wasm.js` (the JS glue), so a pkg/ that has wgpu_wasm_bg.wasm
+  // but not wgpu_wasm.js (a partial fetch/extract, or an interrupted build) must
+  // NOT be treated as fresh — otherwise buildWgpuWasm skips and the engine build
+  // dies on "Could not resolve ../pkg/wgpu_wasm.js". Gate on BOTH files.
+  if (!existsSync(wasmArtefact) || !existsSync(wgpuJs)) return true;
   const anchorMs = (existsSync(wasmSentinel) ? statSync(wasmSentinel) : statSync(wasmArtefact)).mtimeMs;
-  for (const c of [join(wgpuDir, 'Cargo.toml'), join(wgpuDir, 'Cargo.lock'), join(wgpuDir, 'pkg/wgpu_wasm.js')]) {
+  for (const c of [join(wgpuDir, 'Cargo.toml'), join(wgpuDir, 'Cargo.lock'), wgpuJs]) {
     if (existsSync(c) && statSync(c).mtimeMs > anchorMs) return true;
   }
   return existsSync(join(wgpuDir, 'src')) && anyNewerThan(join(wgpuDir, 'src'), anchorMs);

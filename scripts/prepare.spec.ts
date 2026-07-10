@@ -36,6 +36,15 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain('@forgeax/engine-codec');
     expect(src).toContain('healDanglingEngineSymlinks');
   });
+  it('treats an incomplete wgpu/codec pkg/ as stale (gates on the glue, not just .wasm)', () => {
+    const src = prepareSource();
+    // wgpuWasmStale must re-provision when the JS glue engine-app imports is
+    // missing — not just when wgpu_wasm_bg.wasm is absent.
+    expect(src).toContain('!existsSync(wasmArtefact) || !existsSync(wgpuJs)');
+    // codec skip must gate on the .mjs loaders too, not only the .wasm binaries.
+    expect(src).toContain('codecTranscoderMjs');
+    expect(src).toContain('codecEncoderMjs');
+  });
   it('updates submodules with credential-hardened env and reports at end', () => {
     const src = prepareSource();
     expect(src).not.toContain('submodule.recurse');

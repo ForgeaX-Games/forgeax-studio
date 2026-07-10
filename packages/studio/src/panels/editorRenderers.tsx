@@ -16,6 +16,7 @@ import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/compone
 import { PulseFeeds } from '@forgeax/interface/components/StatusBar/feeds/PulseFeeds';
 import { VersionBadge } from '@forgeax/interface/components/StatusBar/VersionBadge';
 import { EDITOR_PANELS } from '@forgeax/editor-core/manifest';
+import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
 // ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
 // teardown) come from edit-runtime's engine subpath; EDITOR_PANEL_COMPONENTS
 // maps ep:<id> → the panel's React component. Mirrors packages/editor/
@@ -138,9 +139,9 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
 }
 
 // The in-process body for a single ep:* editor panel. Resolves the panel's
-// React component from EDITOR_PANEL_COMPONENTS (editor-panels SSOT); ids with
-// no registered component (timeline / matgraph drift) fall back to a neutral
-// placeholder. Mirrors packages/editor/standalone/main.tsx. The panels read the
+// React component from EDITOR_PANEL_COMPONENTS (editor-panels SSOT); an
+// unavailable component falls back to a neutral placeholder. Mirrors
+// packages/editor/standalone/main.tsx. The panels read the
 // in-process @forgeax/editor-core store (same realm as ViewportComponent), so
 // no extra Provider is needed beyond the shell's PanelRenderersProvider +
 // <ContextMenu/> (both already mounted by interface App.tsx).
@@ -162,8 +163,7 @@ function EditorPanelBody({ id }: { id: string }): ReactNode {
 const EDITOR_PANEL_TITLES: Record<string, string> = {
   hierarchy: 'Hierarchy', assets: 'Assets', inspector: 'Inspector',
   history: 'History', capabilities: 'Capabilities',
-  material: 'Material', timeline: 'Timeline', matgraph: 'Mat Graph',
-  mesh: 'Mesh', launcher: 'Launcher', 'asset-inspector': 'Asset Inspector',
+  launcher: 'Launcher', 'asset-inspector': 'Asset Inspector',
 };
 
 // Build the panels registry: one entry per EDITOR_PANELS id + chat + agents.
@@ -211,6 +211,9 @@ function WorkbenchFiles(): ReactNode {
  *  SSOT panel id list. Passed to <App panelRenderers={editorRenderers} />. */
 export const editorRenderers: PanelRenderers = {
   editorPanelIds: [...EDITOR_PANELS],
+  // Interface owns the workspace-key protocol; editor owns the actual chrome
+  // layout. Studio and standalone both bind this same layout to `scene`.
+  builtinWorkbenchLayouts: { scene: DEFAULT_EDITOR_DOCK_LAYOUT },
   // Single realm: the viewport is the in-process ViewportComponent (via
   // EditRealm, which owns multi-game teardown+remount), and each ep:* panel is
   // an in-process component. The panels registry (bare-id keyed) is what

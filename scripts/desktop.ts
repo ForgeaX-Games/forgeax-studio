@@ -58,10 +58,13 @@ switch (mode) {
 
 // ── dev ───────────────────────────────────────────────────────────────────
 async function devMode(): Promise<void> {
-  // First run on a fresh clone: deps + engine build (idempotent).
+  // First run on a fresh clone: install deps (which triggers prepare = engine
+  // build + wasm + plugins). Use `bun install`, not `bun run prepare` — prepare
+  // alone does not install the root workspace deps a fresh clone still needs.
   if (!existsSync(join(ROOT, 'packages/editor/packages/engine/packages/runtime/dist/index.mjs'))) {
-    console.log('[desktop] first run — installing deps + building engine (setup)…');
-    runScript('setup.ts', []);
+    console.log('[desktop] first run — bun install (deps + prepare: engine build)…');
+    const r = spawnSync(process.execPath, ['install'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
+    if (r.status !== 0) process.exit(r.status ?? 1);
   }
 
   // The desktop app OWNS the full dev-stack lifecycle: reap any existing/stale

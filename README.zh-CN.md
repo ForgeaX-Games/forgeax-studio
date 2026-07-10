@@ -59,7 +59,7 @@
 ```bash
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
-bun fx setup         # 装依赖 + 构建引擎/wasm;生成 .env(填 ANTHROPIC_API_KEY)
+bun install         # 装依赖 + 构建引擎/wasm;生成 .env(填 ANTHROPIC_API_KEY)
 bun fx start         # 启动 Studio 并打开默认 Web 客户端
 # 打开 http://localhost:18920,告诉 Forge 你想做什么
 ```

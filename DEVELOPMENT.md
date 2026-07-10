@@ -39,22 +39,22 @@ Two mode caveats worth internalizing:
 ## Web — run locally
 
 ```bash
-bun fx setup    # deps in each package + engine build (pnpm + wasm) +
-                   # scaffolds .env from .env.example and prompts for ANTHROPIC_API_KEY
+bun install      # deps + prepare: engine build (pnpm + wasm) + plugins +
+                   # scaffolds .env from .env.example (fill ANTHROPIC_API_KEY)
 bun fx start      # server :18900 · UI :18920 · engine :15173
 # open http://localhost:18920
 ```
 
-`bun fx` is the single user-facing command router. `bun fx setup` delegates to
-`scripts/setup.ts`; `bun fx start` starts the web stack, waits for the UI, then
-opens the default web client. `scripts/run.ts` does a port preflight, links the
+`bun install` is the setup entry (root `prepare` → `scripts/prepare.ts`).
+`bun fx setup` is deprecated (warns, runs `bun install`). `bun fx start` starts
+the web stack, waits for the UI, then opens the default web client. `scripts/run.ts` does a port preflight, links the
 shared game library, then runs all services with `bun --watch` / `vite` (live HMR — edits in
 `packages/{interface,server}` take effect immediately).
 
 ### API keys
 
 - Chat needs **`ANTHROPIC_API_KEY`** in `$ROOT/.env` (web) — set it via
-  `bun fx setup`'s prompt or by editing `.env`. `ANTHROPIC_BASE_URL` is optional
+  editing `.env` (scaffolded by prepare). `ANTHROPIC_BASE_URL` is optional
   (proxy; blank = api.anthropic.com).
 - **The services boot without a key** — `/api/settings`, the SPA, and the engine
   preview all work keyless. Only LLM chat requires the key.
@@ -112,8 +112,8 @@ then loads the single-origin SPA. Launch it with `open "…/ForgeaX Studio.app"`
 |---|---|
 | `cp: …/node_modules/*: No such file or directory` during `build-desktop.sh` | The desktop assemble needs a **hoisted** root `node_modules`; bun's default isolated linker leaves it empty. `build-desktop.sh` now self-heals with `bun install --linker hoisted` (step 0). If you hit this on an old script, run `bun install --linker hoisted` at the repo root first. |
 | `bundle_dmg.sh` fails / no `.dmg` (but the `.app` exists) | The DMG styling step uses Finder/AppleScript and fails in a headless session. **The `.app` itself is fine** — use it directly, or produce the dmg from a GUI session (or via `hdiutil`). |
-| Engine preview is blank / `Failed to resolve @forgeax/engine-*` | The engine isn't built. Run `bun fx setup` (it does `pnpm install` + builds the engine packages incl. the wasm module). |
-| `engine dist STALE` on start (after an engine bump) | `bun fx start` blocks with the fix: `bun fx setup` then `bun fx start`. For unattended/agent starts, `FORGEAX_AUTO_DEPLOY=1 bun fx start` rebuilds automatically instead of blocking. |
+| Engine preview is blank / `Failed to resolve @forgeax/engine-*` | The engine isn't built. Run `bun install` (prepare does `pnpm install` + builds the engine packages incl. the wasm module). |
+| `engine dist STALE` on start (after an engine bump) | `bun fx start` blocks with the fix: `bun run prepare` then `bun fx start`. For unattended/agent starts, `FORGEAX_AUTO_DEPLOY=1 bun fx start` rebuilds automatically instead of blocking. |
 | `ERR_SSL_PROTOCOL_ERROR` on `:18920` | The interface defaults to HTTPS when `FORGEAX_INTERFACE_HTTPS=1`. Either access via `https://`, or run plain HTTP on `localhost` (WebGPU still works on localhost). |
 | Port already in use | `bun fx stop` (SIGTERM + grace) then `bun fx start`. The `.app`'s 18810/15273 are reaped when the app quits. |
 | Chat says "no API key" | Set `ANTHROPIC_API_KEY` in `.env` (web) or via the desktop first-run overlay. |

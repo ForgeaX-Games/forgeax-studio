@@ -1,24 +1,33 @@
 #!/usr/bin/env bun
 // @ts-nocheck
-// scripts/setup.ts — forgeax-studio one-command end-to-end setup (`bun fx setup`).
+// scripts/prepare.ts — forgeax-studio post-install prepare (`bun run prepare` /
+// package.json "prepare" lifecycle after `bun install`).
 // Idempotent — re-running picks up where it left off.
 //
-// Steps: [0] toolchain bootstrap (bootstrap.ts --toolchain-only) · [1] prereq
-// gate · [2] submodule init+harness sync · [3] engine pnpm build · [3b]
-// wgpu wasm · [4] root bun install · [5] marketplace plugin install+build ·
-// [6] .env scaffold · [7] seed sample games. --start then launches run.ts.
+// Steps: [0] prereq gate · [1] submodule init+harness sync · [2] engine pnpm
+// build · [2a] wgpu wasm · [2c] fbx wasm · [2d] codec wasm · [3] marketplace
+// plugin install+build · [4] .env scaffold · [5] seed sample games.
 //
-// Flags: --start · --no-plugins · --skip-bootstrap · --interactive/-i
+// Env: FORGEAX_SKIP_PREPARE · FORGEAX_FORCE_PREPARE · FORGEAX_SKIP_PLUGINS ·
+// FORGEAX_SKIP_ENGINE_BUILD · FORGEAX_SUBMODULE_FULL · FORGEAX_SKIP_HARNESS_SYNC ·
+// FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_BOOTSTRAP · FORGEAX_BOOTSTRAP_YES
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createInterface } from 'node:readline';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { has, resolvePython, run } from './lib/sh.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+if (process.env.FORGEAX_SKIP_PREPARE === '1') {
+  console.log('[prepare] skipped (FORGEAX_SKIP_PREPARE=1)');
+  process.exit(0);
+}
+const force = process.env.FORGEAX_FORCE_PREPARE === '1';
+const skipPlugins = process.env.FORGEAX_SKIP_PLUGINS === '1';
+
 
 const bold = (s: string) => console.log(`\x1b[1m${s}\x1b[0m`);
 const ok = (s: string) => console.log(`\x1b[32m✓\x1b[0m ${s}`);
@@ -28,14 +37,14 @@ const fail = (s: string): never => {
   process.exit(1);
 };
 
-type SetupResult = {
+type PrepareResult = {
   repoType: 'submodule';
   repo: string;
   result: 'ok' | 'failed' | 'skipped';
   detail?: string;
 };
 
-const setupResults: SetupResult[] = [];
+const prepareResults: PrepareResult[] = [];
 
 function cleanTableCell(value: string): string {
   return value.replace(/\r?\n/g, ' ');
@@ -47,7 +56,7 @@ function colorResult(result: string): string {
   return result;
 }
 
-function formatSetupReport(rows: SetupResult[]): string {
+function formatPrepareReport(rows: PrepareResult[]): string {
   const tableRows = rows.map((row) => [
     row.result.toUpperCase(),
     row.repo,
@@ -81,56 +90,57 @@ function parseSubmodulePaths(output: string): string[] {
     .filter(Boolean);
 }
 
-let start = false;
-let skipPlugins = false;
-let skipBootstrap = false;
-let interactive = false;
 for (const a of process.argv.slice(2)) {
-  if (a === '--start') start = true;
-  else if (a === '--no-plugins') skipPlugins = true;
-  else if (a === '--skip-bootstrap') skipBootstrap = true;
-  else if (a === '--interactive' || a === '-i') interactive = true;
-  else if (a === '--yes' || a === '-y') {
-    /* back-compat no-op: auto is the default */
-  } else if (a === '-h' || a === '--help') {
-    console.log('Usage: bun fx setup [--start] [--no-plugins] [--skip-bootstrap] [--interactive]');
+  if (a === '-h' || a === '--help') {
+    console.log(`Usage: bun run prepare  |  bun scripts/prepare.ts
+
+Env:
+  FORGEAX_SKIP_PREPARE=1       skip entirely (exit 0)
+  FORGEAX_FORCE_PREPARE=1      rebuild even when dists look fresh
+  FORGEAX_SKIP_PLUGINS=1       skip marketplace plugin install+build
+  FORGEAX_SKIP_ENGINE_BUILD=1  skip engine package build when dist/ present
+  FORGEAX_SUBMODULE_FULL=1     full (non-shallow) submodule clone
+  FORGEAX_SKIP_HARNESS_SYNC=1  skip .forgeax-harness floating-clone sync
+  FORGEAX_SKIP_HARNESS=1       skip harness sync + skill install entirely (CI)
+  FORGEAX_SKIP_BOOTSTRAP=1     skip toolchain provisioning (node/pnpm/rust) — CI
+  FORGEAX_BOOTSTRAP_YES=1      auto-accept toolchain installs (non-interactive)
+`);
     process.exit(0);
   } else fail(`unknown arg: ${a}`);
 }
 
 const env = { ...process.env };
-if (!interactive) {
-  env.FORGEAX_BOOTSTRAP_YES = '1';
-  env.FORGEAX_DEPLOY_NO_PROMPT_OPTIONAL = '1';
-}
 
-// ── 0. toolchain bootstrap ───────────────────────────────────────────────────
-if (skipBootstrap) {
-  bold('[0/6] Toolchain bootstrap skipped (--skip-bootstrap)');
-} else {
-  bold('[0/6] Toolchain bootstrap (bootstrap.ts --toolchain-only)');
+// ── 0. toolchain (provision if missing, then verify) ──────────────────────────
+bold('[0/5] Toolchain (provision + verify)');
+// Provision node22 / pnpm / rust+wasm-pack via bootstrap.ts when missing.
+// Idempotent: already-present tools are detected and skipped. Interactive on a
+// TTY (set FORGEAX_BOOTSTRAP_YES=1 for auto-yes); a non-interactive shell skips
+// installs and falls through to the hard gate below (fail-fast with guidance).
+// CI provisions its own toolchain via workflow steps and sets
+// FORGEAX_SKIP_BOOTSTRAP=1 to bypass this.
+if (process.env.FORGEAX_SKIP_BOOTSTRAP !== '1') {
   const r = spawnSync(process.execPath, [join(ROOT, 'scripts/bootstrap.ts'), '--toolchain-only'], {
     stdio: 'inherit',
     cwd: ROOT,
     env,
   });
-  if (r.status !== 0) fail('toolchain bootstrap failed');
+  if (r.status !== 0) fail('toolchain provisioning failed (bootstrap.ts --toolchain-only)');
 }
-
-// ── 1. prereq gate ────────────────────────────────────────────────────────────
-bold('[1/6] Checking prerequisites');
+// Hard gate backstop: anything still missing (e.g. an install was declined) stops here.
 if (!has('git')) fail('git not found.');
 if (!has('bun')) fail('bun not found. Install: https://bun.sh');
 if (!has('node')) fail('node not found. Install Node 22+.');
+if (!has('pnpm')) fail('pnpm not found. Install: https://pnpm.io/installation');
 const nodeMajor = Number.parseInt(
   execFileSync('node', ['-v'], { encoding: 'utf8' }).trim().replace(/^v/, '').split('.')[0] ?? '0',
   10,
 );
 if (nodeMajor < 22) fail(`Node ${nodeMajor} found; forgeax-server needs ≥22.`);
-ok(`git + bun + node v${nodeMajor} present`);
+ok(`git + bun + pnpm + node v${nodeMajor} present`);
 
 // ── 2. submodule init + harness sync ─────────────────────────────────────────
-bold('[2/6] Initialising submodules');
+bold('[1/5] Initialising submodules');
 
 // Never let git block on a TTY prompt (username/password) or shell out to a
 // GUI credential helper (osxkeychain / manager-core). Submodule URLs in
@@ -156,7 +166,7 @@ const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
     }),
   );
   if (paths.length === 0) {
-    setupResults.push({ repoType: 'submodule', repo: '(none)', result: 'skipped', detail: 'no submodules configured' });
+    prepareResults.push({ repoType: 'submodule', repo: '(none)', result: 'skipped', detail: 'no submodules configured' });
   }
   for (const path of paths) {
     const r = spawnSync('git', [...noCredHelper, 'submodule', 'update', '--init', '--recursive', ...depth, '--', path], {
@@ -164,7 +174,7 @@ const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
       cwd: ROOT,
       env: gitEnv,
     });
-    setupResults.push({
+    prepareResults.push({
       repoType: 'submodule',
       repo: path,
       result: (r.status ?? 1) === 0 ? 'ok' : 'failed',
@@ -172,28 +182,35 @@ const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
     });
   }
 }
-const failedSubmodules = setupResults.filter((row) => row.result === 'failed');
+const failedSubmodules = prepareResults.filter((row) => row.result === 'failed');
 if (failedSubmodules.length === 0) ok('submodules ready');
 else warnY(`${failedSubmodules.length} submodule(s) failed; continuing and reporting at the end`);
 
-// .forgeax-harness floating clone (non-fatal).
-syncHarness(ROOT, '.forgeax-harness floating clone');
-installHarnessSkills();
-// engine harness sync now flows through the editor submodule (it carries the
-// nested engine at packages/editor/packages/engine).
-for (const sub of ['editor']) {
-  if (existsSync(join(ROOT, 'packages', sub, 'scripts/sync-harness.mjs'))) {
-    bold(`  → packages/${sub} harness sync`);
-    spawnSync('node', ['scripts/sync-harness.mjs'], {
-      stdio: 'inherit',
-      cwd: join(ROOT, 'packages', sub),
-      env: gitEnv,
-    });
+// .forgeax-harness floating clone + skill install. Dev-only convenience —
+// gate behind FORGEAX_SKIP_HARNESS so CI and bare `bun install` (which triggers
+// prepare on every run) don't re-clone the harness + re-run the Python skill
+// install into the agent dirs each time. Non-fatal either way.
+if (process.env.FORGEAX_SKIP_HARNESS === '1') {
+  console.log('  → harness sync + skill-install skipped (FORGEAX_SKIP_HARNESS=1)');
+} else {
+  syncHarness(ROOT, '.forgeax-harness floating clone');
+  installHarnessSkills();
+  // engine harness sync now flows through the editor submodule (it carries the
+  // nested engine at packages/editor/packages/engine).
+  for (const sub of ['editor']) {
+    if (existsSync(join(ROOT, 'packages', sub, 'scripts/sync-harness.mjs'))) {
+      bold(`  → packages/${sub} harness sync`);
+      spawnSync('node', ['scripts/sync-harness.mjs'], {
+        stdio: 'inherit',
+        cwd: join(ROOT, 'packages', sub),
+        env: gitEnv,
+      });
+    }
   }
 }
 
 // ── 3. engine submodule build ────────────────────────────────────────────────
-bold('[3/6] Building engine submodule packages');
+bold('[2/5] Building engine submodule packages');
 const engineDir = join(ROOT, 'packages/editor/packages/engine');
 if (!existsSync(engineDir)) fail('packages/editor/packages/engine (editor nested engine) submodule missing — run git submodule update --init --recursive');
 
@@ -274,7 +291,7 @@ function tryFetchWasm(pkgFilter: string, label: string): boolean {
 // pkg/ is a gitignored wasm-pack artifact, built from Rust or fetched from the
 // wasm-artifacts release). `@forgeax/engine-app`'s bundle imports
 // `../pkg/wgpu_wasm.js` (via @forgeax/engine-wgpu-wasm's dist), so if pkg/ is
-// absent when step [3] builds engine-app, esbuild fails "Could not resolve
+// absent when step [2] builds engine-app, esbuild fails "Could not resolve
 // ../pkg/wgpu_wasm.js". Therefore build the binary in step [3a], BEFORE [3]'s
 // package build — not after. (Older engine pins shipped a checked-in pkg/, which
 // masked this ordering requirement.)
@@ -286,8 +303,8 @@ const touchSentinel = () => {
   writeFileSync(wasmSentinel, '');
 };
 function buildWgpuWasm(): void {
-  bold('[3a/6] Provisioning engine wgpu wasm binary');
-  if (!wgpuWasmStale()) {
+  bold('[2a/5] Provisioning engine wgpu wasm binary');
+  if (!force && !wgpuWasmStale()) {
     ok(`wgpu wasm already built and fresh (skip) — ${wasmArtefact}`);
     if (!existsSync(wasmSentinel)) touchSentinel();
   } else if (tryFetchWasm('@forgeax/engine-wgpu-wasm', 'wgpu wasm')) {
@@ -310,13 +327,24 @@ function buildWgpuWasm(): void {
   }
 }
 
+const engineEntryPkgs = ['app', 'runtime', 'ecs', 'vite-plugin-pack', 'vite-plugin-shader'];
+const enginePkgDir = join(engineDir, 'packages');
+const engineEntryDistsFresh = (): boolean => engineEntryPkgs.every((p) => {
+  const pdir = join(enginePkgDir, p);
+  const dist = join(pdir, 'dist/index.mjs');
+  if (!existsSync(dist)) return false;
+  if (existsSync(join(pdir, 'src')) && anyNewerThan(join(pdir, 'src'), statSync(dist).mtimeMs)) return false;
+  return true;
+});
 const skipEngineBuild =
-  env.FORGEAX_SKIP_ENGINE_BUILD &&
-  existsSync(join(engineDir, 'packages/app/dist')) &&
-  existsSync(join(engineDir, 'packages/runtime/dist'));
+  !force &&
+  ((Boolean(env.FORGEAX_SKIP_ENGINE_BUILD) &&
+    existsSync(join(engineDir, 'packages/app/dist')) &&
+    existsSync(join(engineDir, 'packages/runtime/dist'))) ||
+    engineEntryDistsFresh());
 if (skipEngineBuild) {
   if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed (skip-build path).');
-  ok('engine build skipped — FORGEAX_SKIP_ENGINE_BUILD set and dist/ present');
+  ok('engine build skipped — dists fresh (or FORGEAX_SKIP_ENGINE_BUILD set)');
 } else {
   if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed.');
   // pkg/wgpu_wasm.js must exist before the engine-app bundle below imports it.
@@ -331,7 +359,7 @@ if (skipEngineBuild) {
     // collapsed the former engine-fbx-wasm package INTO engine-fbx (#603). Its
     // tsup dist must exist or the editor iframe 500s at load ("Failed to resolve
     // entry for package @forgeax/engine-fbx"). The wasm BINARY (pkg/fbx-wasm.
-    // {mjs,wasm}) is built separately in step 3c below.
+    // {mjs,wasm}) is built separately in step 2c below.
     '@forgeax/engine-fbx...',
     // engine-vite-plugin-rhi-debug: the editor's engine-vite-preset (studio's
     // vite.config imports it) unconditionally imports this plugin (editor #117
@@ -349,7 +377,7 @@ if (skipEngineBuild) {
   // (which ship none via studio's tsup-only build); without this, the editor + studio typecheck
   // fan-out reds out at TS7016 / TS2709. Incremental (.tsbuildinfo) so re-runs
   // are near-instant. Non-fatal: a d.ts miss only breaks typecheck, not runtime
-  // (vite strips types), so warn rather than abort the whole setup.
+  // (vite strips types), so warn rather than abort the whole prepare.
   //
   // Self-heal on stale/corrupt incremental cache: a `dist/.tsbuildinfo` left in a
   // bad state (e.g. after a TS-version swap, or an interrupted build) can wedge
@@ -383,11 +411,11 @@ if (skipEngineBuild) buildWgpuWasm();
 // is gitignored (zero-binary invariant), so it must be built here or FBX import
 // in the editor fails at runtime. build:wasm = fetch-ufbx (idempotent download of
 // ufbx.c) + emcc compile → pkg/fbx-wasm.{mjs,wasm}.
-bold('[3c/6] Provisioning engine fbx wasm binary');
+bold('[2c/5] Provisioning engine fbx wasm binary');
 const fbxWasmDir = join(engineDir, 'packages/fbx');
 const fbxWasmMjs = join(fbxWasmDir, 'pkg/fbx-wasm.mjs');
 const fbxWasmBin = join(fbxWasmDir, 'pkg/fbx-wasm.wasm');
-if (existsSync(fbxWasmMjs) && existsSync(fbxWasmBin)) {
+if (!force && existsSync(fbxWasmMjs) && existsSync(fbxWasmBin)) {
   ok(`fbx wasm already built (skip) — ${fbxWasmMjs}`);
 } else if (tryFetchWasm('@forgeax/engine-fbx', 'fbx wasm')) {
   // fetched prebuilt release — no emcc compile, no flaky raw.githubusercontent
@@ -412,11 +440,11 @@ if (existsSync(fbxWasmMjs) && existsSync(fbxWasmBin)) {
 // minutes), so the release-fetch path matters most here. pkg/ is gitignored
 // (zero-binary invariant), so provision it or asset compression / KTX2 loading
 // fails at runtime. Same fetch-first-then-compile shape as wgpu/fbx above.
-bold('[3d/6] Provisioning engine codec (basis) wasm binary');
+bold('[2d/5] Provisioning engine codec (basis) wasm binary');
 const codecDir = join(engineDir, 'packages/codec');
 const codecTranscoderWasm = join(codecDir, 'pkg/basis_transcoder.wasm');
 const codecEncoderWasm = join(codecDir, 'pkg/encode/basis_encoder.wasm');
-if (existsSync(codecTranscoderWasm) && existsSync(codecEncoderWasm)) {
+if (!force && existsSync(codecTranscoderWasm) && existsSync(codecEncoderWasm)) {
   ok(`codec wasm already built (skip) — ${codecTranscoderWasm}`);
 } else if (tryFetchWasm('@forgeax/engine-codec', 'codec wasm')) {
   // fetched prebuilt release — skips the multi-minute -O3 basis encoder compile.
@@ -432,15 +460,10 @@ if (existsSync(codecTranscoderWasm) && existsSync(codecEncoderWasm)) {
   }
 }
 
-// ── 4. root workspace install ─────────────────────────────────────────────────
-bold('[4/6] Installing workspace dependencies');
-if (!bunInstallWithRetry(ROOT)) fail('root bun install failed');
-ok('workspace dependencies resolved');
-
 // ── 5. plugin install + build ─────────────────────────────────────────────────
-bold('[5/6] Installing + building marketplace plugins');
+bold('[3/5] Installing + building marketplace plugins');
 if (skipPlugins) {
-  console.log('  (skipped — --no-plugins)');
+  console.log('  (skipped — FORGEAX_SKIP_PLUGINS=1)');
 } else {
   const pluginsDir = join(ROOT, 'packages/marketplace/plugins');
   for (const e of existsSync(pluginsDir) ? readdirSync(pluginsDir, { withFileTypes: true }) : []) {
@@ -458,7 +481,7 @@ if (skipPlugins) {
 
     const pkg = readJson(join(d, 'package.json')) as { scripts?: Record<string, string> } | null;
     if (pkg?.scripts?.build) {
-      if (pluginBuildFresh(d)) ok(`${e.name}  build cache fresh, skip`);
+      if (!force && pluginBuildFresh(d)) ok(`${e.name}  build cache fresh, skip`);
       else {
         console.log(`  → bun run build (${e.name})`);
         if (run('bun', ['run', 'build'], { cwd: d })) ok(`${e.name}  built`);
@@ -469,7 +492,7 @@ if (skipPlugins) {
 }
 
 // ── 6. .env scaffold ──────────────────────────────────────────────────────────
-bold('[6/6] Configuring $ROOT/.env');
+bold('[4/5] Configuring $ROOT/.env');
 const envFile = join(ROOT, '.env');
 const envExample = join(ROOT, '.env.example');
 if (!existsSync(envFile) && existsSync(join(ROOT, 'packages/forgeax/.env'))) {
@@ -481,24 +504,14 @@ if (!existsSync(envFile)) {
   ok('created $ROOT/.env from .env.example');
 }
 if (!/^ANTHROPIC_API_KEY=.+/m.test(readFileSync(envFile, 'utf8'))) {
-  if (interactive && process.stdin.isTTY) {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const key = await new Promise<string>((res) => rl.question('  ANTHROPIC_API_KEY (Enter to skip): ', res));
-    rl.close();
-    if (key.trim()) {
-      upsertEnv(envFile, 'ANTHROPIC_API_KEY', key.trim());
-      ok('ANTHROPIC_API_KEY set');
-    } else console.log(`  (skipped — edit ${envFile} before bun fx start)`);
-  } else {
-    warnY(`ANTHROPIC_API_KEY not set in ${envFile} — edit it before chatting in Studio.`);
-  }
+  warnY('ANTHROPIC_API_KEY not set in ' + envFile + ' — edit it before chatting in Studio.');
 } else {
   ok('ANTHROPIC_API_KEY already set');
 }
 
 // ── 7. seed sample games ──────────────────────────────────────────────────────
 console.log();
-bold('[7/7] Seeding sample games to .forgeax/games/');
+bold('[5/5] Seeding sample games to .forgeax/games/');
 // SSOT: defer to scripts/seed-games.ts (symlink each shared-library game into
 // .forgeax/games/<slug>). This is the SAME path run.ts and the desktop .app's
 // Rust seed_shared_games use — one algorithm, symlinks only, idempotent. Do NOT
@@ -520,26 +533,19 @@ if (existsSync(gamesSrc) && readdirSync(gamesSrc).length > 0) {
 }
 
 console.log();
-const setupFailed = setupResults.some((row) => row.result === 'failed');
-bold(setupFailed ? 'Setup completed with failures.' : 'Setup complete.');
-if (setupResults.length > 0) {
+const prepareFailed = prepareResults.some((row) => row.result === 'failed');
+bold(prepareFailed ? 'Prepare completed with failures.' : 'Prepare complete.');
+if (prepareResults.length > 0) {
   console.log();
-  bold('[setup] submodule result report');
-  console.log(formatSetupReport(setupResults));
+  bold('[prepare] submodule result report');
+  console.log(formatPrepareReport(prepareResults));
 }
-if (setupFailed) {
-  console.error('[setup] one or more submodules failed to update; see report above');
+if (prepareFailed) {
+  console.error('[prepare] one or more submodules failed to update; see report above');
   process.exit(1);
 }
-console.log('Next:\n  bun fx start      # start Studio and open the default web client');
+console.log('Next:\n  bun fx start');
 console.log('Endpoints once running:\n  http://localhost:18920  Studio UI\n  http://localhost:18900  Server\n  http://localhost:15173  Engine');
-
-if (start) {
-  console.log();
-  bold('[start] Launching Studio…');
-  const r = spawnSync(process.execPath, ['fx', 'start'], { stdio: 'inherit', cwd: ROOT, env });
-  process.exit(r.status ?? 0);
-}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -646,10 +652,3 @@ function pluginBuildFresh(dir: string): boolean {
   return found;
 }
 
-function upsertEnv(file: string, key: string, val: string): void {
-  let text = readFileSync(file, 'utf8');
-  const re = new RegExp(`^#?\\s*${key}=.*$`, 'm');
-  if (re.test(text)) text = text.replace(re, `${key}=${val}`);
-  else text += `\n${key}=${val}\n`;
-  writeFileSync(file, text);
-}

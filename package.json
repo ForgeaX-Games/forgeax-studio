@@ -6,6 +6,7 @@
   "description": "ForgeaX Studio — AI-native game development environment",
   "scripts": {
     "fx": "bun scripts/fx.ts",
+    "prepare": "bun scripts/prepare.ts",
     "harness:sync": "node scripts/sync-harness.mjs",
     "lint:layers": "bun scripts/check-layers.ts --strict",
     "test:layers": "bun test scripts/check-layers.spec.ts",

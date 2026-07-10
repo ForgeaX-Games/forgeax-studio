@@ -21,13 +21,22 @@ describe('scripts/fx.ts command routing', () => {
   it('keeps package.json scripts focused on fx plus checks', () => {
     const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
     expect(pkg.scripts.fx).toBe('bun scripts/fx.ts');
+    expect(pkg.scripts.prepare).toBe('bun scripts/prepare.ts');
     for (const legacy of ['setup', 'bootstrap', 'dev', 'dev:local', 'start', 'stop', 'app', 'web', 'build:plugins', 'version']) {
       expect(pkg.scripts[legacy]).toBeUndefined();
     }
   });
 
-  it('routes setup to setup.ts', () => {
-    expect(resolveCommand(['setup'])).toEqual({ type: 'script', script: script('setup.ts'), args: [] });
+  it('routes setup as an internal deprecated command (not setup.ts)', () => {
+    expect(resolveCommand(['setup'])).toEqual({ type: 'internal', command: 'setup', args: [] });
+    expect(resolveCommand(['setup', '--start', '--no-plugins'])).toEqual({ type: 'internal', command: 'setup', args: ['--start', '--no-plugins'] });
+  });
+
+  it('documents setup as deprecated in usage text', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    expect(source).toMatch(/deprecated/i);
+    expect(source).toContain('bun install');
+    expect(source).not.toContain("['setup', 'setup.ts']");
   });
 
   it('does not keep install as a setup alias', () => {

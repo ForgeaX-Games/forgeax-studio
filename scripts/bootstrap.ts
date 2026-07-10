@@ -188,4 +188,4 @@ for (const d of ['packages/interface', 'packages/server', 'packages/forgeax']) {
   }
 }
 
-console.log('\nBootstrap complete. Next: bun fx setup  (engine build + plugins + .env), then bun fx start');
+console.log('\nBootstrap complete. Next: bun install  (deps + prepare: engine build + plugins + .env), then bun fx start');

@@ -62,7 +62,7 @@ const SCRIPT_COMMANDS = new Map<string, string>([
 const REPO_COMMANDS = new Set(['sync', 'check', 'commit', 'bump', 'versions']);
 
 const BUILTIN_COMMANDS = new Set([
-  // deprecated: redirects to bun install
+  // delegates to bun install → prepare lifecycle
   'setup',
 
   // git update orchestration
@@ -112,7 +112,7 @@ Usage:
   bun fx <command> [args...]
 
 Common commands:
-  setup                 Deprecated — runs bun install (prefer: bun install)
+  setup                 Equivalent to bun install → prepare (build deps, engine, plugins, .env)
   update                Pull latest root code and sync all submodules
   sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
   clean [--deep|-x]     Restore a fully-clean git status across root + all
@@ -146,13 +146,12 @@ Examples:
 `);
 }
 
-function deprecatedSetup(args: string[]): never {
+function runSetup(args: string[]): never {
   const knownLegacy = new Set(['--start', '--no-plugins', '--skip-bootstrap', '--interactive', '-i', '--yes', '-y']);
   const ignored = args.filter((a) => knownLegacy.has(a));
-  console.warn('\x1b[33m⚠ bun fx setup is deprecated.\x1b[0m');
-  console.warn('  Use: bun install          # installs deps + runs prepare');
-  console.warn('  Or:  bun run prepare      # rebuild only');
-  if (ignored.length > 0) console.warn(`  Ignoring legacy flags: ${ignored.join(' ')}`);
+  console.log('→ bun fx setup delegates to: bun install');
+  console.log('  (npm prepare lifecycle runs automatically after install)');
+  if (ignored.length > 0) console.warn(`\x1b[33m⚠ Ignoring legacy flags: ${ignored.join(' ')}\x1b[0m`);
   const r = spawnSync(BUN, ['install'], { cwd: ROOT, stdio: 'inherit', env: process.env });
   process.exit(r.status ?? 1);
 }
@@ -762,7 +761,7 @@ function main(): void {
       usage();
       break;
     case 'setup':
-      deprecatedSetup(plan.args);
+      runSetup(plan.args);
       break;
     case 'status':
       if (plan.args.includes('--repos')) runScript(script('repos.ts'), ['status']);

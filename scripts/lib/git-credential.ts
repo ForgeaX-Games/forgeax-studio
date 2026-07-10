@@ -1,5 +1,5 @@
 // scripts/lib/git-credential.ts — resolve the credential rewrite strategy
-// setup.ts / sync-harness use before fetching private submodules & harness.
+// prepare.ts / sync-harness use before fetching private submodules & harness.
 //
 // Extracted for testability. The functions here take an explicit environment +
 // probe callback so specs can exercise every branch without a real SSH key or

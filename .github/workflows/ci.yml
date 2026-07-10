@@ -13,7 +13,7 @@ concurrency:
 
 # Two jobs:
 #   hygiene — fast, dependency-free gate (JSON validity, required files, secret scan).
-#   build   — the real signal: a fresh clone must `bun fx setup` + typecheck + build
+#   build   — the real signal: a fresh clone must `bun install` + typecheck + build
 #             + boot the 3-service stack. This catches the regression class where the
 #             published mirror stops installing/booting (e.g. a workspace or dep that
 #             the mirror assembly forgot to ship). Mirrors the internal ci.yml, adapted
@@ -23,7 +23,7 @@ concurrency:
 #             --frozen-lockfile). The engine the build actually uses is the SAME nested
 #             path as internal — packages/editor/packages/engine (root workspaces points
 #             there); the top-level packages/engine submodule the public .gitmodules adds
-#             is not what `bun fx setup` builds, so all engine paths below match internal.
+#             is not what `bun install` builds, so all engine paths below match internal.
 jobs:
   hygiene:
     name: Repo hygiene
@@ -69,7 +69,7 @@ jobs:
 
       # ── Toolchain ──────────────────────────────────────────────────────
       # bun / node(.nvmrc) / pnpm(.pnpm-version) + the Rust+wasm toolchain that
-      # `bun fx setup` needs to build wgpu-wasm (without it the engine vite server
+      # `bun install` needs to build wgpu-wasm (without it the engine vite server
       # dies with ENOENT wgpu_wasm_bg.wasm).
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
@@ -136,8 +136,8 @@ jobs:
 
       # Engine dist cache — keyed on the engine submodule SHA (perfect fingerprint
       # of its source; pin unchanged ⇒ dist unchanged). On hit, FORGEAX_SKIP_ENGINE_BUILD
-      # lets setup.ts skip the tsup build (it still installs workspace symlinks);
-      # setup.ts guards the skip on dist/ existing, so a partial restore self-heals.
+      # lets prepare.ts skip the tsup build (it still installs workspace symlinks);
+      # prepare.ts guards the skip on dist/ existing, so a partial restore self-heals.
       - name: Resolve engine submodule SHA
         id: engine-sha
         run: echo "sha=$(git -C packages/editor/packages/engine rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -154,7 +154,7 @@ jobs:
         run: echo "FORGEAX_SKIP_ENGINE_BUILD=1" >> "$GITHUB_ENV"
 
       # Marketplace plugin dist cache — keyed on the marketplace submodule SHA.
-      # Touch restored dist before setup.ts so its per-plugin freshness check skips
+      # Touch restored dist before prepare.ts so its per-plugin freshness check skips
       # the rebuild (checkout stamps source to "now"; cached dist must look newer).
       - name: Resolve marketplace submodule SHA
         id: marketplace-sha
@@ -176,16 +176,15 @@ jobs:
         if: steps.plugin-dist.outputs.cache-hit == 'true'
         run: find packages/marketplace/plugins -name node_modules -prune -o -type d -name dist -exec touch {} +
 
-      # ── Seed .env so setup.ts stays non-interactive ───────────────────
-      # setup.ts has an unguarded `read` for ANTHROPIC_API_KEY; pre-seed a dummy
-      # key (the smoke below only probes health + vite roots, never a chat path).
+      # ── Seed .env before prepare (non-interactive) ────────────────────
+      # prepare.ts scaffolds .env from .env.example silently when missing;
+      # pre-seed a dummy key so smoke never depends on interactive prompts.
       - name: Seed .env (dummy ANTHROPIC_API_KEY for non-interactive setup)
         run: |
           set -eux
           cp .env.example .env
           sed -i 's|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=sk-ant-ci-dummy|' .env
           grep -E '^ANTHROPIC_API_KEY=' .env
-          echo "FORGEAX_DEPLOY_NO_PROMPT_OPTIONAL=1" >> "$GITHUB_ENV"
 
       # ── Script syntax gate (cheap, runs first) ─────────────────────────
       - name: Script syntax check (scripts/*.ts + remaining *.sh)
@@ -194,14 +193,14 @@ jobs:
           for f in scripts/*.ts scripts/lib/*.ts; do bun build "$f" --target=node >/dev/null; done
           find scripts -maxdepth 2 -name '*.sh' -print0 | xargs -0 -n1 bash -n
 
-      # ── setup.ts: install + engine build + wgpu-wasm + plugin build ───
-      # Plain `bun install` happens inside setup (no --frozen-lockfile gate: the
-      # mirror ships no bun.lock — its workspace set differs from internal).
-      # FORGEAX_SKIP_HARNESS_SYNC=1: the mirror has no harness floating clone.
-      - name: bun fx setup (install + build + plugin build)
-        run: bun fx setup
+      # ── bun install (triggers prepare once) ───────────────────────────
+      # No --frozen-lockfile gate: the mirror ships no bun.lock (workspace set
+      # differs from internal). FORGEAX_SKIP_HARNESS=1: skip harness sync +
+      # skill-install (public mirror has no harness; avoids py-missing warn).
+      - name: bun install (triggers prepare)
+        run: bun install
         env:
-          FORGEAX_SKIP_HARNESS_SYNC: '1'
+          FORGEAX_SKIP_HARNESS: '1'
 
       # Restore mtime ordering so run.ts's freshness gates don't refuse to boot
       # (wgpu .wasm must be newer than the committed pkg/*.js; engine dist newer
@@ -212,7 +211,7 @@ jobs:
           touch packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm
           find packages/editor/packages/engine/packages/*/dist -type f -exec touch {} +
 
-      # ── Per-package typecheck fan-out (setup.ts does not typecheck) ────
+      # ── Per-package typecheck fan-out (prepare.ts does not typecheck) ────
       # Same package list and typecheck||lint fallback as internal CI. cli is
       # intentionally excluded (it carries pre-existing test-file type debt that
       # internal CI also does not typecheck).

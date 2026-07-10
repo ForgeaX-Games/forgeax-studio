@@ -5,7 +5,7 @@
 //
 // Server serves each wb-* plugin's UI from its built dist/ (serveStatic
 // /plugins/<id>/*). dist/ is gitignored (each plugin its own submodule) and only
-// built by setup.ts §5. The dev path (run.ts) never (re)built them, so a
+// built by prepare.ts (plugins step). The dev path (run.ts) never (re)built them, so a
 // missing/partial dist makes the iframe 404 / render blank. This rebuilds ONLY
 // broken ones (no index.html, or index.html references a missing assets/*.js|css).
 // Already-good dists are skipped; failures are non-fatal.

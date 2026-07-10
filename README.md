@@ -67,7 +67,7 @@ drop into a visual editor to tweak the scene directly at any time.
 ```bash
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
-bun fx setup         # deps + engine/wasm build; scaffolds .env (set ANTHROPIC_API_KEY)
+bun install         # deps + engine/wasm build; scaffolds .env (set ANTHROPIC_API_KEY)
 bun fx start         # starts Studio and opens the default web client
 # open http://localhost:18920 and tell Forge what to build
 ```

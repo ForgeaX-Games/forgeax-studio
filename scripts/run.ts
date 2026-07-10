@@ -227,12 +227,12 @@ if (!existsSync(wsSentinel)) {
   console.log('[run]   running: bun install (one-shot self-heal)');
   const r = spawnSync(process.execPath, ['install'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
   if (r.status !== 0) {
-    console.error('  ERROR: bun install failed. Run: bun fx setup');
+    console.error('  ERROR: bun install failed — check network/submodules, then retry: bun install');
     process.exit(1);
   }
   if (!existsSync(wsSentinel)) {
     console.error(`  ERROR: bun install finished but ${wsSentinel} still missing.`);
-    console.error('  This usually means the engine submodule isn\'t initialised. Run: bun fx setup');
+    console.error('  This usually means the engine submodule isn\'t initialised. Run: bun install');
     process.exit(1);
   }
 }
@@ -245,7 +245,7 @@ const missing = engineEntryPkgs.filter((p) => !existsSync(join(enginePkgDir, p, 
 if (missing.length > 0) {
   console.error(`  ERROR: engine dist missing for: ${missing.join(' ')}`);
   console.error('  (expected packages/editor/packages/engine/packages/<pkg>/dist/index.mjs)');
-  console.error('  The editor nested engine submodule has not been fully built yet. Run: bun fx setup');
+  console.error('  The editor nested engine submodule has not been fully built yet. Run: bun install');
   process.exit(1);
 }
 console.log(`[engine] dist found for entry packages: ${engineEntryPkgs.join(' ')}`);
@@ -259,14 +259,14 @@ if (process.env.FORGEAX_SKIP_ENGINE_DIST_FRESHNESS !== '1') {
   if (stale.length > 0) {
     if (process.env.FORGEAX_AUTO_DEPLOY === '1') {
       console.error(`[engine] dist STALE for: ${stale.join(' ')} — FORGEAX_AUTO_DEPLOY=1, rebuilding…`);
-      const r = spawnSync(process.execPath, ['fx', 'setup'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
+      const r = spawnSync(process.execPath, ['run', 'prepare'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
       if (r.status !== 0) {
-        console.error('  ERROR: auto setup failed. Run it manually: bun fx setup');
+        console.error('  ERROR: auto prepare failed. Run: bun run prepare');
         process.exit(1);
       }
     } else {
       console.error(`  ERROR: engine dist STALE for: ${stale.join(' ')} (src newer than dist).`);
-      console.error('  Rebuild: bun fx setup   (or set FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 / FORGEAX_AUTO_DEPLOY=1)');
+      console.error('  Rebuild: bun run prepare   (or set FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 / FORGEAX_AUTO_DEPLOY=1)');
       process.exit(1);
     }
   }
@@ -279,7 +279,7 @@ const wasmSentinel = join(ROOT, '.forgeax/sentinels/wgpu-wasm.built');
 if (wgpuWasmStale()) {
   if (!existsSync(wasmArtefact)) console.error(`  ERROR: wgpu wasm artefact missing: ${wasmArtefact}`);
   else console.error('  ERROR: wgpu wasm stale (src / Cargo / pkg/wgpu_wasm.js newer than the .wasm).');
-  console.error('  Rebuild: pnpm -F @forgeax/engine-wgpu-wasm build:wasm   (or: bun fx setup)');
+  console.error('  Rebuild: pnpm -F @forgeax/engine-wgpu-wasm build:wasm   (or: bun run prepare)');
   console.error('  Override (not recommended): FORGEAX_SKIP_WGPU_WASM_FRESHNESS=1 bun fx start');
   if (process.env.FORGEAX_SKIP_WGPU_WASM_FRESHNESS !== '1') process.exit(1);
 }
@@ -315,11 +315,11 @@ const engineSrcDir = join(ROOT, 'packages/editor/packages/play-runtime');
 mkdirSync(join(instanceRoot, '.forgeax/games'), { recursive: true });
 ensureForgeaxJunction(join(engineSrcDir, '.forgeax'), join(instanceRoot, '.forgeax'));
 
-// Shared game library is seeded once by `bun fx setup` (setup.ts [7/7] →
+// Shared game library is seeded once by `bun install` (prepare.ts →
 // seed-games.ts symlinks). run.ts intentionally does NOT re-seed: seed-games is
 // idempotent so re-running was harmless, but doing it on every start blurred the
 // deploy/start split and risked piling up <slug>.bak-<ts> if a real dir ever
-// appeared. If .forgeax/games/ is empty, run `bun fx setup` to (re)seed.
+// appeared. If .forgeax/games/ is empty, run `bun install` to (re)seed.
 
 process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
 

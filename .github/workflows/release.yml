@@ -32,8 +32,8 @@ jobs:
       - name: Install wasm-pack
         uses: taiki-e/install-action@v2
         with: { tool: wasm-pack }
-      - name: Install + build engine (bun fx setup)
-        run: bun fx setup
+      - name: Install + build engine (bun install)
+        run: bun install
         env:
           FORGEAX_SKIP_HARNESS_SYNC: "1"
       - name: Package desktop app (bun fx build desktop)
@@ -98,5 +98,5 @@ jobs:
   #     - uses: dtolnay/rust-toolchain@stable
   #     - uses: taiki-e/install-action@v2
   #       with: { tool: wasm-pack }
-  #     - run: bun fx setup
+  #     - run: bun install
   #     # Windows packaging needs a bun sidecar + tauri build path validated first.

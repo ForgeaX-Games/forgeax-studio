@@ -47,9 +47,6 @@ const START_PORTS: readonly StartPort[] = [
 const script = (name: string): string => resolve(ROOT, 'scripts', name);
 
 const SCRIPT_COMMANDS = new Map<string, string>([
-  // setup prerequisites
-  ['setup', 'setup.ts'],
-
   // dev lifecycle
   ['stop', 'stop.ts'],
 
@@ -65,6 +62,9 @@ const SCRIPT_COMMANDS = new Map<string, string>([
 const REPO_COMMANDS = new Set(['sync', 'check', 'commit', 'bump', 'versions']);
 
 const BUILTIN_COMMANDS = new Set([
+  // deprecated: redirects to bun install
+  'setup',
+
   // git update orchestration
   'update',
   'clean',
@@ -112,7 +112,7 @@ Usage:
   bun fx <command> [args...]
 
 Common commands:
-  setup                 Prepare deps, submodules, engine, plugins, .env scaffold
+  setup                 Deprecated — runs bun install (prefer: bun install)
   update                Pull latest root code and sync all submodules
   sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
   clean [--deep|-x]     Restore a fully-clean git status across root + all
@@ -136,14 +136,25 @@ Common commands:
   version [args...]     Print version info
 
 Examples:
-  bun fx setup
-  bun fx update
+  bun install
   bun fx start
+  bun fx update
   bun fx start desktop debug
   bun fx sync --dry-run
   bun fx commit -m "fix: adjust dock layout" --push
   bun fx status
 `);
+}
+
+function deprecatedSetup(args: string[]): never {
+  const knownLegacy = new Set(['--start', '--no-plugins', '--skip-bootstrap', '--interactive', '-i', '--yes', '-y']);
+  const ignored = args.filter((a) => knownLegacy.has(a));
+  console.warn('\x1b[33m⚠ bun fx setup is deprecated.\x1b[0m');
+  console.warn('  Use: bun install          # installs deps + runs prepare');
+  console.warn('  Or:  bun run prepare      # rebuild only');
+  if (ignored.length > 0) console.warn(`  Ignoring legacy flags: ${ignored.join(' ')}`);
+  const r = spawnSync(BUN, ['install'], { cwd: ROOT, stdio: 'inherit', env: process.env });
+  process.exit(r.status ?? 1);
 }
 
 function runScript(file: string, args: string[]): never {
@@ -512,7 +523,7 @@ async function startWeb(runArgs: string[]): Promise<never> {
     console.error('[start]   (the editor UI works; only the play-engine-proxied routes fail)');
     console.error(`[start]   last lines of ${stackLog}:\n`);
     console.error(tailLog(stackLog, 30));
-    console.error('[start]   fix: bun fx restart   (if it persists: bun fx setup to rebuild engine dist)');
+    console.error('[start]   fix: bun fx restart   (if it persists: bun run prepare to rebuild engine dist)');
   }
 
   // Advertise all listening ports to the foreground stdout. The stack's own
@@ -559,12 +570,12 @@ function status(): void {
     console.log(`  ${name.padEnd(9)} :${port} ${pid ? `listening pid=${pid}` : 'free'}`);
   }
   console.log();
-  console.log('commands: bun fx setup | update | sync | start [web|desktop] | stop | status [--repos] | versions | check | commit | bump | build desktop | doctor');
+  console.log('commands: bun install | bun fx update | sync | start [web|desktop] | stop | status [--repos] | versions | check | commit | bump | build desktop | doctor');
 }
 
 function doctor(args: string[]): never {
   const fix = args.includes('--fix');
-  const required = ['git', 'bun', 'node'];
+  const required = ['git', 'bun', 'node', 'pnpm'];
   let failed = 0;
   for (const bin of required) {
     const ok = Bun.which(bin) !== null;
@@ -674,7 +685,7 @@ function restartStack(args: string[]): never {
 //     `git status`, submodule interiors must be scrubbed to bare pin state.
 //
 // `--deep`/-x extends the deep clean to the ROOT too (wipe node_modules/dist/.env;
-// re-run setup after). `--dry-run`/-n previews without deleting.
+// re-run bun install after). `--dry-run`/-n previews without deleting.
 // `.forgeax-harness` (floating loop-state clone, gitignored, own .git) is ALWAYS
 // preserved — it holds unpushed closed-loop state and must never be wiped here.
 //
@@ -708,7 +719,7 @@ function clean(args: string[]): never {
     });
   };
 
-  console.log(`[clean] root mode: ${deepRoot ? 'deep (removes gitignored artefacts — re-run setup after)' : 'standard (keeps node_modules/dist/.env)'} · submodules: always deep${dryRun ? ' · DRY RUN' : ''}`);
+  console.log(`[clean] root mode: ${deepRoot ? 'deep (removes gitignored artefacts — re-run bun install after)' : 'standard (keeps node_modules/dist/.env)'} · submodules: always deep${dryRun ? ' · DRY RUN' : ''}`);
 
   // 1. discard tracked edits + reset submodule pointers to recorded pins.
   step('.', ['reset', '--hard'], 'reset tracked changes');
@@ -749,6 +760,9 @@ function main(): void {
     case '--help':
     case '-h':
       usage();
+      break;
+    case 'setup':
+      deprecatedSetup(plan.args);
       break;
     case 'status':
       if (plan.args.includes('--repos')) runScript(script('repos.ts'), ['status']);

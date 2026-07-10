@@ -15,6 +15,7 @@ import { useShellStore } from '@forgeax/interface/store';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { PulseFeeds } from '@forgeax/interface/components/StatusBar/feeds/PulseFeeds';
 import { VersionBadge } from '@forgeax/interface/components/StatusBar/VersionBadge';
+import { installInterfaceBridge, setContextMenuRenderer } from '@forgeax/editor-core';
 import { EDITOR_PANELS } from '@forgeax/editor-core/manifest';
 import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
 // ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
@@ -231,6 +232,10 @@ export const editorRenderers: PanelRenderers = {
   },
   surfaces: {
     SceneEditor: EditRealm,
+  },
+  editor: {
+    setContextMenuRenderer,
+    installBridge: installInterfaceBridge,
   },
   chrome: {
     StatusFeeds: StatusFeedsInjection,

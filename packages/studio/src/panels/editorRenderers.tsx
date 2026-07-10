@@ -95,34 +95,18 @@ function useActiveSlug(): string | null {
 
 // Studio owns its on-disk game layout (`.forgeax/games/<slug>`, matching the
 // server's safe-path whitelist). The editor holds ZERO layout convention, so
-// the host injects the game root. Single-realm: the in-process engine boot
-// (configureHostSession, host-boot) reads it ONLY from location.search
-// (?scene=<slug>&gameRoot=<root>); localStorage['forgeax.gameRoot'] is kept in
-// sync as the pre-boot signal (mirrors packages/editor/standalone/main.tsx).
+// the host passes the game root to ViewportComponent as a prop.
 function studioGameRoot(slug: string): string {
   return `.forgeax/games/${slug}`;
-}
-
-// Bridge the active game into location.search so the in-process engine boot
-// reads the right scene. configureHostSession() reads ONLY the URL, so this
-// MUST run before <ViewportComponent> mounts (and again before every re-mount
-// on switch). Returns true if the URL changed.
-function bridgeGameToUrl(slug: string, gameRoot: string): boolean {
-  try {
-    const qp = new URLSearchParams(location.search);
-    if (qp.get('scene') === slug && qp.get('gameRoot') === gameRoot) return false;
-    qp.set('scene', slug);
-    qp.set('gameRoot', gameRoot);
-    history.replaceState(null, '', `${location.pathname}?${qp.toString()}${location.hash}`);
-    return true;
-  } catch { return false; }
 }
 
 // EditRealm — the in-process editor viewport surface (single realm). It owns
 // the studio-only multi-game orchestration:
 //   - resolve the active slug (useActiveSlug: pinnedSlug + server active-slug,
 //     validated against the live game list),
-//   - keep localStorage['forgeax.gameRoot'] + ?scene=/?gameRoot= in sync,
+//   - pass the active game to ViewportComponent as props (NOT `?scene=`/
+//     `?gameRoot=` URL params — the single realm removed the editor iframe those
+//     addressed, so the props are the one source and can't drift from a stale URL),
 //   - on a CROSS-GAME switch, tear the engine realm down (resetEditRealm:
 //     releases the WebGPU device + resets the single-boot latch) and remount a
 //     fresh <ViewportComponent key={slug}> so the new game boots clean (physics
@@ -137,22 +121,20 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
 
   useLayoutEffect(() => {
     if (!slug) return;
-    const gameRoot = studioGameRoot(slug);
-    try { localStorage.setItem('forgeax.gameRoot', gameRoot); } catch { /* no storage */ }
     if (bootedSlug === slug) return;
     // Cross-game switch (or first boot). On a real switch, destroy the previous
-    // engine realm BEFORE re-pointing the URL + remounting, so the old WebGPU
-    // device is released and the boot latch is clear for the new game. First
-    // boot (bootedSlug === null) has nothing to tear down.
+    // engine realm BEFORE remounting, so the old WebGPU device is released and the
+    // boot latch is clear for the new game. First boot (null) has nothing to tear
+    // down.
     if (bootedSlug !== null) resetEditRealm();
-    bridgeGameToUrl(slug, gameRoot);
     setBootedSlug(slug);
   }, [slug, bootedSlug]);
 
   if (!slug || bootedSlug !== slug) return null;
   // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
   // above guarantees the latch is clear so ViewportComponent actually re-boots.
-  return <ViewportComponent key={slug} />;
+  // The game is passed as props — the engine boot reads it there, not from the URL.
+  return <ViewportComponent key={slug} gameSlug={slug} gameRoot={studioGameRoot(slug)} />;
 }
 
 // The in-process body for a single ep:* editor panel. Resolves the panel's

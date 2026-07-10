@@ -62,8 +62,8 @@ export default defineConfig({
     ...(HTTPS_ENABLED && !useCustomCert ? [basicSsl()] : []),
   ],
   // Expose the game slug + abs dir to the client bundle. Studio is multi-game, so
-  // both are null at build time (the active game is pinned at runtime via
-  // setPinnedSlug + ?scene=/?gameRoot= URL params in EditRealm). Null on
+  // both are null at build time (the active game is resolved at runtime by
+  // useActiveSlug and passed to ViewportComponent as props in EditRealm). Null on
   // __FORGEAX_GAME_DIR_ABS__ selects the in-process engine's multi-game fallback
   // paths (/preview/pack-index/<slug>.json, root /__import).
   define: {

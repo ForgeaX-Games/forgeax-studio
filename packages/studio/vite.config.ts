@@ -4,6 +4,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { vitePluginBrand } from './vite-plugin-brand';
 // Single-realm editor (feat-20260703): studio serves the forgeax engine
@@ -40,6 +41,60 @@ const REEL = process.env.FORGEAX_REEL_URL ?? 'http://127.0.0.1:15175';
 // dedupe (resolve.dedupe) collapses the @forgeax family to one instance so the
 // in-process engine + editor + interface share ONE editor-shared store.
 const enginePreset = engineVitePreset({ base: '/', gameDirAbs: null, preserveSymlinks: false });
+
+// ── optimizeDeps.include — SSOT-derived, symmetric with .exclude (no hand list) ──
+// The engine family is EXCLUDED from pre-bundle (enginePreset, native ESM). But
+// the front-end app layer studio assembles (interface + the 前L2 overlay apps +
+// chat + host-sdk) pulls a large set of THIRD-PARTY deps (dockview, @radix-ui/*,
+// cmdk, lucide-react, react-markdown, zod, zustand, …). If those are neither
+// excluded nor pre-declared, Vite discovers them mid-crawl on the first cold
+// load, triggers an esbuild re-optimize, and FORCES A FULL PAGE RELOAD — which
+// aborts every in-flight module request and restarts boot from scratch. On the
+// in-process engine that reload means the viewport re-mounts and the boot overlay
+// never sees `boot ✓ ready`, so a trivial game (spin-cube) sat on "正在加载游戏…"
+// until the 90s hard cap.
+//
+// Fix: derive the include set the same way exclude is derived — from a SSOT, not
+// a hand list (hand-listing was the original exclude bug; architecture-principles
+// §1 SSOT / §2 Derive). SSOT here = the `dependencies` of the source packages
+// studio aliases into its bundle (the same package dirs listed in resolve.alias).
+// We union their non-@forgeax deps: @forgeax/* is handled by exclude, so it must
+// never leak into include. Transitive deps (uuidv7, fzstd, @tanstack/*, …) are
+// pulled in by this first optimize pass automatically — we only need the direct
+// declared set to seed it, which is what kills the re-optimize.
+//
+// Resolvability gate: a dep DECLARED by a source package is not necessarily
+// RESOLVABLE from studio's own module graph — e.g. `zod` is a dep of host-sdk /
+// interface but lives in THEIR nested node_modules, and studio imports host-sdk
+// via a src alias (not the package), so it never surfaces under studio. Vite
+// HARD-FAILS at startup on any optimizeDeps.include entry it cannot resolve
+// ("Failed to resolve dependency: zod"), which would crash the dev server. So we
+// keep only entries resolvable from here; an un-resolvable one is dropped and, if
+// actually imported later, just lazy-optimizes as before (one dep, no reload
+// storm). createRequire rooted at this package = the same resolution base Vite's
+// scanner uses.
+function frontendPrebundleIncludes(): string[] {
+  // The front-end source packages studio composes (mirror of resolve.alias
+  // targets). Engine/editor packages are intentionally absent — they are the
+  // exclude set. host-sdk carries zod; workbench/chat carry markdown+icons.
+  const pkgDirs = ['interface', 'chat', 'dashboard', 'settings', 'workbench', 'host-sdk', 'studio'];
+  const declared = new Set<string>(['react', 'react-dom', 'react-dom/client']);
+  for (const dir of pkgDirs) {
+    const pj = resolve(PACKAGE_DIR, '..', dir, 'package.json');
+    if (!existsSync(pj)) continue;
+    try {
+      const deps = (JSON.parse(readFileSync(pj, 'utf-8')) as { dependencies?: Record<string, string> })
+        .dependencies ?? {};
+      for (const name of Object.keys(deps)) {
+        if (!name.startsWith('@forgeax/')) declared.add(name);
+      }
+    } catch { /* unreadable package.json — skip; a missing dep just re-optimizes as before */ }
+  }
+  const req = createRequire(resolve(PACKAGE_DIR, 'package.json'));
+  return [...declared].filter((name) => {
+    try { req.resolve(name); return true; } catch { return false; }
+  });
+}
 
 const HTTPS_ENABLED = process.env.FORGEAX_INTERFACE_HTTPS === '1';
 
@@ -261,7 +316,11 @@ export default defineConfig(({ command }) => ({
     // fork the editor-shared singleton). react stays pre-bundled so the
     // single-instance dedupe holds.
     exclude: enginePreset.optimizeDeps.exclude,
-    include: ['react', 'react-dom', 'react-dom/client'],
+    // Symmetric with exclude: derived from the assembled front-end packages'
+    // declared deps (SSOT), NOT a hand list — see frontendPrebundleIncludes.
+    // Pre-declaring these prevents the cold-load re-optimize + full-page reload
+    // that trapped the viewport boot overlay on "正在加载游戏…" until the 90s cap.
+    include: frontendPrebundleIncludes(),
   },
   build: {
     // esnext: the in-process engine boot entry uses top-level await.

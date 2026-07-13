@@ -10,7 +10,7 @@
 // in-process React components, NOT a /editor iframe. Studio's vite.config.ts
 // head comment locks this in ("editor viewport + ep:* panels are now in-process
 // React components ... not a /editor iframe"); this file is the concrete wiring.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
 import { useShellStore } from '@forgeax/interface/store';
 import { useTranslation } from '@forgeax/interface/i18n';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
@@ -156,22 +156,31 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
 // ── Viewport boot/loading overlay ─────────────────────────────────────────────
 // Sits on top of the in-process engine viewport and shows a spinner + live boot
 // stage while a game switch tears down/re-boots the engine realm and streams the
-// new game's assets. It hides itself once the engine reports "boot ✓ ready" AND
-// the asset-loading network goes quiet, so a heavy game presents progress instead
-// of a blank screen. Purely presentational — it reads editor boot breadcrumbs off
-// the in-process panelBridge (editorHealth / editorNetwork), never mutating state.
+// new game's boot, then gets out of the engine's way. It hides the moment the
+// engine reports "boot ✓ ready" — i.e. the render loop is live and the scene
+// entities are spawned. Meshes/textures keep streaming in AFTER that (loadByGuid
+// is async, ungated by boot), and the engine renders them progressively (ground
+// first, then meshes, then textures pop in). That progressive fill is the engine
+// doing its job, NOT an unfinished error state to mask — so the overlay's only
+// job is to cover the pre-render blank, not to wait for "all assets settled".
+//
+// (History: this used to also wait for the asset-loading network to go "quiet"
+// via a heuristic that sniffed fetch URLs. That was unsound — it guessed which
+// requests were assets from a hand-maintained path/extension list, and the list
+// drifted: it missed the shell's ~1s API pollers, which kept resetting the quiet
+// timer forever, trapping the overlay on "正在加载游戏…" until a 90s cap even for
+// a trivial game. The engine exposes no authoritative "assets settled" signal,
+// so rather than sniff for one, we drop the overlay at boot ✓ ready — the one
+// authoritative signal the engine DOES emit — and let the render loop show the
+// progressive load.)
+//
+// Purely presentational — it reads editor boot breadcrumbs off the in-process
+// panelBridge (editorHealth), never mutating state.
 function ViewportBootOverlay({ slug }: { slug: string | null }): ReactNode {
   const { i18n } = useTranslation();
   const zh = i18n.language === 'zh';
   const [visible, setVisible] = useState(true);
   const [stage, setStage] = useState<string>(zh ? '正在启动引擎…' : 'Starting engine…');
-
-  // `done` is latched through a ref so the debounce timers below read the live
-  // value without re-subscribing. Absolute + quiet-window timers guarantee the
-  // overlay can never wedge on forever even if a breadcrumb is missed.
-  const bootReadyRef = useRef(false);
-  const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hardCap = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!slug) return; // no game resolved yet — keep the neutral "loading" state
@@ -181,14 +190,6 @@ function ViewportBootOverlay({ slug }: { slug: string | null }): ReactNode {
       disposed = true;
       setVisible(false);
     };
-    // Assets stream in AFTER "boot ✓ ready" (scene load requests meshes/textures
-    // async, gated on renderer.ready), so we only drop the overlay once boot is
-    // ready AND no asset request has completed for a short quiet window.
-    const armQuietTimer = (): void => {
-      if (!bootReadyRef.current) return;
-      if (quietTimer.current) clearTimeout(quietTimer.current);
-      quietTimer.current = setTimeout(finish, 1500);
-    };
 
     const offHealth = panelBridge.on('editorHealth', (e) => {
       const m = e.message ?? '';
@@ -197,31 +198,14 @@ function ViewportBootOverlay({ slug }: { slug: string | null }): ReactNode {
       if (/createApp/.test(m)) setStage(zh ? '初始化渲染器…' : 'Initializing renderer…');
       else if (/plugins/.test(m)) setStage(zh ? '加载游戏插件…' : 'Loading game plugins…');
       else if (/scene/.test(m)) setStage(zh ? '加载场景资源…' : 'Loading scene…');
-      if (/boot ✓|ready|input ▸ game input chain live/.test(m)) {
-        bootReadyRef.current = true;
-        setStage(zh ? '加载场景资源…' : 'Loading assets…');
-        armQuietTimer();
-      }
+      // boot ✓ ready = render loop live + scene entities spawned. Drop the overlay
+      // now; remaining meshes/textures fill in progressively on-screen.
+      if (/boot ✓|ready|input ▸ game input chain live/.test(m)) finish();
     });
-    const offNet = panelBridge.on('editorNetwork', (e) => {
-      // Ignore the shell's own low-frequency pollers so they can't keep the quiet
-      // window alive; everything else the viewport fetches is game asset traffic.
-      if (/\/api\/(workbench|health|files|threads|usage)\b/.test(e.url)) return;
-      if (bootReadyRef.current) {
-        setStage(zh ? '加载场景资源…' : 'Loading assets…');
-        armQuietTimer();
-      }
-    });
-    // Absolute ceiling: never leave the overlay up longer than this regardless of
-    // breadcrumbs, so a missed "ready" or a stalled asset can't trap the user.
-    hardCap.current = setTimeout(finish, 90_000);
 
     return () => {
       disposed = true;
       offHealth();
-      offNet();
-      if (quietTimer.current) clearTimeout(quietTimer.current);
-      if (hardCap.current) clearTimeout(hardCap.current);
     };
   }, [slug, zh]);
 

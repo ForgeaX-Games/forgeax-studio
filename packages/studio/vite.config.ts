@@ -4,6 +4,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { vitePluginBrand } from './vite-plugin-brand';
 // Single-realm editor (feat-20260703): studio serves the forgeax engine
 // IN-PROCESS in the :18920 host window — the editor viewport + ep:* panels are
@@ -41,6 +42,27 @@ const REEL = process.env.FORGEAX_REEL_URL ?? 'http://127.0.0.1:15175';
 const enginePreset = engineVitePreset({ base: '/', gameDirAbs: null, preserveSymlinks: false });
 
 const HTTPS_ENABLED = process.env.FORGEAX_INTERFACE_HTTPS === '1';
+
+// Registered external workspaces (~/.forgeax/known-projects.json). After a
+// workspace hot-switch (POST /api/workspaces/activate) the Scene viewport's
+// ▶ Play imports the game entry via `/@fs/<workspaceRoot>/.forgeax/games/…`
+// (edit-runtime host-session resolveGameFsBase); any root outside fs.allow
+// 403s → game entry never runs → world has no camera → per-frame RhiError.
+// Read once at config load — a workspace registered for the FIRST time
+// mid-session still 403s until the dev server restarts (registry re-read then).
+function knownWorkspaceRoots(): string[] {
+  try {
+    // homedir() (node:os) — matches the canonical writer
+    // (@forgeax/platform-io lib/known-projects.ts); process.env.HOME is unset on
+    // Windows, which would resolve cwd-relative and never match.
+    const file = resolve(homedir(), '.forgeax/known-projects.json');
+    if (!existsSync(file)) return [];
+    const j = JSON.parse(readFileSync(file, 'utf-8')) as { projects?: { path?: string }[] };
+    return (j.projects ?? []).map((p) => p.path).filter((p): p is string => typeof p === 'string');
+  } catch {
+    return [];
+  }
+}
 
 // Prefer a hand-rolled cert at `<root>/.tls/{cert,key}.pem` (covers remote IPs
 // in SAN); fall back to package-local then @vitejs/plugin-basic-ssl (localhost only).
@@ -170,7 +192,7 @@ export default defineConfig({
     // are statically imported via Sidebar.tsx's LazyPluginPanels map; allow the
     // monorepo root so those imports resolve.  See:
     //   packages/marketplace/plugins/wb-character-forge/DESIGN.md (template).
-    fs: { allow: ['..', '../..'] },
+    fs: { allow: ['..', '../..', ...knownWorkspaceRoots()] },
     proxy: {
       '/api': { target: SERVER, changeOrigin: true },
       '/ws': { target: SERVER_WS, ws: true, changeOrigin: true },

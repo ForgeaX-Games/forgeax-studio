@@ -19,6 +19,12 @@ export const PORT_INTERFACE = n(process.env.FORGEAX_INTERFACE_PORT, 18920);
 export const PORT_ENGINE = n(process.env.FORGEAX_ENGINE_PORT, 15173);
 export const PORT_NARRATIVE = n(process.env.NARRATIVE_PORT, 8900);
 export const PORT_FACEMASK = n(process.env.FACE_MASK_PORT, 18930);
+// DEV-only live gateway bridge relay (forgeax-editor-gateway `gateway-live.mjs`).
+// The in-process editor page (:18920) dials this loopback relay so a CLI can drive
+// the already-open Studio window. On by default at `fx start`; FORGEAX_BRIDGE=0
+// opts out. Listed as a FIXED_PORT so `stop` frees a stale relay too. Mirrors the
+// editor submodule's own :15295 (fx.ts PORTS) — same relay, same default port.
+export const PORT_GATEWAY_BRIDGE = n(process.env.FORGEAX_BRIDGE_PORT, 15295);
 
 // NOTE: the editor (:15280) port is gone — feat-20260703 single-realm serves the
 // Edit engine IN-PROCESS in the interface(studio) vite at :18920, so there is no
@@ -35,6 +41,7 @@ export const FIXED_PORTS: readonly number[] = [
   PORT_ENGINE,
   PORT_NARRATIVE,
   PORT_FACEMASK,
+  PORT_GATEWAY_BRIDGE,
 ];
 
 export const FIXED_SVCS: readonly string[] = [
@@ -43,4 +50,5 @@ export const FIXED_SVCS: readonly string[] = [
   'engine     (vite — engine-src / play-runtime)',
   'narrative  (wb-narrative API · optional)',
   'face-mask  (wb-reel python sidecar · optional)',
+  'gw-bridge  (gateway-live relay · DEV-only, FORGEAX_BRIDGE=0 to skip)',
 ];

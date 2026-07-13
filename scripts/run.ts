@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { loadDotenv } from './lib/env.ts';
 import {
   PORT_ENGINE,
+  PORT_GATEWAY_BRIDGE,
   PORT_INTERFACE,
   PORT_NARRATIVE,
   PORT_SERVER,
@@ -465,8 +466,26 @@ const srv = launch('server', 'bun', ['--watch', 'src/main.ts'], { cwd: join(ROOT
 // Wait for server to bind before starting interface (avoids proxy ECONNREFUSED race).
 await waitForPort(PORT_SERVER, 10_000);
 
+// ── DEV-only live gateway bridge (forgeax-editor-gateway `gateway-live.mjs`) ──
+// Single-realm studio serves the editor page IN-PROCESS in the :18920 vite, so
+// unlike the editor's own `dev:standalone` (which wires this into its :15290 host)
+// nothing here dialed the relay before. Two lines are needed, mirroring editor
+// fx.ts §bridge: (1) the compile-time `VITE_FORGEAX_BRIDGE` flag MUST reach the
+// interface(studio) vite — that vite is what inlines it into ViewportComponent's
+// bridge-dial code (import.meta.env.VITE_FORGEAX_BRIDGE), so it goes on the UI
+// launch env below; (2) the loopback relay process (:15295), spawned after. On by
+// default so `bun fx start` matches the editor; FORGEAX_BRIDGE=0 opts out.
+const bridge = process.env.FORGEAX_BRIDGE !== '0';
+const bridgePort = String(PORT_GATEWAY_BRIDGE);
+const bridgeEnv: NodeJS.ProcessEnv = bridge
+  ? { VITE_FORGEAX_BRIDGE: '1', VITE_FORGEAX_BRIDGE_PORT: bridgePort }
+  : { VITE_FORGEAX_BRIDGE: '0' };
+
 const uiPkg = STUDIO === '1' ? 'studio' : 'interface';
-const ui = launch('interface', 'bun', ['x', 'vite'], { cwd: join(ROOT, 'packages', uiPkg) });
+const ui = launch('interface', 'bun', ['x', 'vite'], {
+  cwd: join(ROOT, 'packages', uiPkg),
+  env: { ...process.env, ...bridgeEnv },
+});
 // play-runtime holds ZERO on-disk layout convention now — the HOST injects it.
 // Studio's layout is `<engineSrcDir>/.forgeax/games` (via the junction above),
 // served under the vite root as the URL prefix `.forgeax/games`. Both must agree.
@@ -482,6 +501,32 @@ const en = launch('engine', 'bun', ['x', 'vite'], {
 // interface(studio) vite at :18920 — no separate edit-runtime vite service. The
 // former `editor` (:15280) launch is gone; the play/preview engine (:15173) stays
 // (Play iframe + the in-process editor's per-game pack catalog fallback use it).
+
+// Live gateway bridge relay (:15295) — the loopback meeting point the CLI POSTs to
+// and the in-process editor page dials out to. The relay script lives in the editor
+// submodule; `bun` (not node) so its vendored `ws` resolves, cwd:ROOT so the isolated
+// store is on the resolution path. DEV-only, loopback-only; skipped by FORGEAX_BRIDGE=0.
+const GATEWAY_RELAY_SCRIPT = join(
+  ROOT,
+  'packages/editor/skills/forgeax-editor-gateway/scripts/gateway-bridge-server.mjs',
+);
+if (bridge) {
+  if (existsSync(GATEWAY_RELAY_SCRIPT)) {
+    launch('gw-bridge', 'bun', [GATEWAY_RELAY_SCRIPT], {
+      cwd: ROOT,
+      env: { ...process.env, FORGEAX_BRIDGE_PORT: bridgePort },
+    });
+    console.log(
+      `[run] live gateway bridge :${bridgePort} → node packages/editor/skills/forgeax-editor-gateway/scripts/gateway-live.mjs (opt out: FORGEAX_BRIDGE=0)`,
+    );
+  } else {
+    // Editor submodule not populated (fresh worktree / partial checkout). The page
+    // still dials, but with no relay it just retries harmlessly — don't fail boot.
+    console.error(
+      `[run] ⚠ gateway bridge relay script missing (${GATEWAY_RELAY_SCRIPT}) — run \`git submodule update --init packages/editor\`; skipping relay`,
+    );
+  }
+}
 
 let narr = 0;
 if (narrativeWillStart()) {

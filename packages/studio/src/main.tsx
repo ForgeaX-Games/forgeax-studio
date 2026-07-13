@@ -53,6 +53,15 @@ import { DetachedSurface } from '@forgeax/interface/components/DetachedSurface';
 import { PanelRenderersProvider } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { installHealthBridge } from '@forgeax/interface/components/StatusBar/healthBridge';
 import { initAegis } from '@forgeax/interface/lib/aegis';
+import { registerKeyboardRouterDeps, type KeyboardRouterDeps } from '@forgeax/interface/lib/global-shortcuts';
+// keyboard-router deps builder is the shared edit-runtime SSOT so studio and the
+// editor standalone host produce the SAME dep object. Without this registration
+// studio's global keydown router has no editor callbacks, so G/Esc (display
+// toggle: game↔scene, i.e. "▶ Play 后按 Esc 回到 edit 模式") does nothing while
+// the GameOverlay button — which dispatches directly — still works. That split
+// was the diagnostic signal. window.confirm backs the risky multi-asset delete
+// (studio has no DeleteGuardDialog).
+import { buildKeyboardRouterDeps } from '@forgeax/editor-edit-runtime/keyboard-router-deps';
 import { editorRenderers } from './panels/editorRenderers';
 
 // Boot Aegis (Galileo) front-end monitoring first, before any heavy boot work,
@@ -159,6 +168,23 @@ function bootFullShell(el: HTMLElement) {
     // patch store state without being part of this repo. Stripped in production.
     (window as unknown as Record<string, unknown>)['__dev'] = useShellStore;
   }
+
+  // Inject the editor-side keyboard-router callbacks (interface stays
+  // editor-agnostic). Must run before <App> mounts so useGlobalShortcuts reads
+  // them at effect time. Mirrors editor/standalone/main.tsx.
+  registerKeyboardRouterDeps(
+    buildKeyboardRouterDeps({
+      confirmDeleteAssets: (assets) =>
+        Promise.resolve(
+          window.confirm(`Delete ${assets.length} assets? This cannot be undone.`),
+        ),
+      // Cast through unknown: buildKeyboardRouterDeps returns the structural
+      // KeyboardRouterDepsShape (edit-runtime declares it locally to stay off the
+      // L1 framework); interface's KeyboardRouterDeps has since added richer asset
+      // fields (kind/payload) the router doesn't read, so the shapes no longer
+      // directly overlap. The builder is designed to be bridged at the call site.
+    }) as unknown as KeyboardRouterDeps,
+  );
 
   createRoot(el).render(
     <StrictMode>

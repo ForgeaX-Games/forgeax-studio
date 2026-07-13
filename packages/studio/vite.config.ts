@@ -215,6 +215,14 @@ export default defineConfig({
       // It is also outside /preview, so it must be proxied explicitly or the
       // studio SPA falls back to index.html and the runtime parses HTML as JSON.
       '/__forgeax-ddc': { target: ENGINE, changeOrigin: true },
+      // The scan-HMR bridge (editor-core scan-hmr-bridge.ts) same-origin GETs
+      // `/__pack/scan-done` to replay the last startup-scan payload when the
+      // browser mounts after the Node-side WS signal (race compensation). It is
+      // also outside /preview, so without this proxy the studio SPA falls back to
+      // index.html and the bridge parses HTML as JSON ("Unexpected token '<'").
+      // Route the whole /__pack/* surface (index / lookup / scan-done) to the
+      // play engine that owns pluginPack's middleware.
+      '/__pack': { target: ENGINE, changeOrigin: true },
       // NOTE: the `/editor` -> :15280 proxy is DELETED (single-realm,
       // feat-20260703). The editor engine now boots IN-PROCESS in this :18920
       // host window; there is no edit-runtime iframe to proxy to. The shader

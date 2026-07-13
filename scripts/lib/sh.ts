@@ -14,7 +14,30 @@ export function has(cmd: string): boolean {
 
 /** Run a command inheriting stdio; return true on exit 0. */
 export function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): boolean {
-  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: IS_WIN, cwd: opts.cwd, env: opts.env ?? process.env, windowsHide: true });
+  const childEnv = opts.env ?? process.env;
+  const trace = childEnv.FORGEAX_COMMAND_TRACE === '1';
+  const cwd = opts.cwd ?? process.cwd();
+  const started = performance.now();
+  if (trace) {
+    const secrets = Object.entries(childEnv)
+      .filter(([key, value]) => /(?:TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL|AUTH)/i.test(key) && (value?.length ?? 0) >= 4)
+      .map(([, value]) => value!)
+      .sort((a, b) => b.length - a.length);
+    const redact = (value: string): string => secrets.reduce(
+      (out, secret) => out.replaceAll(secret, '***'),
+      value,
+    );
+    const rendered = [redact(cmd), ...args.map((arg) => JSON.stringify(redact(arg)))].join(' ');
+    console.log(`[command:start] cwd=${cwd} command=${rendered}`);
+  }
+  const r = spawnSync(cmd, args, { stdio: 'inherit', shell: IS_WIN, cwd: opts.cwd, env: childEnv, windowsHide: true });
+  if (trace) {
+    const duration = Math.round(performance.now() - started);
+    const outcome = r.status === null
+      ? `exit=spawn-error${r.error ? ` error=${JSON.stringify(r.error.message)}` : ''}`
+      : `exit=${r.status}${r.signal ? ` signal=${r.signal}` : ''}`;
+    console.log(`[command:end] ${outcome} duration_ms=${duration} command=${cmd}`);
+  }
   return r.status === 0;
 }
 

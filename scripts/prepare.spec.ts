@@ -52,6 +52,12 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).not.toContain("fail('git submodule update failed.')");
     expect(src).toContain('formatPrepareReport');
   });
+  it('prints per-submodule start/end diagnostics with exit and duration', () => {
+    const src = prepareSource();
+    expect(src).toContain('[submodule:start]');
+    expect(src).toContain('[submodule:end]');
+    expect(src).toContain('duration_ms=');
+  });
   it('prints bun fx start as the next step, no auto-start', () => {
     const src = prepareSource();
     expect(src).toContain('bun fx start');

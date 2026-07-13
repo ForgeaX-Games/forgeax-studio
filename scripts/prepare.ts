@@ -110,6 +110,7 @@ Env:
 }
 
 const env = { ...process.env };
+const commandTrace = env.FORGEAX_COMMAND_TRACE === '1';
 
 // ── 0. toolchain (provision if missing, then verify) ──────────────────────────
 bold('[0/5] Toolchain (provision + verify)');
@@ -169,16 +170,21 @@ const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
     prepareResults.push({ repoType: 'submodule', repo: '(none)', result: 'skipped', detail: 'no submodules configured' });
   }
   for (const path of paths) {
+    const started = performance.now();
+    if (commandTrace) console.log(`[submodule:start] path=${path}`);
     const r = spawnSync('git', [...noCredHelper, 'submodule', 'update', '--init', '--recursive', ...depth, '--', path], {
       stdio: 'inherit',
       cwd: ROOT,
       env: gitEnv,
     });
+    const duration = Math.round(performance.now() - started);
+    const status = r.status ?? 1;
+    if (commandTrace) console.log(`[submodule:end] path=${path} exit=${status} duration_ms=${duration}`);
     prepareResults.push({
       repoType: 'submodule',
       repo: path,
-      result: (r.status ?? 1) === 0 ? 'ok' : 'failed',
-      detail: (r.status ?? 1) === 0 ? 'ready' : `git submodule update exited ${r.status ?? 1}`,
+      result: status === 0 ? 'ok' : 'failed',
+      detail: status === 0 ? `ready (${duration}ms)` : `git submodule update exited ${status} (${duration}ms)`,
     });
   }
 }

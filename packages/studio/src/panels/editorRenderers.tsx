@@ -10,12 +10,13 @@
 // in-process React components, NOT a /editor iframe. Studio's vite.config.ts
 // head comment locks this in ("editor viewport + ep:* panels are now in-process
 // React components ... not a /editor iframe"); this file is the concrete wiring.
-import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useShellStore } from '@forgeax/interface/store';
+import { useTranslation } from '@forgeax/interface/i18n';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { PulseFeeds } from '@forgeax/interface/components/StatusBar/feeds/PulseFeeds';
 import { VersionBadge } from '@forgeax/interface/components/StatusBar/VersionBadge';
-import { installInterfaceBridge, setContextMenuRenderer } from '@forgeax/editor-core';
+import { installInterfaceBridge, setContextMenuRenderer, panelBridge } from '@forgeax/editor-core';
 import { EDITOR_PANELS } from '@forgeax/editor-core/manifest';
 import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
 // ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
@@ -132,11 +133,129 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
     setBootedSlug(slug);
   }, [slug, bootedSlug]);
 
-  if (!slug || bootedSlug !== slug) return null;
-  // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
-  // above guarantees the latch is clear so ViewportComponent actually re-boots.
-  // The game is passed as props — the engine boot reads it there, not from the URL.
-  return <ViewportComponent key={slug} gameSlug={slug} gameRoot={studioGameRoot(slug)} />;
+  // The viewport is only mounted once bootedSlug has caught up with slug (the
+  // pre-mount resetEditRealm ran). During that gap — and while the freshly
+  // mounted engine boots + streams the game's assets — we overlay a loading
+  // surface so a heavy game (e.g. hellforge, ~1.3GB of meshes) never presents as
+  // a silent blank viewport with "所有接口 pending 但页面没提示" (the bug this fixes).
+  const mounted = !!slug && bootedSlug === slug;
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#16161a' }}>
+      {mounted && (
+        // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
+        // above guarantees the latch is clear so ViewportComponent actually re-boots.
+        // The game is passed as props — the engine boot reads it there, not from the URL.
+        <ViewportComponent key={slug} gameSlug={slug} gameRoot={studioGameRoot(slug)} />
+      )}
+      {/* Keyed by slug so it resets its boot-progress state on every game switch. */}
+      <ViewportBootOverlay key={`overlay:${slug ?? '_none'}`} slug={slug} />
+    </div>
+  );
+}
+
+// ── Viewport boot/loading overlay ─────────────────────────────────────────────
+// Sits on top of the in-process engine viewport and shows a spinner + live boot
+// stage while a game switch tears down/re-boots the engine realm and streams the
+// new game's assets. It hides itself once the engine reports "boot ✓ ready" AND
+// the asset-loading network goes quiet, so a heavy game presents progress instead
+// of a blank screen. Purely presentational — it reads editor boot breadcrumbs off
+// the in-process panelBridge (editorHealth / editorNetwork), never mutating state.
+function ViewportBootOverlay({ slug }: { slug: string | null }): ReactNode {
+  const { i18n } = useTranslation();
+  const zh = i18n.language === 'zh';
+  const [visible, setVisible] = useState(true);
+  const [stage, setStage] = useState<string>(zh ? '正在启动引擎…' : 'Starting engine…');
+
+  // `done` is latched through a ref so the debounce timers below read the live
+  // value without re-subscribing. Absolute + quiet-window timers guarantee the
+  // overlay can never wedge on forever even if a breadcrumb is missed.
+  const bootReadyRef = useRef(false);
+  const quietTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hardCap = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!slug) return; // no game resolved yet — keep the neutral "loading" state
+    let disposed = false;
+    const finish = (): void => {
+      if (disposed) return;
+      disposed = true;
+      setVisible(false);
+    };
+    // Assets stream in AFTER "boot ✓ ready" (scene load requests meshes/textures
+    // async, gated on renderer.ready), so we only drop the overlay once boot is
+    // ready AND no asset request has completed for a short quiet window.
+    const armQuietTimer = (): void => {
+      if (!bootReadyRef.current) return;
+      if (quietTimer.current) clearTimeout(quietTimer.current);
+      quietTimer.current = setTimeout(finish, 1500);
+    };
+
+    const offHealth = panelBridge.on('editorHealth', (e) => {
+      const m = e.message ?? '';
+      // A hard engine error paints its own diagnostic overlay — get out of its way.
+      if (e.level === 'error') { finish(); return; }
+      if (/createApp/.test(m)) setStage(zh ? '初始化渲染器…' : 'Initializing renderer…');
+      else if (/plugins/.test(m)) setStage(zh ? '加载游戏插件…' : 'Loading game plugins…');
+      else if (/scene/.test(m)) setStage(zh ? '加载场景资源…' : 'Loading scene…');
+      if (/boot ✓|ready|input ▸ game input chain live/.test(m)) {
+        bootReadyRef.current = true;
+        setStage(zh ? '加载场景资源…' : 'Loading assets…');
+        armQuietTimer();
+      }
+    });
+    const offNet = panelBridge.on('editorNetwork', (e) => {
+      // Ignore the shell's own low-frequency pollers so they can't keep the quiet
+      // window alive; everything else the viewport fetches is game asset traffic.
+      if (/\/api\/(workbench|health|files|threads|usage)\b/.test(e.url)) return;
+      if (bootReadyRef.current) {
+        setStage(zh ? '加载场景资源…' : 'Loading assets…');
+        armQuietTimer();
+      }
+    });
+    // Absolute ceiling: never leave the overlay up longer than this regardless of
+    // breadcrumbs, so a missed "ready" or a stalled asset can't trap the user.
+    hardCap.current = setTimeout(finish, 90_000);
+
+    return () => {
+      disposed = true;
+      offHealth();
+      offNet();
+      if (quietTimer.current) clearTimeout(quietTimer.current);
+      if (hardCap.current) clearTimeout(hardCap.current);
+    };
+  }, [slug, zh]);
+
+  if (!visible) return null;
+  return (
+    <div
+      style={{
+        position: 'absolute', inset: 0, zIndex: 5,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 14, background: '#16161a', color: '#c9c9d4', pointerEvents: 'none',
+        font: '13px/1.5 system-ui, -apple-system, sans-serif',
+      }}
+    >
+      <div
+        style={{
+          width: 34, height: 34, borderRadius: '50%',
+          border: '3px solid rgba(255,255,255,0.14)', borderTopColor: '#7aa2ff',
+          animation: 'fx-viewport-spin 0.9s linear infinite',
+        }}
+      />
+      <div style={{ fontSize: 14, color: '#e7e7ef' }}>
+        {slug
+          ? (zh ? `正在加载游戏 “${slug}”…` : `Loading game “${slug}”…`)
+          : (zh ? '加载中…' : 'Loading…')}
+      </div>
+      <div style={{ opacity: 0.7 }}>{stage}</div>
+      <div style={{ opacity: 0.45, fontSize: 12, maxWidth: 360, textAlign: 'center' }}>
+        {zh
+          ? '大型游戏包含大量模型/贴图，首次加载可能需要一些时间。'
+          : 'Large games ship many meshes/textures; the first load can take a while.'}
+      </div>
+      <style>{'@keyframes fx-viewport-spin{to{transform:rotate(360deg)}}'}</style>
+    </div>
+  );
 }
 
 // The in-process body for a single ep:* editor panel. Resolves the panel's

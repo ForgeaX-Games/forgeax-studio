@@ -11,8 +11,16 @@ import { vitePluginBrand } from './vite-plugin-brand';
 // IN-PROCESS in the :18920 host window — the editor viewport + ep:* panels are
 // now in-process React components (renderEdit/renderEditorPanel), not a `/editor`
 // iframe. This shared serve fragment (shader manifest + optional pack catalog) is
-// the SAME one packages/editor/vite.config.ts consumes for its :15290 host; see
-// packages/editor/packages/edit-runtime/src/viewport/engine-vite-preset.ts.
+// the SAME one packages/editor/vite.config.ts consumes for its :15290 host.
+//
+// Why a RELATIVE import (allow-listed exception to check-boundaries rule 6,
+// which otherwise locks studio onto the @forgeax/editor facade): this file is
+// CONFIG-TIME code. Vite bundles the config with esbuild but externalizes bare
+// package specifiers, so a `@forgeax/editor/...` subpath here would be loaded
+// by node's ESM loader — which type-strips the .ts but rejects the preset
+// chain's extensionless relative imports (ERR_MODULE_NOT_FOUND). The relative
+// path keeps the preset INSIDE the esbuild config bundle, which handles TS +
+// extensionless fine. Runtime source imports must still use the facade.
 import { engineVitePreset } from '../editor/packages/edit-runtime/src/viewport/engine-vite-preset';
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));

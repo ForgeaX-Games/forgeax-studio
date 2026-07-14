@@ -16,15 +16,14 @@ import { useTranslation } from '@forgeax/interface/i18n';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { PulseFeeds } from '@forgeax/interface/components/StatusBar/feeds/PulseFeeds';
 import { VersionBadge } from '@forgeax/interface/components/StatusBar/VersionBadge';
-import { installInterfaceBridge, setContextMenuRenderer, panelBridge } from '@forgeax/editor-core';
-import { EDITOR_PANELS } from '@forgeax/editor-core/manifest';
+import { installInterfaceBridge, setContextMenuRenderer, panelBridge } from '@forgeax/editor/bridge';
 import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
 // ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
-// teardown) come from edit-runtime's engine subpath; EDITOR_PANEL_COMPONENTS
+// teardown) come from the editor facade's ./viewport subpath; EDITOR_PANEL_COMPONENTS
 // maps ep:<id> → the panel's React component. Mirrors packages/editor/
 // standalone/main.tsx (the standalone editor shell that first landed this).
-import { ViewportComponent, resetEditRealm } from '@forgeax/editor-edit-runtime/viewport/viewport-component';
-import { EDITOR_PANEL_COMPONENTS } from '@forgeax/editor/panels';
+import { ViewportComponent, resetEditRealm } from '@forgeax/editor/viewport';
+import { EDITOR_PANELS, EDITOR_PANEL_COMPONENTS } from '@forgeax/editor/panels';
 // studio→chat is a legal aggregation edge (studio composes interface + apps).
 // interface stays chat-agnostic (no @forgeax/chat import); studio injects the
 // chat surface here through the panels.chat descriptor, exactly like edit/preview.
@@ -271,7 +270,7 @@ const EDITOR_PANEL_TITLES: Record<string, string> = {
 };
 
 // Build the panels registry: one entry per EDITOR_PANELS id + chat + agents.
-// EDITOR_PANELS is the SSOT for editor panel ids (imported from @forgeax/editor-core/manifest).
+// EDITOR_PANELS is the SSOT for editor panel ids (imported from @forgeax/editor/panels).
 // Each descriptor bakes in the title from EDITOR_PANEL_TITLES + a stable order.
 const editorPanels: Record<string, PanelDescriptor> = Object.fromEntries(
   EDITOR_PANELS.map((id, i) => [id, {

@@ -62,7 +62,7 @@ import { registerKeyboardRouterDeps, type KeyboardRouterDeps } from '@forgeax/in
 // the GameOverlay button — which dispatches directly — still works. That split
 // was the diagnostic signal. window.confirm backs the risky multi-asset delete
 // (studio has no DeleteGuardDialog).
-import { buildKeyboardRouterDeps } from '@forgeax/editor-edit-runtime/keyboard-router-deps';
+import { buildKeyboardRouterDeps } from '@forgeax/editor/keyboard-router-deps';
 import { editorRenderers } from './panels/editorRenderers';
 
 // Perf fix for heavy-game loads (e.g. hellforge): keep a game's asset burst from

@@ -43,6 +43,22 @@ import { PluginAuthorPanel, WB_PLUGIN_AUTHOR_ID } from '../../../marketplace/plu
 // studio→host-sdk is legal here too. interface imports these as TYPES only and
 // receives the runtime factories through the PanelRenderers injection.
 import { createPluginPort, createWindowTransport } from '@forgeax/host-sdk';
+// ADR 0025 M1: studio assembles the shell by handing <App> a list of
+// AppExtension manifests (overrides.extensions) instead of a monolithic
+// PanelRenderers object. The factories below are interface's built-in
+// extension wrappers; studio.editor-integration carries the leftover fields
+// no factory covers (workbench layout seed / editor bridge / host-sdk ports).
+import type { AppExtension } from '@forgeax/interface/core/app-shell/types';
+import { createPanelsEditorExtension } from '@forgeax/interface/core/extensions/panels-editor';
+import { createOverlaysDashboardExtension } from '@forgeax/interface/core/extensions/overlays-dashboard';
+import { createOverlaysSettingsExtension } from '@forgeax/interface/core/extensions/overlays-settings';
+import { createChromeStatusFeedsExtension } from '@forgeax/interface/core/extensions/chrome-status-feeds';
+import { createDetachedAgentsBrowserExtension } from '@forgeax/interface/core/extensions/detached-agents-browser';
+import { createDetachedFilesBrowserExtension } from '@forgeax/interface/core/extensions/detached-files-browser';
+import { createSlotsMainAreaBodyExtension } from '@forgeax/interface/core/extensions/slots-main-area-body';
+import { createSlotsSidebarAgentsExtension } from '@forgeax/interface/core/extensions/slots-sidebar-agents';
+import { createSlotsCornerAgentPickerExtension } from '@forgeax/interface/core/extensions/slots-corner-agent-picker';
+import { createPanelsWorkbenchPluginsExtension } from '@forgeax/interface/core/extensions/panels-workbench-plugins';
 
 // Resolve the active game slug: pinned slug first, else poll the workbench
 // active-slug endpoint (carried over verbatim from the interface EditMode/
@@ -310,55 +326,59 @@ function WorkbenchFiles(): ReactNode {
   return <WorkbenchModeDefault showGalleryWhenEmpty={false} />;
 }
 
-/** PanelRenderers wired with the in-process editor surfaces + the editor-core
- *  SSOT panel id list. Passed to <App panelRenderers={editorRenderers} />. */
-export const editorRenderers: PanelRenderers = {
-  editorPanelIds: [...EDITOR_PANELS],
-  // Interface owns the workspace-key protocol; editor owns the actual chrome
-  // layout. Studio and standalone both bind this same layout to `scene`.
-  builtinWorkbenchLayouts: { scene: DEFAULT_EDITOR_DOCK_LAYOUT },
-  // Single realm: the viewport is the in-process ViewportComponent (via
-  // EditRealm, which owns multi-game teardown+remount), and each ep:* panel is
-  // an in-process component. The panels registry (bare-id keyed) is what
-  // the interface DockRegion's <DockPanelHost id={id}/> reads to mount
-  // Hierarchy/Inspector/Assets/... — its absence was why every panel showed
-  // "Panel not mounted" after the single-realm editor bump.
-  panels: {
-    ...editorPanels,
-    chat: { title: 'ForgeaX CLI', order: 10, render: () => <ChatPanel /> },
-    agents: { title: 'Agents', order: 20, render: () => <AgentsPanel /> },
-  },
-  overlays: {
-    Dashboard,
-    Settings: SettingsInjection,
-  },
-  surfaces: {
-    SceneEditor: EditRealm,
-  },
-  editor: {
-    setContextMenuRenderer,
-    installBridge: installInterfaceBridge,
-  },
-  chrome: {
-    StatusFeeds: StatusFeedsInjection,
-  },
-  detached: {
-    AgentsBrowser: WorkbenchAgents,
-    FilesBrowser: WorkbenchFiles,
-  },
-  slots: {
-    // MainArea body when app mode is 'ai' (plugin-launcher / catalog view).
-    MainAreaBody: WorkbenchMode,
-    // Sidebar 内嵌 Agents 列表 + workbench 主区右上角 corner agent picker —
-    // 都是 workbench-builtins 的具体 UI,interface(L1)只留槽。
-    CornerAgentPicker: WorkbenchAgentPicker,
-    SidebarAgents: AgentsPanel,
-  },
-  // Inline (non-iframe) workbench panels, keyed by bus plugin id.
-  workbenchPanels: { [WB_PLUGIN_AUTHOR_ID]: PluginAuthorPanel },
-  // Host-SDK port factories for the wb:* plugin iframe RPC (studio-only).
-  hostSDK: {
-    createPluginPort,
-    createWindowTransport,
+/** Fields no interface factory covers: workbench layout seed, the editor
+ *  bridge hooks, and the host-sdk port factories. One custom extension keeps
+ *  them on the same contributePanels channel (reversible, owner-tracked). */
+const studioEditorIntegrationExtension: AppExtension = {
+  id: 'studio.editor-integration', version: '1.0.0',
+  requires: ['panels'],
+  setup(ctx) {
+    return ctx.contributePanels({
+      // Interface owns the workspace-key protocol; editor owns the actual chrome
+      // layout. Studio and standalone both bind this same layout to `scene`.
+      builtinWorkbenchLayouts: { scene: DEFAULT_EDITOR_DOCK_LAYOUT },
+      editor: {
+        setContextMenuRenderer,
+        installBridge: installInterfaceBridge,
+      },
+      // Host-SDK port factories for the wb:* plugin iframe RPC (studio-only).
+      hostSDK: {
+        createPluginPort,
+        createWindowTransport,
+      },
+    });
   },
 };
+
+/** Studio's shell assembly, ADR 0025 M1: the concrete apps wired as
+ *  AppExtension manifests, passed to <App overrides={{ extensions }} />.
+ *  Replaces the former monolithic `editorRenderers: PanelRenderers` object. */
+export const studioExtensions: readonly AppExtension[] = [
+  // Single realm: the viewport is the in-process ViewportComponent (via
+  // EditRealm, which owns multi-game teardown+remount); each ep:* panel is an
+  // in-process component. The panels registry (bare-id keyed) is what the
+  // interface DockRegion's <DockPanelHost id={id}/> reads.
+  createPanelsEditorExtension({
+    editorPanelIds: [...EDITOR_PANELS],
+    panels: {
+      ...editorPanels,
+      chat: { title: 'ForgeaX CLI', order: 10, render: () => <ChatPanel /> },
+      agents: { title: 'Agents', order: 20, render: () => <AgentsPanel /> },
+    },
+    surfaces: { SceneEditor: EditRealm },
+  }),
+  createOverlaysDashboardExtension(Dashboard),
+  createOverlaysSettingsExtension(SettingsInjection),
+  createChromeStatusFeedsExtension(StatusFeedsInjection),
+  createDetachedAgentsBrowserExtension(WorkbenchAgents),
+  createDetachedFilesBrowserExtension(WorkbenchFiles),
+  // MainArea body when app mode is 'ai' (plugin-launcher / catalog view);
+  // sidebar agents list + workbench corner agent picker are ai-workbench UI —
+  // interface (L1) only owns the slots.
+  createSlotsMainAreaBodyExtension(WorkbenchMode),
+  createSlotsSidebarAgentsExtension(AgentsPanel),
+  createSlotsCornerAgentPickerExtension(WorkbenchAgentPicker),
+  // Inline (non-iframe) workbench panels, keyed by bus plugin id.
+  createPanelsWorkbenchPluginsExtension({ [WB_PLUGIN_AUTHOR_ID]: PluginAuthorPanel }),
+  studioEditorIntegrationExtension,
+];

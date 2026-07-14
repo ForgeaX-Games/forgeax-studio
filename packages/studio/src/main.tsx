@@ -63,7 +63,14 @@ import { registerKeyboardRouterDeps, type KeyboardRouterDeps } from '@forgeax/in
 // was the diagnostic signal. window.confirm backs the risky multi-asset delete
 // (studio has no DeleteGuardDialog).
 import { buildKeyboardRouterDeps } from '@forgeax/editor/keyboard-router-deps';
-import { editorRenderers } from './panels/editorRenderers';
+import { studioExtensions } from './panels/editorRenderers';
+// ADR 0025 M1: both mount paths (full shell + detached window) assemble the
+// shell through the AppHost extension channel. Module-scope const so <App>'s
+// overrides prop is referentially stable across re-renders.
+import { bootstrapAppHost } from '@forgeax/interface/appHostBootstrap';
+import { HostProvider } from '@forgeax/interface/core/app-shell';
+
+const STUDIO_OVERRIDES = { extensions: studioExtensions } as const;
 
 // Perf fix for heavy-game loads (e.g. hellforge): keep a game's asset burst from
 // exhausting the browser's per-origin connection pool and leaving the shell's
@@ -113,17 +120,24 @@ if (detachedSurface) {
   // consistent via the shared backend (/api · /ws). We deliberately skip the
   // window-close→redock listener here (that's the main window's job).
   bootStore();
-  createRoot(rootEl).render(
-    <StrictMode>
-      <ErrorBoundary scope="detached-surface">
-        <BrandProvider>
-          <PanelRenderersProvider value={editorRenderers}>
-            <DetachedSurface surface={detachedSurface} />
-          </PanelRenderersProvider>
-        </BrandProvider>
-      </ErrorBoundary>
-    </StrictMode>,
-  );
+  // Detached windows assemble the same extension set as the full shell, then
+  // resolve their surface from host.panels (detached.* slots). HostProvider is
+  // mounted so any host-consuming component inside the surface keeps working.
+  void bootstrapAppHost(STUDIO_OVERRIDES).then(({ host }) => {
+    createRoot(rootEl).render(
+      <StrictMode>
+        <ErrorBoundary scope="detached-surface">
+          <BrandProvider>
+            <HostProvider value={host}>
+              <PanelRenderersProvider value={host.panels}>
+                <DetachedSurface surface={detachedSurface} />
+              </PanelRenderersProvider>
+            </HostProvider>
+          </BrandProvider>
+        </ErrorBoundary>
+      </StrictMode>,
+    );
+  });
 } else {
   // Restore UI layout prefs from server snapshot (export/import migration path).
   void syncBrowserPrefsFromServer().finally(() => {
@@ -199,7 +213,7 @@ function bootFullShell(el: HTMLElement) {
     <StrictMode>
       <ErrorBoundary scope="studio-shell">
         <BrandProvider>
-          <App panelRenderers={editorRenderers} />
+          <App overrides={STUDIO_OVERRIDES} />
         </BrandProvider>
       </ErrorBoundary>
     </StrictMode>,

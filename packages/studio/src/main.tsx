@@ -53,7 +53,6 @@ import { DetachedSurface } from '@forgeax/interface/components/DetachedSurface';
 import { PanelRenderersProvider } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { installHealthBridge } from '@forgeax/interface/components/StatusBar/healthBridge';
 import { initAegis } from '@forgeax/interface/lib/aegis';
-import { installAssetFetchGate } from './lib/asset-fetch-gate';
 import { registerKeyboardRouterDeps, type KeyboardRouterDeps } from '@forgeax/interface/lib/global-shortcuts';
 // keyboard-router deps builder is the shared edit-runtime SSOT so studio and the
 // editor standalone host produce the SAME dep object. Without this registration
@@ -71,14 +70,6 @@ import { bootstrapAppHost } from '@forgeax/interface/appHostBootstrap';
 import { HostProvider } from '@forgeax/interface/core/app-shell';
 
 const STUDIO_OVERRIDES = { extensions: studioExtensions } as const;
-
-// Perf fix for heavy-game loads (e.g. hellforge): keep a game's asset burst from
-// exhausting the browser's per-origin connection pool and leaving the shell's
-// own API/streams "pending". In dev this reroutes asset fetches to the dedicated
-// play-engine origin (:15173) so they use a separate pool ("A"); with no asset
-// origin (packaged) it caps asset concurrency on the shared origin ("C"). Must
-// run before the engine viewport boots so the first asset burst is handled.
-installAssetFetchGate();
 
 // Boot Aegis (Galileo) front-end monitoring first, before any heavy boot work,
 // so early throws are captured. Inert unless VITE_AEGIS_* is configured (PROD,

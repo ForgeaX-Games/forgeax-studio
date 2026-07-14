@@ -137,7 +137,7 @@ const httpsServerOption = useCustomCert
   ? { cert: readFileSync(tlsCertPath), key: readFileSync(tlsKeyPath) }
   : undefined;
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(() => ({
   plugins: [
     vitePluginBrand({ packageDir: PACKAGE_DIR }),
     react(),
@@ -154,15 +154,9 @@ export default defineConfig(({ command }) => ({
   define: {
     __FORGEAX_GAME_SLUG__: JSON.stringify(null),
     __FORGEAX_GAME_DIR_ABS__: JSON.stringify(null),
-    // Perf "A": in dev serve, point the in-process engine's asset fetches at the
-    // play-engine vite origin (:15173) so a heavy game's asset burst uses its OWN
-    // browser connection pool instead of contending with the shell API on the
-    // page origin (:18920). Only for `serve` — a production build must keep
-    // assets same-origin (empty string) since there's no vite sidecar; the
-    // asset-fetch gate then falls back to concurrency-capping (perf "C").
-    __FORGEAX_ASSET_ORIGIN__: JSON.stringify(
-      command === 'serve' ? (process.env.FORGEAX_ASSET_ORIGIN ?? ENGINE) : '',
-    ),
+    // The in-process editor receives the pack-index URL explicitly from the
+    // Studio host (editorRenderers.tsx). No global fetch patch or asset-origin
+    // build global is needed: AssetRegistry resolves catalog entries against it.
   },
   resolve: {
     // dockview declares react as a peer dep; under bun's isolated node_modules it

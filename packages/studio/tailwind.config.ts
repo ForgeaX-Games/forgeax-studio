@@ -21,14 +21,14 @@ const config = {
     './src/**/*.{ts,tsx}',
     '../interface/index.html',
     '../interface/src/**/*.{ts,tsx}',
-    '../marketplace/plugins/**/src/**/*.{ts,tsx}',
+    '../marketplace/extensions/**/src/**/*.{ts,tsx}',
     // 关键：上面的 `**` 会穿透各插件的 node_modules / dist（如
     // plugins/wb-reel/node_modules/<pkg>/src/**.ts），让 Tailwind JIT 扫描
     // 成千上万个依赖源文件 → PostCSS 在首个 CSS 请求时卡死，导致 interface
     // (18920) 入口 body 迟迟不返回、浏览器「无法启动」。用 `!` 忽略模式把
     // node_modules / dist 剪掉，只保留插件自身的 src。
-    '!../marketplace/plugins/**/node_modules/**',
-    '!../marketplace/plugins/**/dist/**',
+    '!../marketplace/extensions/**/node_modules/**',
+    '!../marketplace/extensions/**/dist/**',
   ],
   // Preflight is Tailwind's CSS reset; keep it OFF so the migration is purely
   // additive and the existing hand-written CSS is never zeroed out. Re-evaluate

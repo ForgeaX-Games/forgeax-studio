@@ -300,7 +300,7 @@ copyTree(join(ROOT, 'packages/editor/packages/play-runtime/dist'), join(RES, 'in
 // marketplace ROOT files (manifest.json + src) minus plugins/node_modules/.git
 copyTree(join(ROOT, 'packages/marketplace'), join(RES, 'marketplace'), new Set(['node_modules', '.git', 'plugins']));
 // plugin dists + single-file plugins + manifests (server serves these as iframes)
-copyTree(join(ROOT, 'packages/marketplace/plugins'), join(RES, 'marketplace/plugins'), new Set(['node_modules', '.git']));
+copyTree(join(ROOT, 'packages/marketplace/extensions'), join(RES, 'marketplace/extensions'), new Set(['node_modules', '.git']));
 
 // ── 6 engine (vite preview) source + cycle-safe node_modules ────────────────
 log('6/7 copying engine (vite preview) source + node_modules…');

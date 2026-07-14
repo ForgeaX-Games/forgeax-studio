@@ -122,7 +122,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml', 'packages/marketplace/plugins/*/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml', 'packages/marketplace/extensions/*/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
@@ -130,7 +130,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'packages/marketplace/plugins/*/bun.lock') }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'packages/marketplace/extensions/*/bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
 
@@ -165,16 +165,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            packages/marketplace/plugins/*/dist
-            packages/marketplace/plugins/node-editor/apps/*/frontend/dist
-            packages/marketplace/plugins/node-editor/apps/*/backend/dist
-            packages/marketplace/plugins/node-editor/apps/*/vendor/dist
-            packages/marketplace/plugins/node-editor/packages/*/dist
+            packages/marketplace/extensions/*/dist
+            packages/marketplace/extensions/node-editor/apps/*/frontend/dist
+            packages/marketplace/extensions/node-editor/apps/*/backend/dist
+            packages/marketplace/extensions/node-editor/apps/*/vendor/dist
+            packages/marketplace/extensions/node-editor/packages/*/dist
           key: ${{ runner.os }}-plugin-dist-${{ steps.marketplace-sha.outputs.sha }}
 
       - name: Touch plugin dist on cache hit (pre-setup)
         if: steps.plugin-dist.outputs.cache-hit == 'true'
-        run: find packages/marketplace/plugins -name node_modules -prune -o -type d -name dist -exec touch {} +
+        run: find packages/marketplace/extensions -name node_modules -prune -o -type d -name dist -exec touch {} +
 
       # ── Seed .env before prepare (non-interactive) ────────────────────
       # prepare.ts scaffolds .env from .env.example silently when missing;

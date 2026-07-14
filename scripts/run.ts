@@ -177,7 +177,7 @@ for (const k of [
 }
 
 // wb-narrative standalone API reads its own .env — sync keys from root .env.
-const wbNarrDir = join(ROOT, 'packages/marketplace/plugins/wb-narrative');
+const wbNarrDir = join(ROOT, 'packages/marketplace/extensions/wb-narrative');
 syncWbNarrativeEnv();
 if (narrativeWillStart()) {
   console.log(`  ✓ ${'narrative API'.padEnd(26)} :${PORT_NARRATIVE} (wb-narrative)`);
@@ -376,7 +376,7 @@ interface PluginEntry {
   projectRoot: string;
 }
 const plugins: PluginEntry[] = [];
-for (const d of discoverStandalonePlugins(join(ROOT, 'packages/marketplace/plugins'))) {
+for (const d of discoverStandalonePlugins(join(ROOT, 'packages/marketplace/extensions'))) {
   const seed = d.port + pluginPortOffset;
   const frontendPort = allocPort(seed);
   const backendPort = allocPort(seed + 2);
@@ -548,7 +548,12 @@ if (
 const pluginPids: number[] = [];
 for (const p of plugins) {
   const cmd = extPluginCmd(p.dir);
-  const pid = launch(`plugin-${p.shortId}`, 'pnpm', [cmd], {
+  // Runner derives from the package's own `packageManager` declaration: bun is
+  // canonical since 2026-07-07 (chore 6fba2a2), but node-editor apps still
+  // declare pnpm — corepack hard-rejects a mismatched runner ("Unsupported
+  // package manager specification"), so honoring the field is mandatory.
+  const usesBun = pkgManager(p.dir).startsWith('bun');
+  const pid = launch(`plugin-${p.shortId}`, usesBun ? 'bun' : 'pnpm', usesBun ? ['run', cmd] : [cmd], {
     cwd: p.dir,
     env: {
       ...process.env,
@@ -689,7 +694,7 @@ function discoverStandalonePlugins(pluginsDir: string): DiscoveredPlugin[] {
   const out: DiscoveredPlugin[] = [];
   for (const e of entries) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
-    const mf = join(pluginsDir, e.name, 'forgeax-plugin.json');
+    const mf = join(pluginsDir, e.name, 'forgeax-extension.json');
     if (!existsSync(mf)) continue;
     let m: { id?: string; entry?: { standalone?: { embeddedAlso?: boolean; start?: unknown; port?: unknown } } };
     try {
@@ -726,6 +731,16 @@ function extPluginCmd(dir: string): string {
     return hasScript('dev') ? 'dev' : hasScript('serve') ? 'serve' : 'dev';
   }
   return hasScript('serve') ? 'serve' : hasScript('dev') ? 'dev' : 'serve';
+}
+
+/** The package's declared `packageManager` (e.g. "bun@1.3.13"), '' if absent. */
+function pkgManager(dir: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { packageManager?: string };
+    return pkg.packageManager ?? '';
+  } catch {
+    return '';
+  }
 }
 
 /** Sync GEMINI/proxy keys from root .env into wb-narrative/.env. */

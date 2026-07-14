@@ -482,7 +482,7 @@ bold('[3/5] Installing + building marketplace plugins');
 if (skipPlugins) {
   console.log('  (skipped — FORGEAX_SKIP_PLUGINS=1)');
 } else {
-  const pluginsDir = join(ROOT, 'packages/marketplace/plugins');
+  const pluginsDir = join(ROOT, 'packages/marketplace/extensions');
   for (const e of existsSync(pluginsDir) ? readdirSync(pluginsDir, { withFileTypes: true }) : []) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     if (e.name === '_template') continue;

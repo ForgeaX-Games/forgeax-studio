@@ -256,8 +256,8 @@ function signatureMatchPids(root: string): number[] {
     `${root}/packages/server.*bun.*src/main.ts`,
     `${root}/packages/.*vite`,
     `${root}/packages/editor/packages/.*vite`,
-    `${root}/packages/marketplace/plugins/.*vite`,
-    `${root}/packages/marketplace/plugins/.*headless-renderer.mjs`,
+    `${root}/packages/marketplace/extensions/.*vite`,
+    `${root}/packages/marketplace/extensions/.*headless-renderer.mjs`,
   ];
   const pids = new Set<number>();
   for (const sig of sigs) {

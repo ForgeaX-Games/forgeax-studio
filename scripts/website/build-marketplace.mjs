@@ -2,7 +2,7 @@
 // build-marketplace.mjs — generate marketplace.data.json for the website's
 // Marketplace page (clickable cards → info modal).
 //
-// Source of truth: each plugin's packages/marketplace/plugins/<dir>/forgeax-plugin.json.
+// Source of truth: each plugin's packages/marketplace/extensions/<dir>/forgeax-extension.json.
 // Creation/update dates are derived from the marketplace repo's git history (the
 // manifests carry no date). The output is keyed by plugin DIR and consumed inline by
 // forgeax-website/marketplace/index.html (cards reference it via data-slug=<dir>).
@@ -11,7 +11,7 @@
 // Out:  scripts/website/marketplace.data.json
 //
 // NOTE: the public OSS repo for plugins is ForgeaX-Games/forgeax-marketplace; each
-// plugin's source lives at /tree/main/plugins/<dir>. wb-gen3d is excluded from the
+// plugin's source lives at /tree/main/extensions/<dir>. wb-gen3d is excluded from the
 // OSS release, so it gets repoUrl=null (the modal shows a "not open-sourced" note).
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
@@ -22,8 +22,8 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');                       // forgeax-studio
 const MKT = join(ROOT, 'packages', 'marketplace');
-const PLUGINS = join(MKT, 'plugins');
-const OSS_BASE = 'https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/plugins';
+const PLUGINS = join(MKT, 'extensions');
+const OSS_BASE = 'https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions';
 const OSS_EXCLUDED = new Set(['wb-gen3d']);                // not in the public release
 
 const createdDate = (dir) => {
@@ -54,11 +54,11 @@ const dirs = readdirSync(PLUGINS, { withFileTypes: true })
   // include symlinked plugin dirs too (some plugins are symlinks/submodules → type symlink)
   .filter((d) => (d.isDirectory() || d.isSymbolicLink()) && d.name !== '_template')
   .map((d) => d.name)
-  .filter((name) => existsSync(join(PLUGINS, name, 'forgeax-plugin.json')))
+  .filter((name) => existsSync(join(PLUGINS, name, 'forgeax-extension.json')))
   .sort();
 
 for (const dir of dirs) {
-  const mf = join(PLUGINS, dir, 'forgeax-plugin.json');
+  const mf = join(PLUGINS, dir, 'forgeax-extension.json');
   if (!existsSync(mf)) continue;
   let j;
   try { j = JSON.parse(readFileSync(mf, 'utf8')); } catch { continue; }

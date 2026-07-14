@@ -39,7 +39,7 @@ import { SettingsPanel, SettingsSectionsRegister } from '@forgeax/settings';
 import { WorkbenchMode, WorkbenchModeDefault, AgentsMainArea, AgentsPanel, WorkbenchAgentPicker } from '@forgeax/ai-workbench';
 // studio→marketplace is a legal edge at this aggregation layer. interface holds
 // no specific plugin id; studio injects the concrete inline panel here.
-import { PluginAuthorPanel, WB_PLUGIN_AUTHOR_ID } from '../../../marketplace/plugins/wb-plugin-author/src/panel';
+import { PluginAuthorPanel, WB_PLUGIN_AUTHOR_ID } from '../../../marketplace/extensions/wb-plugin-author/src/panel';
 // studio→host-sdk is legal here too. interface imports these as TYPES only and
 // receives the runtime factories through the PanelRenderers injection.
 import { createPluginPort, createWindowTransport } from '@forgeax/host-sdk';

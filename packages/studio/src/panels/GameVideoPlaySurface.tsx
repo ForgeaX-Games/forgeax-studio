@@ -9,11 +9,11 @@
 // Address resolution mirrors StandalonePluginIframe.buildIframeSrc:
 // wb-game-video declares `entry.standalone.port` with `embeddedAlso:false`, so
 // it is served from its own dev server origin rather than the host
-// `/plugins/<id>/` path.
+// `/extensions/<id>/` path.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 
-// Keep in sync with packages/marketplace/plugins/wb-game-video/forgeax-plugin.json
+// Keep in sync with packages/marketplace/extensions/wb-game-video/forgeax-extension.json
 // → entry.standalone.port (15185).
 const GAMEVIDEO_PORT = 15185;
 

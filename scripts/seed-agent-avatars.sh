@@ -42,7 +42,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 SRC="${FORGEAX_PORTRAIT_SRC:-/Users/you/Desktop/forgeax数字生命美术资产/output_动态差分}"
-DST_ROOT="$ROOT/packages/marketplace/plugins"
+DST_ROOT="$ROOT/packages/marketplace/extensions"
 DRY_RUN=0
 FORCE=0
 for arg in "$@"; do

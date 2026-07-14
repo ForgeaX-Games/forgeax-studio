@@ -4,7 +4,7 @@
 // MISSING or BROKEN. Replaces build-plugins.sh.
 //
 // Server serves each wb-* plugin's UI from its built dist/ (serveStatic
-// /plugins/<id>/*). dist/ is gitignored (each plugin its own submodule) and only
+// /extensions/<id>/*). dist/ is gitignored (each plugin its own submodule) and only
 // built by prepare.ts (plugins step). The dev path (run.ts) never (re)built them, so a
 // missing/partial dist makes the iframe 404 / render blank. This rebuilds ONLY
 // broken ones (no index.html, or index.html references a missing assets/*.js|css).
@@ -20,7 +20,7 @@ import { run } from './lib/sh.ts';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const force = process.argv.includes('--force');
 
-const pluginsDir = join(ROOT, 'packages/marketplace/plugins');
+const pluginsDir = join(ROOT, 'packages/marketplace/extensions');
 if (!existsSync(pluginsDir)) {
   console.log('[build-plugins] no plugins dir — skip');
   process.exit(0);

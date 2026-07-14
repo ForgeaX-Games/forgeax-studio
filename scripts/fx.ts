@@ -437,12 +437,20 @@ async function startWeb(runArgs: string[]): Promise<never> {
   // detached: true + unref() disowns the child, so child.exitCode may stay null
   // even after the child exits, and Atomics.wait blocks the event loop so
   // .on('exit') listeners don't fire between sleeps. Zombie state also fools
-  // kill(pid, 0). So probe process state directly via `ps -o state=` which
-  // returns 'R'/'S'/'D'/etc for alive processes and 'Z' for zombies (or empty
-  // when the pid no longer exists).
+  // kill(pid, 0). Probe process state directly via platform-native tools:
+  //   macOS/Linux: `ps -o state=` → 'R'/'S'/'D'/etc (alive) or 'Z' (zombie)
+  //   Windows:     `tasklist /FI "PID eq N"` → contains the PID when alive
   const childPid = child.pid!;
   const isAlive = (): boolean => {
     try {
+      if (process.platform === 'win32') {
+        const out = execFileSync('tasklist', ['/FI', `PID eq ${childPid}`, '/NH'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          windowsHide: true,
+        }).trim();
+        return out.includes(String(childPid));
+      }
       const state = execFileSync('ps', ['-o', 'state=', '-p', String(childPid)], {
         stdio: ['ignore', 'pipe', 'ignore'],
       })
@@ -450,7 +458,7 @@ async function startWeb(runArgs: string[]): Promise<never> {
         .trim();
       return state.length > 0 && !state.startsWith('Z');
     } catch {
-      // ps exits non-zero when pid not found — process is gone
+      // command exits non-zero when pid not found — process is gone
       return false;
     }
   };

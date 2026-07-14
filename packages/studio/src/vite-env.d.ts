@@ -8,9 +8,3 @@
 // submodule's own edit-runtime/src/globals.d.ts, which studio's program can't see.
 declare const __FORGEAX_GAME_DIR_ABS__: string | null;
 declare const __FORGEAX_GAME_SLUG__: string | null;
-// Dedicated origin the in-process engine fetches game assets from (perf "A"):
-// in dev this is the play-engine vite (:15173) so asset traffic gets its OWN
-// browser connection pool, separate from the shell API on the page origin.
-// Empty string = same-origin (packaged build / A disabled → the concurrency
-// gate falls back to capping, perf "C").
-declare const __FORGEAX_ASSET_ORIGIN__: string;

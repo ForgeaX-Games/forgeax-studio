@@ -118,6 +118,18 @@ function studioGameRoot(slug: string): string {
   return `.forgeax/games/${slug}`;
 }
 
+/**
+ * The Studio host, not game code or a global fetch patch, chooses where the
+ * active game's catalog lives. Dev uses the play engine's dedicated origin;
+ * packaged Studio keeps the request same-origin through its preview route.
+ */
+function studioPackIndexUrl(slug: string): string {
+  const playEngine = import.meta.env.VITE_FORGEAX_ENGINE_URL ?? 'http://127.0.0.1:15173';
+  return import.meta.env.DEV
+    ? `${playEngine.replace(/\/$/, '')}/preview/pack-index/${encodeURIComponent(slug)}.json`
+    : `/preview/pack-index/${encodeURIComponent(slug)}.json`;
+}
+
 // EditRealm — the in-process editor viewport surface (single realm). It owns
 // the studio-only multi-game orchestration:
 //   - resolve the active slug (useActiveSlug: pinnedSlug + server active-slug,
@@ -160,7 +172,12 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
         // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
         // above guarantees the latch is clear so ViewportComponent actually re-boots.
         // The game is passed as props — the engine boot reads it there, not from the URL.
-        <ViewportComponent key={slug} gameSlug={slug} gameRoot={studioGameRoot(slug)} />
+        <ViewportComponent
+          key={slug}
+          gameSlug={slug}
+          gameRoot={studioGameRoot(slug)}
+          packIndexUrl={studioPackIndexUrl(slug)}
+        />
       )}
       {/* Keyed by slug so it resets its boot-progress state on every game switch. */}
       <ViewportBootOverlay key={`overlay:${slug ?? '_none'}`} slug={slug} />

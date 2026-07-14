@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "exceptions": {
+    "cow-level": {
+      "reason": "Legacy FPS controls await snapshot migration.",
+      "paths": ["main.ts"]
+    },
+    "cow-survivor": {
+      "reason": "Legacy FPS controls await snapshot migration.",
+      "paths": ["main.ts"]
+    },
+    "fps": {
+      "reason": "Legacy FPS controls await snapshot migration.",
+      "paths": ["main.ts"]
+    },
+    "hellforge": {
+      "reason": "Legacy ARPG controls and scoped audio/settings integrations await snapshot migration.",
+      "paths": ["main.ts", "src/render-settings.ts", "src/sfx.ts"]
+    },
+    "marscraft": {
+      "reason": "Legacy RTS input adapter and scoped UI/audio integrations await snapshot migration.",
+      "paths": ["src/input.ts", "src/systems/audio-manager.ts", "src/ui/game-time-apm.ts", "src/ui/settings-panel.ts", "src/world/minimap.ts"]
+    }
+  }
+}

@@ -10,13 +10,13 @@
 // in-process React components, NOT a /editor iframe. Studio's vite.config.ts
 // head comment locks this in ("editor viewport + ep:* panels are now in-process
 // React components ... not a /editor iframe"); this file is the concrete wiring.
-import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useShellStore } from '@forgeax/interface/store';
 import { useTranslation } from '@forgeax/interface/i18n';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { PulseFeeds } from '@forgeax/interface/components/StatusBar/feeds/PulseFeeds';
 import { VersionBadge } from '@forgeax/interface/components/StatusBar/VersionBadge';
-import { installInterfaceBridge, setContextMenuRenderer, panelBridge } from '@forgeax/editor/bridge';
+import { installInterfaceBridge, setContextMenuRenderer, panelBridge, gateway } from '@forgeax/editor/bridge';
 import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
 // ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
 // teardown) come from the editor facade's ./viewport subpath; EDITOR_PANEL_COMPONENTS
@@ -136,6 +136,9 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   // `bootedSlug` is the game the currently-mounted engine booted. null until
   // the first game mounts. When slug !== bootedSlug we do a teardown+remount.
   const [bootedSlug, setBootedSlug] = useState<string | null>(null);
+  const [viewportEpoch, setViewportEpoch] = useState(0);
+  const playRestartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const assetRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
     if (!slug) return;
@@ -147,6 +150,50 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
     if (bootedSlug !== null) resetEditRealm();
     setBootedSlug(slug);
   }, [slug, bootedSlug]);
+
+  useEffect(() => {
+    if (!slug || !import.meta.hot) return;
+    const onGameCodeChange = (data: { file?: string }): void => {
+      const file = (data.file ?? '').replace(/\\/g, '/');
+      if (!file.includes(`/.forgeax/games/${slug}/`)) return;
+      if (gateway.mode !== 'play') return;
+      if (playRestartTimer.current !== null) clearTimeout(playRestartTimer.current);
+      playRestartTimer.current = setTimeout(() => {
+        playRestartTimer.current = null;
+        gateway.dispatch({ kind: 'stop' }, 'ai');
+        queueMicrotask(() => gateway.dispatch({ kind: 'play' }, 'ai'));
+      }, 80);
+    };
+    import.meta.hot.on('forgeax:game-code-change', onGameCodeChange);
+    return () => {
+      if (playRestartTimer.current !== null) {
+        clearTimeout(playRestartTimer.current);
+        playRestartTimer.current = null;
+      }
+      import.meta.hot?.off('forgeax:game-code-change', onGameCodeChange);
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    const off = panelBridge.on('assetsChanged', ({ hint, source }) => {
+      if (source !== 'disk-watch') return;
+      if (hint === 'directory-only') return;
+      if (assetRefreshTimer.current !== null) clearTimeout(assetRefreshTimer.current);
+      assetRefreshTimer.current = setTimeout(() => {
+        assetRefreshTimer.current = null;
+        resetEditRealm();
+        setViewportEpoch((epoch) => epoch + 1);
+      }, 120);
+    });
+    return () => {
+      off();
+      if (assetRefreshTimer.current !== null) {
+        clearTimeout(assetRefreshTimer.current);
+        assetRefreshTimer.current = null;
+      }
+    };
+  }, [slug]);
 
   // The viewport is only mounted once bootedSlug has caught up with slug (the
   // pre-mount resetEditRealm ran). During that gap — and while the freshly
@@ -160,10 +207,10 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
         // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
         // above guarantees the latch is clear so ViewportComponent actually re-boots.
         // The game is passed as props — the engine boot reads it there, not from the URL.
-        <ViewportComponent key={slug} gameSlug={slug} gameRoot={studioGameRoot(slug)} />
+        <ViewportComponent key={`${slug}:${viewportEpoch}`} gameSlug={slug} gameRoot={studioGameRoot(slug)} />
       )}
-      {/* Keyed by slug so it resets its boot-progress state on every game switch. */}
-      <ViewportBootOverlay key={`overlay:${slug ?? '_none'}`} slug={slug} />
+      {/* Keyed by slug/epoch so it resets boot-progress on game switches and asset-driven remounts. */}
+      <ViewportBootOverlay key={`overlay:${slug ?? '_none'}:${viewportEpoch}`} slug={slug} />
     </div>
   );
 }

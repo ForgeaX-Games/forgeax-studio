@@ -176,15 +176,27 @@ declare -a SUMMARY
 while IFS=$'\t' read -r agent portrait fallback; do
   [ -n "$agent" ] || continue
   src_dir="$SRC/$portrait"
-  dst_dir="$DST_ROOT/agent-$agent/avatar"
+  # Resolve the agent's on-disk home across the three live layouts:
+  #   flat standalone dir        extensions/agent-<id>/
+  #   kind-bucketed (mkt#64)     extensions/agent/agent-<id>/
+  #   wb-reel bundled (M4)       extensions[/workbench]/wb-reel/agents/<id>/
+  agent_home=""
+  for cand in \
+    "$DST_ROOT/agent-$agent" \
+    "$DST_ROOT/agent/agent-$agent" \
+    "$DST_ROOT/wb-reel/agents/$agent" \
+    "$DST_ROOT/workbench/wb-reel/agents/$agent"; do
+    if [ -d "$cand" ]; then agent_home="$cand"; break; fi
+  done
+  dst_dir="$agent_home/avatar"
 
   if [ ! -d "$src_dir" ]; then
     fail "source portrait folder missing: $portrait (for agent-$agent)"
     missing=$((missing + 1))
     continue
   fi
-  if [ ! -d "$DST_ROOT/agent-$agent" ]; then
-    warn "plugin dir missing: agent-$agent — skip"
+  if [ -z "$agent_home" ]; then
+    warn "agent dir missing: agent-$agent — skip"
     continue
   fi
 

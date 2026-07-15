@@ -3,17 +3,17 @@
  * Covers: handshake roundtrip · tool.call success+error · surface expose+dispatch · timeout · invalid envelope drop · close cleanup.
  */
 import { describe, it, expect } from 'bun:test';
-import { createHost, createPluginPort, createMockTransportPair, RpcChannel } from '../src/index';
+import { createHost, createExtensionPort, createMockTransportPair, RpcChannel } from '../src/index';
 
-function pair(initial?: Parameters<typeof createPluginPort>[0]['initial']) {
+function pair(initial?: Parameters<typeof createExtensionPort>[0]['initial']) {
   const [hostT, pluginT] = createMockTransportPair();
-  const port = createPluginPort({
-    pluginId: '@forgeax-plugin/test',
+  const port = createExtensionPort({
+    extensionId: '@forgeax-extension/test',
     transport: hostT,
     initial,
   });
   const host = createHost({
-    pluginId: '@forgeax-plugin/test',
+    extensionId: '@forgeax-extension/test',
     transport: pluginT,
   });
   return { port, host };

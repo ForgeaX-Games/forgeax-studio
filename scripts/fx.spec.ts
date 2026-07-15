@@ -92,12 +92,12 @@ describe('scripts/fx.ts command routing', () => {
   it('routes build and version aliases', () => {
     expect(resolveCommand(['build', 'plugins', '--force'])).toEqual({
       type: 'script',
-      script: script('build-plugins.ts'),
+      script: script('build-extensions.ts'),
       args: ['--force'],
     });
     expect(resolveCommand(['build', 'desktop'])).toEqual({ type: 'script', script: script('desktop.ts'), args: ['build'] });
     expect(resolveCommand(['build', 'app'])).toEqual({ type: 'internal', command: 'build', args: ['app'] });
-    expect(resolveCommand(['build:plugins'])).toEqual({ type: 'script', script: script('build-plugins.ts'), args: [] });
+    expect(resolveCommand(['build:plugins'])).toEqual({ type: 'script', script: script('build-extensions.ts'), args: [] });
     expect(resolveCommand(['version', 'json'])).toEqual({ type: 'script', script: script('lib/version.ts'), args: ['json'] });
   });
 

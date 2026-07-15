@@ -51,7 +51,7 @@ const SCRIPT_COMMANDS = new Map<string, string>([
   ['stop', 'stop.ts'],
 
   // build / metadata helpers
-  ['build:plugins', 'build-plugins.ts'],
+  ['build:plugins', 'build-extensions.ts'],
   ['version', 'lib/version.ts'],
 ]);
 
@@ -96,7 +96,7 @@ export function resolveCommand(argv: string[]): CommandPlan {
 
   if (cmd === 'build') {
     const [target = 'help', ...rest] = args;
-    if (target === 'plugins') return { type: 'script', script: script('build-plugins.ts'), args: rest };
+    if (target === 'plugins') return { type: 'script', script: script('build-extensions.ts'), args: rest };
     if (target === 'desktop') return { type: 'script', script: script('desktop.ts'), args: ['build', ...rest] };
     return { type: 'internal', command: 'build', args };
   }

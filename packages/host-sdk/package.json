@@ -8,8 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./host": "./src/host-side.ts",
-    "./plugin": "./src/plugin-side.ts",
-    "./transport-mock": "./src/transport-mock.ts"
+    "./transport-mock": "./src/transport-mock.ts",
+    "./extension": "./src/extension-side.ts"
   },
   "scripts": {
     "test": "bun test",

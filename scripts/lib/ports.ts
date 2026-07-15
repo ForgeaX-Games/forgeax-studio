@@ -3,7 +3,7 @@
 // Both run.ts (preflight / launch) and stop.ts (teardown) import this so a port
 // is declared exactly once. Dynamic plugin ports (node-editor apps, reel, etc.)
 // are NOT here — they are allocated at launch and recorded in
-// .forgeax/dev-stack.env (FORGEAX_RUN_PORTS) + .forgeax/plugin-dev-ports.json,
+// .forgeax/dev-stack.env (FORGEAX_RUN_PORTS) + .forgeax/extension-dev-ports.json,
 // which stop.ts reads as the dynamic-port source. See perf doc 08 §PortRegistry.
 //
 // Every value honours an env override so the three run formats (web-dev /

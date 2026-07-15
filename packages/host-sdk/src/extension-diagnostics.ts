@@ -30,7 +30,7 @@ function fmt(args: unknown[]): string {
  * Install console-error/warn + window error/rejection forwarding to the host.
  * Idempotent and a no-op outside an iframe (no parent) or without a DOM.
  */
-export function installPluginDiagnosticsBridge(pluginId?: string): void {
+export function installExtensionDiagnosticsBridge(extensionId?: string): void {
   if (installed) return;
   if (typeof window === 'undefined' || window.parent === window) return; // not in an iframe
   installed = true;
@@ -38,7 +38,7 @@ export function installPluginDiagnosticsBridge(pluginId?: string): void {
   const send = (level: 'error' | 'warn', code: string, message: string): void => {
     try {
       window.parent.postMessage(
-        { type: 'forgeax:health', level, source: 'plugin', code, message: pluginId ? `[${pluginId}] ${message}` : message, ts: Date.now() },
+        { type: 'forgeax:health', level, source: 'plugin', code, message: extensionId ? `[${extensionId}] ${message}` : message, ts: Date.now() },
         '*',
       );
     } catch { /* dead parent — drop */ }

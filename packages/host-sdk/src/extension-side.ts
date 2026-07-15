@@ -2,8 +2,8 @@
  * Plugin-side API — used inside an iframe-loaded plugin.
  *
  * Usage:
- *   import { createHost } from '@forgeax/host-sdk/plugin';
- *   const host = createHost({ pluginId: '@forgeax-plugin/wb-character', transport });
+ *   import { createHost } from '@forgeax/host-sdk/extension';
+ *   const host = createHost({ extensionId: '@forgeax-extension/wb-character', transport });
  *   const hand = await host.handshake();          // protocol negotiation
  *   await host.tool.call({ toolId: 'character:list', args: { slug: 'mini-gta' } });
  *   host.surface.expose('wb-character', { actions: [...], snapshot: {...} });
@@ -19,19 +19,19 @@ import type {
 } from '@forgeax/types';
 import { z } from 'zod';
 import { RpcChannel } from './rpc';
-import { installPluginDiagnosticsBridge } from './plugin-diagnostics';
+import { installExtensionDiagnosticsBridge } from './extension-diagnostics';
 import type { Transport } from './transport';
 
 type HandshakeResponse = z.infer<typeof HandshakeResponseSchema>;
 
 export interface CreateHostOptions {
-  pluginId: string;
+  extensionId: string;
   transport: Transport;
   defaultTimeoutMs?: number;
   onInvalid?: (raw: unknown, reason: string) => void;
 }
 
-export interface PluginHostApi {
+export interface ExtensionHostApi {
   /** Underlying RPC for advanced use; prefer the typed sub-namespaces below. */
   channel: RpcChannel;
 
@@ -155,14 +155,14 @@ function defaultSelectorFor(surfaceId: string, actionId?: string): string {
   return `[data-fx-surface="${esc(surfaceId)}"]`;
 }
 
-export function createHost(opts: CreateHostOptions): PluginHostApi {
+export function createHost(opts: CreateHostOptions): ExtensionHostApi {
   // Forward this plugin iframe's console errors / uncaught exceptions to the
   // host health feed (was: plugin errors died in the plugin's own DevTools).
-  installPluginDiagnosticsBridge(opts.pluginId);
+  installExtensionDiagnosticsBridge(opts.extensionId);
 
   const channel = new RpcChannel({
     transport: opts.transport,
-    self: { kind: 'plugin', pluginId: opts.pluginId },
+    self: { kind: 'plugin', pluginId: opts.extensionId },  // wire envelope keeps the legacy field name
     defaultTimeoutMs: opts.defaultTimeoutMs,
     onInvalid: opts.onInvalid,
   });

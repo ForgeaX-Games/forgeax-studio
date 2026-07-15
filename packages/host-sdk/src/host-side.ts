@@ -2,8 +2,8 @@
  * Host-side API — used in interface (iframe-parent) to wrap a plugin iframe.
  *
  * Usage:
- *   import { createPluginPort } from '@forgeax/host-sdk/host';
- *   const port = createPluginPort({ pluginId, transport });
+ *   import { createExtensionPort } from '@forgeax/host-sdk/host';
+ *   const port = createExtensionPort({ extensionId, transport });
  *   port.onChat(({ text }) => composer.appendUserMessage(text));
  *   port.onToolCall(async (call) => myToolRegistry.run(call));
  *   port.surface.subscribe((s) => surfaceStore.upsert(s));
@@ -18,8 +18,8 @@ import type {
 import { RpcChannel } from './rpc';
 import type { Transport } from './transport';
 
-export interface CreatePluginPortOptions {
-  pluginId: string;
+export interface CreateExtensionPortOptions {
+  extensionId: string;
   transport: Transport;
   /** Initial handshake response payload returned to the plugin. */
   initial?: {
@@ -33,11 +33,11 @@ export interface CreatePluginPortOptions {
   onInvalid?: (raw: unknown, reason: string) => void;
 }
 
-export interface PluginPort {
+export interface ExtensionPort {
   /** Underlying RPC for advanced use. */
   channel: RpcChannel;
   /** The plugin id this port talks to. */
-  pluginId: string;
+  extensionId: string;
 
   /** Plugin posted text into our chat panel. Returns unsub. */
   onChat(handler: (e: { text: string; attachments?: string[] }) => void): () => void;
@@ -104,7 +104,7 @@ export interface PluginPort {
   close(): void;
 }
 
-export function createPluginPort(opts: CreatePluginPortOptions): PluginPort {
+export function createExtensionPort(opts: CreateExtensionPortOptions): ExtensionPort {
   const channel = new RpcChannel({
     transport: opts.transport,
     self: { kind: 'host' },
@@ -126,7 +126,7 @@ export function createPluginPort(opts: CreatePluginPortOptions): PluginPort {
 
   return {
     channel,
-    pluginId: opts.pluginId,
+    extensionId: opts.extensionId,
 
     onChat(handler) {
       return channel.on('chat.post', (env) => {

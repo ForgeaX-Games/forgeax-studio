@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { fileURLToPath } from 'node:url';
@@ -105,6 +105,24 @@ function frontendPrebundleIncludes(): string[] {
 }
 
 const HTTPS_ENABLED = process.env.FORGEAX_INTERFACE_HTTPS === '1';
+const GAME_CODE_EXT_RE = /\.(?:[cm]?[jt]sx?)$/;
+
+function gameCodeHmrIsland(): PluginOption {
+  return {
+    name: 'forgeax:game-code-hmr-island',
+    apply: 'serve',
+    handleHotUpdate(ctx) {
+      const file = ctx.file.replace(/\\/g, '/');
+      if (!file.includes('/.forgeax/games/') || !GAME_CODE_EXT_RE.test(file)) return;
+      ctx.server.ws.send({
+        type: 'custom',
+        event: 'forgeax:game-code-change',
+        data: { file },
+      });
+      return [];
+    },
+  };
+}
 
 // Registered external workspaces (~/.forgeax/known-projects.json). After a
 // workspace hot-switch (POST /api/workspaces/activate) the Scene viewport's
@@ -141,6 +159,7 @@ export default defineConfig(() => ({
   plugins: [
     vitePluginBrand({ packageDir: PACKAGE_DIR }),
     react(),
+    gameCodeHmrIsland(),
     // Engine serve plugins (shader manifest; no pluginPack since gameDirAbs:null).
     // AFTER react() so the SPA transform runs first.
     ...enginePreset.plugins,

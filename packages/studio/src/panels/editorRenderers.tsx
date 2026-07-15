@@ -38,8 +38,8 @@ import { SettingsPanel, SettingsSectionsRegister } from '@forgeax/settings';
 // main-area body here via slots.MainAreaBody + detached.AgentsBrowser/FilesBrowser.
 import { WorkbenchMode, WorkbenchModeDefault, AgentsMainArea, AgentsPanel, WorkbenchAgentPicker } from '@forgeax/ai-workbench';
 // studio→marketplace is a legal edge at this aggregation layer. interface holds
-// no specific plugin id; studio injects the concrete inline panel here.
-import { PluginAuthorPanel, WB_PLUGIN_AUTHOR_ID } from '../../../marketplace/extensions/wb-plugin-author/src/panel';
+// no specific plugin id; studio derives the inline panel map from manifests
+// (ADR 0025 M4) — see deriveInlineWorkbenchPanels below.
 // studio→host-sdk is legal here too. interface imports these as TYPES only and
 // receives the runtime factories through the PanelRenderers injection.
 import { createPluginPort, createWindowTransport } from '@forgeax/host-sdk';
@@ -118,18 +118,6 @@ function studioGameRoot(slug: string): string {
   return `.forgeax/games/${slug}`;
 }
 
-/**
- * The Studio host, not game code or a global fetch patch, chooses where the
- * active game's catalog lives. Dev uses the play engine's dedicated origin;
- * packaged Studio keeps the request same-origin through its preview route.
- */
-function studioPackIndexUrl(slug: string): string {
-  const playEngine = import.meta.env.VITE_FORGEAX_ENGINE_URL ?? 'http://127.0.0.1:15173';
-  return import.meta.env.DEV
-    ? `${playEngine.replace(/\/$/, '')}/preview/pack-index/${encodeURIComponent(slug)}.json`
-    : `/preview/pack-index/${encodeURIComponent(slug)}.json`;
-}
-
 // EditRealm — the in-process editor viewport surface (single realm). It owns
 // the studio-only multi-game orchestration:
 //   - resolve the active slug (useActiveSlug: pinnedSlug + server active-slug,
@@ -172,12 +160,7 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
         // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
         // above guarantees the latch is clear so ViewportComponent actually re-boots.
         // The game is passed as props — the engine boot reads it there, not from the URL.
-        <ViewportComponent
-          key={slug}
-          gameSlug={slug}
-          gameRoot={studioGameRoot(slug)}
-          packIndexUrl={studioPackIndexUrl(slug)}
-        />
+        <ViewportComponent key={slug} gameSlug={slug} gameRoot={studioGameRoot(slug)} />
       )}
       {/* Keyed by slug so it resets its boot-progress state on every game switch. */}
       <ViewportBootOverlay key={`overlay:${slug ?? '_none'}`} slug={slug} />
@@ -343,6 +326,42 @@ function WorkbenchFiles(): ReactNode {
   return <WorkbenchModeDefault showGalleryWhenEmpty={false} />;
 }
 
+/** ADR 0025 M4 — derive the inline workbench panel map from manifests instead
+ *  of a hand-written import table. Rule (mirrors WorkbenchExtensionHost's
+ *  fallthrough): kind=workbench + `entry.frontend: './src/panel.tsx'` + no
+ *  `entry.standalone` ⇒ inline; the panel module's default export is the
+ *  component. Placeholder shims (admin / wb-code / …) export no default and
+ *  drop out. Both globs are eager — Vite resolves them at build time, so a
+ *  new inline extension needs zero studio edits (§2.5). */
+function deriveInlineWorkbenchPanels(): PanelRenderers['workbenchPanels'] {
+  // Two glob depths: flat `extensions/<slug>/` (current root pin) and
+  // kind-bucketed `extensions/<kind>/<slug>/` (marketplace#64; root switch
+  // in flight) — supporting both here means the layout cutover PR needs no
+  // studio edit.
+  const manifests = import.meta.glob(
+    [
+      '../../../marketplace/extensions/*/forgeax-extension.json',
+      '../../../marketplace/extensions/*/*/forgeax-extension.json',
+    ],
+    { eager: true },
+  ) as Record<string, { id?: string; kind?: string; entry?: { frontend?: string; standalone?: unknown } }>;
+  const panels = import.meta.glob(
+    [
+      '../../../marketplace/extensions/*/src/panel.tsx',
+      '../../../marketplace/extensions/*/*/src/panel.tsx',
+    ],
+    { eager: true },
+  ) as Record<string, { default?: () => ReactNode }>;
+  const map: NonNullable<PanelRenderers['workbenchPanels']> = {};
+  for (const [mPath, m] of Object.entries(manifests)) {
+    if (m.kind !== 'workbench' || !m.id || m.entry?.standalone) continue;
+    if (m.entry?.frontend !== './src/panel.tsx') continue;
+    const panel = panels[mPath.replace(/forgeax-extension\.json$/, 'src/panel.tsx')];
+    if (panel?.default) map[m.id] = panel.default;
+  }
+  return map;
+}
+
 /** Fields no interface factory covers: workbench layout seed, the editor
  *  bridge hooks, and the host-sdk port factories. One custom extension keeps
  *  them on the same contributePanels channel (reversible, owner-tracked). */
@@ -395,7 +414,13 @@ export const studioExtensions: readonly AppExtension[] = [
   createSlotsMainAreaBodyExtension(WorkbenchMode),
   createSlotsSidebarAgentsExtension(AgentsPanel),
   createSlotsCornerAgentPickerExtension(WorkbenchAgentPicker),
-  // Inline (non-iframe) workbench panels, keyed by bus plugin id.
-  createPanelsWorkbenchPluginsExtension({ [WB_PLUGIN_AUTHOR_ID]: PluginAuthorPanel }),
+  // Inline (non-iframe) workbench panels, keyed by bus plugin id — DERIVED
+  // from manifests (ADR 0025 M4): any workbench extension whose entry is a
+  // `./src/panel.tsx` React module with no standalone server is inline. The
+  // two eager globs stay in perfect sync because both key off the extension
+  // dir name; adding a new inline extension needs zero studio edits (§2.5).
+  // Placeholder shims (admin/wb-code/…) export no component — filtered by
+  // the `default` check, so only real panels (wb-plugin-author today) mount.
+  createPanelsWorkbenchPluginsExtension(deriveInlineWorkbenchPanels()),
   studioEditorIntegrationExtension,
 ];

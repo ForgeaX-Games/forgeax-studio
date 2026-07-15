@@ -176,16 +176,13 @@ declare -a SUMMARY
 while IFS=$'\t' read -r agent portrait fallback; do
   [ -n "$agent" ] || continue
   src_dir="$SRC/$portrait"
-  # Resolve the agent's on-disk home across the three live layouts:
+  # Resolve the agent's on-disk home across the live layouts:
   #   flat standalone dir        extensions/agent-<id>/
-  #   kind-bucketed (mkt#64)     extensions/agent/agent-<id>/
-  #   wb-reel bundled (M4)       extensions[/workbench]/wb-reel/agents/<id>/
+  #   wb-reel bundled (M4)       extensions/wb-reel/agents/<id>/
   agent_home=""
   for cand in \
     "$DST_ROOT/agent-$agent" \
-    "$DST_ROOT/agent/agent-$agent" \
-    "$DST_ROOT/wb-reel/agents/$agent" \
-    "$DST_ROOT/workbench/wb-reel/agents/$agent"; do
+    "$DST_ROOT/wb-reel/agents/$agent"; do
     if [ -d "$cand" ]; then agent_home="$cand"; break; fi
   done
   dst_dir="$agent_home/avatar"

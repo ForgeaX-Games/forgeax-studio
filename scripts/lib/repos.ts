@@ -103,7 +103,12 @@ export function orderLeafFirst(repos: RepoInfo[]): RepoInfo[] {
 /** Gate script names, in run order, for submodule / workspace packages. */
 export const GATE_ORDER = ['lint', 'lint:dep', 'lint:agnostic', 'test'] as const;
 /** Gate script names for the root repo. */
-export const ROOT_GATE_ORDER = ['lint:layers', 'test:layers'] as const;
+export const ROOT_GATE_ORDER = [
+  'lint:layers',
+  'lint:boundaries',
+  'test:layers',
+  'test:boundaries',
+] as const;
 
 /** Pick the gates a repo actually defines, preserving run order. */
 export function pickGates(scripts: Record<string, string> | undefined, order: readonly string[]): string[] {

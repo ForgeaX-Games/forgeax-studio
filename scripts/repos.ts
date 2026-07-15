@@ -8,7 +8,8 @@
 //                              #   checkouts; contrast `bun fx update`, which detaches to pins)
 //   bun fx check [--all] [path...]
 //                              # run each dirty repo's own gates (lint/lint:dep/lint:agnostic/test;
-//                              #   root: lint:layers/test:layers). Paths narrow the target set.
+//                              #   root: lint:layers/lint:boundaries/test:layers/test:boundaries).
+//                              #   Paths narrow the target set.
 //   bun fx commit -m "msg" [path...] [--push] [--dry-run] [--no-verify]
 //                              # leaf-first multi-repo commit; paths scope it (`.` = root only).
 //                              #   Hard rails: no detached-HEAD commits, no pushes to main

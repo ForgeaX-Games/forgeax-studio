@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   formatTable,
   GATE_ORDER,
@@ -29,6 +31,11 @@ const repo = (over: Partial<RepoInfo>): RepoInfo => ({
 });
 
 describe('scan helpers', () => {
+  it('runs boundary checker tests in CI', () => {
+    const workflow = readFileSync(resolve(import.meta.dir, '../.github/workflows/boundaries.yml'), 'utf8');
+    expect(workflow).toContain('run: bun run test:boundaries');
+  });
+
   it('parses submodule paths from git config output', () => {
     const out = 'submodule.packages/interface.path packages/interface\nsubmodule.packages/chat.path packages/chat\n';
     expect(parseSubmodulePaths(out)).toEqual(['packages/interface', 'packages/chat']);
@@ -55,7 +62,17 @@ describe('scan helpers', () => {
 
   it('picks only gates a repo defines, in run order', () => {
     expect(pickGates({ test: 'x', lint: 'y', irrelevant: 'z' }, GATE_ORDER)).toEqual(['lint', 'test']);
-    expect(pickGates({ 'test:layers': 'a', 'lint:layers': 'b' }, ROOT_GATE_ORDER)).toEqual(['lint:layers', 'test:layers']);
+    expect(pickGates({
+      'lint:layers': 'a',
+      'lint:boundaries': 'b',
+      'test:layers': 'c',
+      'test:boundaries': 'd',
+    }, ROOT_GATE_ORDER)).toEqual([
+      'lint:layers',
+      'lint:boundaries',
+      'test:layers',
+      'test:boundaries',
+    ]);
     expect(pickGates(undefined, GATE_ORDER)).toEqual([]);
   });
 

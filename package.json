@@ -14,12 +14,14 @@
     "test:game-imports": "bun test scripts/check-game-engine-imports.spec.ts",
     "lint:game-input": "bun scripts/check-game-input-contract.ts",
     "test:game-input": "bun test scripts/check-game-input-contract.spec.ts",
-    "lint:boundaries": "bun run lint:boundaries:core && bun run lint:boundaries:cli && bun run lint:boundaries:agent-host",
+    "lint:boundaries": "bun scripts/check-boundaries.ts --strict && bun run lint:boundaries:core && bun run lint:boundaries:cli && bun run lint:boundaries:agent-host",
+    "test:boundaries": "bun test scripts/check-boundaries.spec.ts",
     "lint:boundaries:core": "cd packages/core && bun run lint:boundaries",
     "lint:boundaries:cli": "cd packages/cli && bun run lint:boundaries",
     "lint:boundaries:agent-host": "cd packages/agent-host && bun run lint:boundaries",
     "lint:node-runnable": "node scripts/check-node-runnable.mjs",
-    "lint:pins": "bun scripts/check-submodule-pins.ts"
+    "lint:pins": "bun scripts/check-submodule-pins.ts",
+    "test:pins": "bun test ./scripts/check-submodule-pins.spec.ts"
   },
   "workspaces": [
     "packages/contracts/types",

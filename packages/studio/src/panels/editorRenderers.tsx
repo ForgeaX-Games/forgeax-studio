@@ -42,7 +42,7 @@ import { WorkbenchMode, WorkbenchModeDefault, AgentsMainArea, AgentsPanel, Workb
 // (ADR 0025 M4) — see deriveInlineWorkbenchPanels below.
 // studio→host-sdk is legal here too. interface imports these as TYPES only and
 // receives the runtime factories through the PanelRenderers injection.
-import { createPluginPort, createWindowTransport } from '@forgeax/host-sdk';
+import { createExtensionPort, createWindowTransport } from '@forgeax/host-sdk';
 // ADR 0025 M1: studio assembles the shell by handing <App> a list of
 // AppExtension manifests (overrides.extensions) instead of a monolithic
 // PanelRenderers object. The factories below are interface's built-in
@@ -58,7 +58,7 @@ import { createDetachedFilesBrowserExtension } from '@forgeax/interface/core/ext
 import { createSlotsMainAreaBodyExtension } from '@forgeax/interface/core/extensions/slots-main-area-body';
 import { createSlotsSidebarAgentsExtension } from '@forgeax/interface/core/extensions/slots-sidebar-agents';
 import { createSlotsCornerAgentPickerExtension } from '@forgeax/interface/core/extensions/slots-corner-agent-picker';
-import { createPanelsWorkbenchPluginsExtension } from '@forgeax/interface/core/extensions/panels-workbench-plugins';
+import { createPanelsWorkbenchInlineExtension } from '@forgeax/interface/core/extensions/panels-workbench-plugins';
 
 // Resolve the active game slug: pinned slug first, else poll the workbench
 // active-slug endpoint (carried over verbatim from the interface EditMode/
@@ -418,7 +418,7 @@ const studioEditorIntegrationExtension: AppExtension = {
       },
       // Host-SDK port factories for the wb:* plugin iframe RPC (studio-only).
       hostSDK: {
-        createPluginPort,
+        createExtensionPort,
         createWindowTransport,
       },
     });
@@ -460,6 +460,6 @@ export const studioExtensions: readonly AppExtension[] = [
   // dir name; adding a new inline extension needs zero studio edits (§2.5).
   // Placeholder shims (admin/wb-code/…) export no component — filtered by
   // the `default` check, so only real panels (wb-plugin-author today) mount.
-  createPanelsWorkbenchPluginsExtension(deriveInlineWorkbenchPanels()),
+  createPanelsWorkbenchInlineExtension(deriveInlineWorkbenchPanels()),
   studioEditorIntegrationExtension,
 ];

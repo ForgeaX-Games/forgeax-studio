@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // @ts-nocheck
-// scripts/build-plugins.ts — rebuild marketplace workbench-plugin dists that are
-// MISSING or BROKEN. Replaces build-plugins.sh.
+// scripts/build-extensions.ts — rebuild marketplace workbench-plugin dists that are
+// MISSING or BROKEN. Replaces build-plugins.sh (retired).
 //
 // Server serves each wb-* plugin's UI from its built dist/ (serveStatic
 // /extensions/<id>/*). dist/ is gitignored (each plugin its own submodule) and only
@@ -10,7 +10,7 @@
 // broken ones (no index.html, or index.html references a missing assets/*.js|css).
 // Already-good dists are skipped; failures are non-fatal.
 //
-// Usage: bun scripts/build-plugins.ts [--force]   (--force rebuilds all)
+// Usage: bun scripts/build-extensions.ts [--force]   (--force rebuilds all)
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

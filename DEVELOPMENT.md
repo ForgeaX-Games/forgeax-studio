@@ -39,7 +39,7 @@ Two mode caveats worth internalizing:
 ## Web — run locally
 
 ```bash
-bun install      # deps + prepare: engine build (pnpm + wasm) + plugins +
+bun install      # deps + prepare: engine build (pnpm + wasm) + extensions +
                    # scaffolds .env from .env.example (fill ANTHROPIC_API_KEY)
 bun fx start      # server :18900 · UI :18920 · engine :15173
 # open http://localhost:18920

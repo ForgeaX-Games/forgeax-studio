@@ -344,8 +344,8 @@ process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
 process.env.FORGEAX_AGENT_HOST_SOCK ??= join(homedir(), '.forgeax', `agent-host-${PORT_SERVER}.sock`);
 
 // ── 3.75 heal broken workbench plugin dists ──────────────────────────────────
-if (existsSync(join(ROOT, 'scripts/build-plugins.ts'))) {
-  spawnSync(process.execPath, [join(ROOT, 'scripts/build-plugins.ts')], {
+if (existsSync(join(ROOT, 'scripts/build-extensions.ts'))) {
+  spawnSync(process.execPath, [join(ROOT, 'scripts/build-extensions.ts')], {
     cwd: ROOT,
     stdio: 'inherit',
     windowsHide: true,
@@ -354,11 +354,11 @@ if (existsSync(join(ROOT, 'scripts/build-plugins.ts'))) {
 
 // ── 3.8 discover standalone-backend plugins ──────────────────────────────────
 const runtimeDir = join(ROOT, '.forgeax');
-const pluginDevPortsFile = join(runtimeDir, 'plugin-dev-ports.json');
+const extensionDevPortsFile = join(runtimeDir, 'extension-dev-ports.json');
 const runStackFile = join(runtimeDir, 'dev-stack.env');
 mkdirSync(runtimeDir, { recursive: true });
 
-const pluginPortOffset = Number.parseInt(process.env.FORGEAX_PLUGIN_PORT_OFFSET ?? '0', 10) || 0;
+const extensionPortOffset = Number.parseInt(process.env.FORGEAX_PLUGIN_PORT_OFFSET ?? '0', 10) || 0;
 const allocated = new Set<number>([PORT_SERVER, PORT_INTERFACE, PORT_ENGINE]);
 const allocPort = (seed: number): number => {
   let port = seed;
@@ -367,7 +367,7 @@ const allocPort = (seed: number): number => {
   return port;
 };
 
-interface PluginEntry {
+interface ExtensionEntry {
   dir: string;
   id: string;
   shortId: string;
@@ -375,30 +375,30 @@ interface PluginEntry {
   backendPort: number;
   projectRoot: string;
 }
-const plugins: PluginEntry[] = [];
-for (const d of discoverStandalonePlugins(join(ROOT, 'packages/marketplace/extensions'))) {
-  const seed = d.port + pluginPortOffset;
+const extensions: ExtensionEntry[] = [];
+for (const d of discoverStandaloneExtensions(join(ROOT, 'packages/marketplace/extensions'))) {
+  const seed = d.port + extensionPortOffset;
   const frontendPort = allocPort(seed);
   const backendPort = allocPort(seed + 2);
   const projectRoot = join(instanceRoot, '.forgeax/workbench', d.shortId);
   mkdirSync(projectRoot, { recursive: true });
-  plugins.push({ dir: d.dir, id: d.id, shortId: d.shortId, frontendPort, backendPort, projectRoot });
+  extensions.push({ dir: d.dir, id: d.id, shortId: d.shortId, frontendPort, backendPort, projectRoot });
   console.log(`[run] + ${d.shortId} frontend :${frontendPort} backend :${backendPort} (workspace .forgeax/workbench/${d.shortId})`);
 }
-if (plugins.length === 0) console.log('[run]   no standalone-backend plugins discovered');
+if (extensions.length === 0) console.log('[run]   no standalone-backend extensions discovered');
 
 writeFileSync(
-  pluginDevPortsFile,
+  extensionDevPortsFile,
   `${JSON.stringify(
     {
       generatedBy: 'scripts/run.ts',
-      plugins: Object.fromEntries(plugins.map((p) => [p.id, { frontendPort: p.frontendPort, backendPort: p.backendPort }])),
+      plugins: Object.fromEntries(extensions.map((p) => [p.id, { frontendPort: p.frontendPort, backendPort: p.backendPort }])),
     },
     null,
     2,
   )}\n`,
 );
-process.env.FORGEAX_PLUGIN_DEV_PORTS_FILE = pluginDevPortsFile;
+process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE = extensionDevPortsFile;
 
 // ── cleanup trap ──────────────────────────────────────────────────────────────
 const children: number[] = [];
@@ -411,7 +411,7 @@ function cleanup(): void {
   clearPidfiles(ROOT);
   lock.release();
   rmSync(runStackFile, { force: true });
-  rmSync(pluginDevPortsFile, { force: true });
+  rmSync(extensionDevPortsFile, { force: true });
 }
 process.on('SIGINT', () => {
   cleanup();
@@ -534,20 +534,20 @@ if (narrativeWillStart()) {
 }
 
 // Plugin TLS reuse for HTTPS iframes.
-let pluginTlsCert = '';
-let pluginTlsKey = '';
+let extensionTlsCert = '';
+let extensionTlsKey = '';
 if (
   process.env.FORGEAX_INTERFACE_HTTPS === '1' &&
   existsSync(join(ROOT, '.tls/cert.pem')) &&
   existsSync(join(ROOT, '.tls/key.pem'))
 ) {
-  pluginTlsCert = join(ROOT, '.tls/cert.pem');
-  pluginTlsKey = join(ROOT, '.tls/key.pem');
+  extensionTlsCert = join(ROOT, '.tls/cert.pem');
+  extensionTlsKey = join(ROOT, '.tls/key.pem');
 }
 
-const pluginPids: number[] = [];
-for (const p of plugins) {
-  const cmd = extPluginCmd(p.dir);
+const extensionPids: number[] = [];
+for (const p of extensions) {
+  const cmd = extensionRunCmd(p.dir);
   // Runner derives from the package's own `packageManager` declaration: bun is
   // canonical since 2026-07-07 (chore 6fba2a2), but node-editor apps still
   // declare pnpm — corepack hard-rejects a mismatched runner ("Unsupported
@@ -562,11 +562,11 @@ for (const p of plugins) {
       PORT: String(p.backendPort),
       VITE_DEV_PORT: String(p.frontendPort),
       VITE_API_TARGET: `http://localhost:${p.backendPort}`,
-      VITE_DEV_HTTPS_CERT: pluginTlsCert,
-      VITE_DEV_HTTPS_KEY: pluginTlsKey,
+      VITE_DEV_HTTPS_CERT: extensionTlsCert,
+      VITE_DEV_HTTPS_KEY: extensionTlsKey,
     },
   });
-  pluginPids.push(pid);
+  extensionPids.push(pid);
 
   // Optional headless renderer for agent screenshots.
   if (
@@ -594,9 +594,9 @@ writeFileSync(
   runStackFile,
   [
     '# generated by scripts/run.ts',
-    `FORGEAX_RUN_PIDS="${[process.pid, srv, ui, en, narr, ...pluginPids].filter(Boolean).join(' ')}"`,
-    `FORGEAX_RUN_PORTS="${[PORT_SERVER, PORT_INTERFACE, PORT_ENGINE, PORT_NARRATIVE, ...plugins.map((p) => p.frontendPort), ...plugins.map((p) => p.backendPort)].join(' ')}"`,
-    `FORGEAX_PLUGIN_DEV_PORTS_FILE="${pluginDevPortsFile}"`,
+    `FORGEAX_RUN_PIDS="${[process.pid, srv, ui, en, narr, ...extensionPids].filter(Boolean).join(' ')}"`,
+    `FORGEAX_RUN_PORTS="${[PORT_SERVER, PORT_INTERFACE, PORT_ENGINE, PORT_NARRATIVE, ...extensions.map((p) => p.frontendPort), ...extensions.map((p) => p.backendPort)].join(' ')}"`,
+    `FORGEAX_EXTENSION_DEV_PORTS_FILE="${extensionDevPortsFile}"`,
     '',
   ].join('\n'),
 );
@@ -677,24 +677,24 @@ function stamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
-interface DiscoveredPlugin {
+interface DiscoveredExtension {
   dir: string;
   id: string;
   shortId: string;
   port: number;
 }
 /** Marketplace manifests with entry.standalone {embeddedAlso:false, start, port}. */
-function discoverStandalonePlugins(pluginsDir: string): DiscoveredPlugin[] {
+function discoverStandaloneExtensions(extensionsDir: string): DiscoveredExtension[] {
   let entries: ReturnType<typeof readdirSync>;
   try {
-    entries = readdirSync(pluginsDir, { withFileTypes: true });
+    entries = readdirSync(extensionsDir, { withFileTypes: true });
   } catch {
     return [];
   }
-  const out: DiscoveredPlugin[] = [];
+  const out: DiscoveredExtension[] = [];
   for (const e of entries) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
-    const mf = join(pluginsDir, e.name, 'forgeax-extension.json');
+    const mf = join(extensionsDir, e.name, 'forgeax-extension.json');
     if (!existsSync(mf)) continue;
     let m: { id?: string; entry?: { standalone?: { embeddedAlso?: boolean; start?: unknown; port?: unknown } } };
     try {
@@ -706,7 +706,7 @@ function discoverStandalonePlugins(pluginsDir: string): DiscoveredPlugin[] {
     if (!sa || sa.embeddedAlso !== false || !sa.start || typeof sa.port !== 'number') continue;
     const id = String(m.id ?? e.name);
     const shortId = id.replace(/^@[^/]+\//, '');
-    let dir = join(pluginsDir, e.name);
+    let dir = join(extensionsDir, e.name);
     try {
       dir = realpathSync(dir);
     } catch {
@@ -718,7 +718,7 @@ function discoverStandalonePlugins(pluginsDir: string): DiscoveredPlugin[] {
 }
 
 /** Pick the plugin run script: dev (HMR, default) or serve. */
-function extPluginCmd(dir: string): string {
+function extensionRunCmd(dir: string): string {
   const hasScript = (name: string): boolean => {
     try {
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };

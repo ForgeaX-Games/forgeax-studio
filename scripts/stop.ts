@@ -55,13 +55,13 @@ for (const a of process.argv.slice(2)) {
 }
 
 const runStackFile = join(ROOT, '.forgeax', 'dev-stack.env');
-const pluginDevPortsJson = join(ROOT, '.forgeax', 'plugin-dev-ports.json');
+const extensionDevPortsJson = join(ROOT, '.forgeax', 'extension-dev-ports.json');
 
 // ── gather dynamic ports + pids from prior run's state ──────────────────────
 const stackEnv = parseEnvFile(runStackFile);
 const runPids = (stackEnv.FORGEAX_RUN_PIDS ?? '').split(/\s+/).map(Number).filter(Boolean);
 const runPorts = (stackEnv.FORGEAX_RUN_PORTS ?? '').split(/\s+/).map(Number).filter(Boolean);
-const dynamicPluginPorts = readPluginDevPorts(pluginDevPortsJson);
+const dynamicExtensionPorts = readExtensionDevPorts(extensionDevPortsJson);
 
 // ── port → service map ──────────────────────────────────────────────────────
 const ports: number[] = [...FIXED_PORTS];
@@ -72,7 +72,7 @@ const appendPort = (p: number) => {
     svcs.push('runtime    (run-managed dynamic service)');
   }
 };
-for (const p of [...runPorts, ...dynamicPluginPorts]) appendPort(p);
+for (const p of [...runPorts, ...dynamicExtensionPorts]) appendPort(p);
 
 const startTs = performance.now();
 
@@ -190,8 +190,8 @@ console.log(`[stop] done in ${elapsed}s — stack is down, safe to run: bun fx s
 
 function cleanupStateFiles(): void {
   rmSync(runStackFile, { force: true });
-  rmSync(pluginDevPortsJson, { force: true });
-  if (process.env.FORGEAX_PLUGIN_DEV_PORTS_FILE) rmSync(process.env.FORGEAX_PLUGIN_DEV_PORTS_FILE, { force: true });
+  rmSync(extensionDevPortsJson, { force: true });
+  if (process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE) rmSync(process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE, { force: true });
   clearPidfiles(ROOT);
   rmSync(join(ROOT, '.forgeax', 'run.lock'), { recursive: true, force: true });
 }
@@ -207,8 +207,8 @@ function parseEnvFile(file: string): Record<string, string> {
   return out;
 }
 
-/** Read frontend+backend ports from plugin-dev-ports.json. */
-function readPluginDevPorts(file: string): number[] {
+/** Read frontend+backend ports from extension-dev-ports.json. */
+function readExtensionDevPorts(file: string): number[] {
   if (!existsSync(file)) return [];
   try {
     const j = JSON.parse(readFileSync(file, 'utf8')) as {

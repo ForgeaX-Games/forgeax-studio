@@ -42,7 +42,7 @@ drop into a visual editor to tweak the scene directly at any time.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
-## 🆕 What's new in v0.3.17
+## 🆕 What's new in v0.3.18
 
 - **TUI: keyboard-driven agent terminal** — drive Forge and the full agent runtime straight from a terminal (F1/F2/F3 acceptance passed); ideal for headless and SSH workflows.
 - **Full workbench internationalization** — the character, AI-asset and 3D-generation workbenches are now fully translated across every supported language.

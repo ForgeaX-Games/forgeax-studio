@@ -331,25 +331,17 @@ function WorkbenchFiles(): ReactNode {
  *  fallthrough): kind=workbench + `entry.frontend: './src/panel.tsx'` + no
  *  `entry.standalone` ⇒ inline; the panel module's default export is the
  *  component. Placeholder shims (admin / wb-code / …) export no default and
- *  drop out. Both globs are eager — Vite resolves them at build time, so a
- *  new inline extension needs zero studio edits (§2.5). */
+ *  drop out. Globs are eager — Vite resolves them at build time, so a new
+ *  inline extension needs zero studio edits (§2.5). */
 function deriveInlineWorkbenchPanels(): PanelRenderers['workbenchPanels'] {
-  // Two glob depths: flat `extensions/<slug>/` (current root pin) and
-  // kind-bucketed `extensions/<kind>/<slug>/` (marketplace#64; root switch
-  // in flight) — supporting both here means the layout cutover PR needs no
-  // studio edit.
+  // Flat `extensions/<slug>/` only — kind-bucketed `extensions/<kind>/<slug>/`
+  // was rolled back; do not reintroduce nested globs here.
   const manifests = import.meta.glob(
-    [
-      '../../../marketplace/extensions/*/forgeax-extension.json',
-      '../../../marketplace/extensions/*/*/forgeax-extension.json',
-    ],
+    '../../../marketplace/extensions/*/forgeax-extension.json',
     { eager: true },
   ) as Record<string, { id?: string; kind?: string; entry?: { frontend?: string; standalone?: unknown } }>;
   const panels = import.meta.glob(
-    [
-      '../../../marketplace/extensions/*/src/panel.tsx',
-      '../../../marketplace/extensions/*/*/src/panel.tsx',
-    ],
+    '../../../marketplace/extensions/*/src/panel.tsx',
     { eager: true },
   ) as Record<string, { default?: () => ReactNode }>;
   const map: NonNullable<PanelRenderers['workbenchPanels']> = {};

@@ -16,6 +16,7 @@
     "@forgeax/settings": "workspace:*",
     "@forgeax/ai-workbench": "workspace:*",
     "@forgeax/editor": "workspace:*",
+    "@forgeax/engine-font": "workspace:*",
     "@forgeax/host-sdk": "workspace:*",
     "@forgeax/design": "workspace:*",
     "@google/model-viewer": "^4.2.0",

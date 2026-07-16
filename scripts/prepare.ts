@@ -333,7 +333,10 @@ function buildWgpuWasm(): void {
   }
 }
 
-const engineEntryPkgs = ['app', 'runtime', 'ecs', 'vite-plugin-pack', 'vite-plugin-shader'];
+// These packages are imported while loading the Studio Vite config. They must be
+// fresh even when the normal app/runtime entry checks would otherwise skip the
+// filtered engine build.
+const engineEntryPkgs = ['app', 'runtime', 'ecs', 'font', 'vite-plugin-pack', 'vite-plugin-shader'];
 const enginePkgDir = join(engineDir, 'packages');
 const engineEntryDistsFresh = (): boolean => engineEntryPkgs.every((p) => {
   const pdir = join(enginePkgDir, p);
@@ -344,13 +347,13 @@ const engineEntryDistsFresh = (): boolean => engineEntryPkgs.every((p) => {
 });
 const skipEngineBuild =
   !force &&
-  ((Boolean(env.FORGEAX_SKIP_ENGINE_BUILD) &&
-    existsSync(join(engineDir, 'packages/app/dist')) &&
-    existsSync(join(engineDir, 'packages/runtime/dist'))) ||
-    engineEntryDistsFresh());
+  // CI's cached engine dist is safe to skip only when EVERY Vite-config entry
+  // remains present and fresh. Checking app/runtime alone let a newly imported
+  // package (font) reach Studio's config without its emitted `.mjs` entry.
+  engineEntryDistsFresh();
 if (skipEngineBuild) {
   if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed (skip-build path).');
-  ok('engine build skipped — dists fresh (or FORGEAX_SKIP_ENGINE_BUILD set)');
+  ok('engine build skipped — Vite-config entry dists fresh');
 } else {
   if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed.');
   // pkg/wgpu_wasm.js must exist before the engine-app bundle below imports it.
@@ -359,7 +362,7 @@ if (skipEngineBuild) {
     '@forgeax/engine-app...', '@forgeax/engine-runtime...', '@forgeax/engine-ecs...', '@forgeax/engine-types...',
     '@forgeax/engine-vite-plugin-shader...', '@forgeax/engine-vite-plugin-pack...', '@forgeax/engine-shader-compiler...',
     '@forgeax/engine-naga...', '@forgeax/engine-wgpu-wasm...', '@forgeax/engine-gltf...', '@forgeax/engine-image...',
-    '@forgeax/engine-pack...', '@forgeax/engine-project...',
+    '@forgeax/engine-font...', '@forgeax/engine-pack...', '@forgeax/engine-project...',
     // engine-fbx: editor-core's fbx-cook imports the ufbx WASM runtime
     // (initFbxWasm / parseFbx) + the parse-* helpers from it — the engine
     // collapsed the former engine-fbx-wasm package INTO engine-fbx (#603). Its

@@ -173,6 +173,15 @@ export default defineConfig(() => ({
   define: {
     __FORGEAX_GAME_SLUG__: JSON.stringify(null),
     __FORGEAX_GAME_DIR_ABS__: JSON.stringify(null),
+    // Multi-game host: no single package.json#forgeax.assets.roots at build time
+    // (active slug switches at runtime). Inject the default local `assets` root
+    // so Content Browser's catalogPathToRoot slug-fallback can keep
+    // `.forgeax/games/<slug>/assets/...` rows (editor #230). Without this the
+    // injected roots stay [] and every catalog entry is filtered out → empty
+    // Assets panel. Standalone --game injects enginePreset.catalogRoots instead.
+    __FORGEAX_CATALOG_ASSET_ROOTS__: JSON.stringify([
+      { root: 'assets', catalogPrefix: 'assets' },
+    ]),
     // The in-process editor receives the pack-index URL explicitly from the
     // Studio host (editorRenderers.tsx). No global fetch patch or asset-origin
     // build global is needed: AssetRegistry resolves catalog entries against it.

@@ -118,6 +118,16 @@ function studioGameRoot(slug: string): string {
   return `.forgeax/games/${slug}`;
 }
 
+type ViewportDisplay = 'scene' | 'game';
+
+function readViewportDisplay(): ViewportDisplay | null {
+  const editor = (window as unknown as {
+    __forgeax_editor?: { getViewportQuadrant?: () => { display?: unknown } };
+  }).__forgeax_editor;
+  const display = editor?.getViewportQuadrant?.().display;
+  return display === 'scene' || display === 'game' ? display : null;
+}
+
 // EditRealm — the in-process editor viewport surface (single realm). It owns
 // the studio-only multi-game orchestration:
 //   - resolve the active slug (useActiveSlug: pinnedSlug + server active-slug,
@@ -139,6 +149,13 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   const [viewportEpoch, setViewportEpoch] = useState(0);
   const playRestartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assetRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const assetReloadToken = useRef(0);
+  const pendingAssetReload = useRef<{
+    token: number;
+    resumePlay: boolean;
+    display: ViewportDisplay | null;
+  } | null>(null);
+  const displayRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
     if (!slug) return;
@@ -147,7 +164,11 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
     // engine realm BEFORE remounting, so the old WebGPU device is released and the
     // boot latch is clear for the new game. First boot (null) has nothing to tear
     // down.
-    if (bootedSlug !== null) resetEditRealm();
+    if (bootedSlug !== null) {
+      pendingAssetReload.current = null;
+      assetReloadToken.current += 1;
+      resetEditRealm();
+    }
     setBootedSlug(slug);
   }, [slug, bootedSlug]);
 
@@ -182,7 +203,16 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
       if (assetRefreshTimer.current !== null) clearTimeout(assetRefreshTimer.current);
       assetRefreshTimer.current = setTimeout(() => {
         assetRefreshTimer.current = null;
-        resetEditRealm();
+        const shouldResumePlay = gateway.mode === 'play' || gateway.playPhase === 'starting';
+        const token = assetReloadToken.current + 1;
+        assetReloadToken.current = token;
+        pendingAssetReload.current = {
+          token,
+          resumePlay: shouldResumePlay,
+          display: shouldResumePlay ? readViewportDisplay() : null,
+        };
+        if (shouldResumePlay) gateway.dispatch({ kind: 'stop' }, 'ai');
+        resetEditRealm({ flushPendingSave: false });
         setViewportEpoch((epoch) => epoch + 1);
       }, 120);
     });
@@ -191,6 +221,47 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
       if (assetRefreshTimer.current !== null) {
         clearTimeout(assetRefreshTimer.current);
         assetRefreshTimer.current = null;
+      }
+      if (displayRestoreTimer.current !== null) {
+        clearTimeout(displayRestoreTimer.current);
+        displayRestoreTimer.current = null;
+      }
+    };
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    const off = panelBridge.on('editorHealth', (event) => {
+      const message = event.message ?? '';
+      const pending = pendingAssetReload.current;
+      if (!pending?.resumePlay) return;
+      if (!/boot ✓|ready|input ▸ game input chain live/.test(message)) return;
+      pendingAssetReload.current = null;
+      queueMicrotask(() => {
+        if (pending.token !== assetReloadToken.current) return;
+        if (gateway.mode !== 'play') gateway.dispatch({ kind: 'play' }, 'ai');
+        if (pending.display !== 'scene') return;
+        let attempts = 0;
+        const restoreDisplay = (): void => {
+          if (pending.token !== assetReloadToken.current) return;
+          if (gateway.playPhase === 'play') {
+            gateway.dispatch({ kind: 'setDisplay', display: 'scene' }, 'ai');
+            return;
+          }
+          if (gateway.playPhase === 'failed') return;
+          if (attempts++ >= 120) return;
+          displayRestoreTimer.current = setTimeout(restoreDisplay, 16);
+        };
+        restoreDisplay();
+      });
+    });
+    return () => {
+      off();
+      pendingAssetReload.current = null;
+      assetReloadToken.current += 1;
+      if (displayRestoreTimer.current !== null) {
+        clearTimeout(displayRestoreTimer.current);
+        displayRestoreTimer.current = null;
       }
     };
   }, [slug]);

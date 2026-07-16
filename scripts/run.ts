@@ -114,6 +114,18 @@ const env = loadDotenv(envFile); // also injected into process.env
 // switch. Inherited by every launched child via `...process.env` below.
 process.env.FORGEAX_ENV_FILE = envFile;
 
+// `bun fx start` is the development launcher. Its children must never inherit a
+// parent shell's NODE_ENV=production: Vite then omits the React Refresh preamble
+// while the dev transform still emits $RefreshSig$ calls, which crashes the
+// Studio shell before it can mount. Keep user-provided ForgeaX settings, but
+// make the execution mode an explicit property of this dev stack.
+const DEV_NODE_ENV = 'development';
+const devServiceEnv = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
+  ...process.env,
+  ...extra,
+  NODE_ENV: DEV_NODE_ENV,
+});
+
 // ── LLM egress capture proxy (opt-in) ─────────────────────────────────────────
 // FORGEAX_DEBUG_PROXY routes EVERY kernel's model traffic through a local capture
 // proxy (whistle) so requests/responses can be inspected. It works kernel-agnostic
@@ -436,7 +448,7 @@ console.log(`[run] open http://localhost:${PORT_INTERFACE} to use the Studio UI`
 console.log('[run]   浏览器(WebGPU): bun fx start   ·   桌面 App: bun fx start desktop');
 
 const launch = (name: string, cmd: string, args: string[], opts: SpawnOpts): number => {
-  const child = spawnService(cmd, args, opts);
+  const child = spawnService(cmd, args, { ...opts, env: devServiceEnv(opts.env) });
   const pid = child.pid ?? 0;
   if (pid) {
     children.push(pid);

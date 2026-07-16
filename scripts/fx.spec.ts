@@ -18,6 +18,14 @@ const script = (name: string) => resolve(ROOT, 'scripts', name);
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('scripts/fx.ts command routing', () => {
+  it('starts the dev stack with a development NODE_ENV regardless of its parent shell', () => {
+    const source = readFileSync(script('run.ts'), 'utf8');
+
+    expect(source).toContain("const DEV_NODE_ENV = 'development'");
+    expect(source).toMatch(/const devServiceEnv[\s\S]*NODE_ENV:\s*DEV_NODE_ENV/);
+    expect(source).toMatch(/spawnService\(cmd, args, \{\s*\.\.\.opts,\s*env:\s*devServiceEnv\(opts\.env\)/);
+  });
+
   it('keeps package.json scripts focused on fx plus checks', () => {
     const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
     expect(pkg.scripts.fx).toBe('bun scripts/fx.ts');

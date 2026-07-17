@@ -253,7 +253,7 @@ console.log('[workspace] @forgeax/* linked');
 
 // ── 2.x engine dist precondition + freshness ─────────────────────────────────
 const enginePkgDir = join(ROOT, 'packages/editor/packages/engine/packages');
-const engineEntryPkgs = ['app', 'runtime', 'ecs', 'font', 'vite-plugin-pack', 'vite-plugin-shader'];
+const engineEntryPkgs = ['app', 'runtime', 'ecs', 'vite-plugin-pack', 'vite-plugin-shader'];
 const missing = engineEntryPkgs.filter((p) => !existsSync(join(enginePkgDir, p, 'dist/index.mjs')));
 if (missing.length > 0) {
   console.error(`  ERROR: engine dist missing for: ${missing.join(' ')}`);

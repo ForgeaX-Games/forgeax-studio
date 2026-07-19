@@ -192,6 +192,57 @@ const failedSubmodules = prepareResults.filter((row) => row.result === 'failed')
 if (failedSubmodules.length === 0) ok('submodules ready');
 else warnY(`${failedSubmodules.length} submodule(s) failed; continuing and reporting at the end`);
 
+// Install repo githooks so a plain `git pull` materialises new submodule
+// workspaces before the next `bun install` (bun resolves workspaces pre-prepare).
+{
+  const hooksPath = join(ROOT, '.githooks');
+  if (existsSync(join(hooksPath, 'post-merge'))) {
+    try {
+      const current = execFileSync('git', ['config', '--local', '--get', 'core.hooksPath'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+      }).trim();
+      if (current !== '.githooks') {
+        warnY(`core.hooksPath already set to ${current}; leave as-is (expected .githooks)`);
+      }
+    } catch {
+      spawnSync('git', ['config', '--local', 'core.hooksPath', '.githooks'], {
+        cwd: ROOT,
+        stdio: 'inherit',
+      });
+      ok('git hooks → .githooks (post-merge/post-checkout sync submodules)');
+    }
+  }
+}
+
+// @forgeax/cli ships as a self-contained tarball: package.json `exports["./serve"]`
+// points at dist/cli/main.js. Server resolves that path to spawn the kernel
+// sidecar. Without a build, import.meta.resolve('@forgeax/cli/serve') fails and
+// chat stalls with "no first token / kernel=unknown".
+{
+  bold('[1b/5] Building @forgeax/cli (serve entry)');
+  const cliDir = join(ROOT, 'packages/cli');
+  const serveDist = join(cliDir, 'dist/cli/main.js');
+  const skipCliBuild = process.env.FORGEAX_SKIP_CLI_BUILD === '1';
+  if (skipCliBuild) {
+    console.log('  → skipped (FORGEAX_SKIP_CLI_BUILD=1)');
+  } else if (!existsSync(join(cliDir, 'package.json'))) {
+    warnY('packages/cli missing — skip @forgeax/cli build');
+  } else if (existsSync(serveDist) && process.env.FORGEAX_FORCE_PREPARE !== '1') {
+    ok('@forgeax/cli dist/cli/main.js present');
+  } else {
+    const r = spawnSync('bun', ['run', 'build'], {
+      cwd: cliDir,
+      stdio: 'inherit',
+      env: { ...env, FORGEAX_SKIP_PREPARE: '1' },
+    });
+    if ((r.status ?? 1) !== 0 || !existsSync(serveDist)) {
+      fail('@forgeax/cli build failed — chat kernel serve entry missing (dist/cli/main.js)');
+    }
+    ok('@forgeax/cli built (dist/cli/main.js)');
+  }
+}
+
 // .forgeax-harness floating clone + skill install. Dev-only convenience —
 // gate behind FORGEAX_SKIP_HARNESS so CI and bare `bun install` (which triggers
 // prepare on every run) don't re-clone the harness + re-run the Python skill

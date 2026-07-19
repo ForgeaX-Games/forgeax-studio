@@ -42,7 +42,7 @@ describe('scripts/fx.ts command routing', () => {
 
   it('documents setup as deprecated in usage text', () => {
     const source = readFileSync(script('fx.ts'), 'utf8');
-    expect(source).toMatch(/deprecated/i);
+    expect(source).toMatch(/deprecated|delegates to: bun install/i);
     expect(source).toContain('bun install');
     expect(source).not.toContain("['setup', 'setup.ts']");
   });

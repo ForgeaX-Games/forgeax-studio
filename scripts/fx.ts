@@ -12,6 +12,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PORT_ENGINE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
 import { parseSubmodulePaths } from './lib/repos.ts';
+import {
+  missingWorkspacePackageJson,
+  readWorkspaceGlobs,
+} from './ensure-workspace-submodules.ts';
+
 
 // Re-exported so existing consumers/specs keep one import site; the
 // implementation's SSOT is scripts/lib/repos.ts (shared with repos.ts).
@@ -597,6 +602,34 @@ function doctor(args: string[]): never {
     touchWgpuWasm();
     console.log('[ok] touched wgpu-wasm artefact');
   }
+
+  // Detect the post-pull empty-submodule footgun before bun install does.
+  try {
+    const pkgText = readFileSync(resolve(ROOT, 'package.json'), 'utf8');
+    const missing = missingWorkspacePackageJson(ROOT, readWorkspaceGlobs(pkgText));
+    if (missing.length === 0) {
+      console.log('[ok] workspace submodule package.json present');
+    } else {
+      console.log(`[missing] workspace package.json: ${missing.join(', ')}`);
+      console.log('         → bun fx clean && bun install');
+      failed++;
+      if (fix) {
+        console.log('[fix] running bun fx clean …');
+        const r = spawnSync(BUN, [fileURLToPath(import.meta.url), 'clean'], {
+          cwd: ROOT,
+          stdio: 'inherit',
+          env: process.env,
+        });
+        if ((r.status ?? 1) === 0) {
+          console.log('[ok] cleaned; re-check workspaces after bun install');
+          failed = Math.max(0, failed - 1);
+        }
+      }
+    }
+  } catch (e) {
+    console.log(`[warn] workspace check skipped: ${(e as Error).message}`);
+  }
+
   process.exit(failed > 0 ? 1 : 0);
 }
 
@@ -730,7 +763,9 @@ function clean(args: string[]): never {
 
   // 1. discard tracked edits + reset submodule pointers to recorded pins.
   step('.', ['reset', '--hard'], 'reset tracked changes');
-  // 2. sync submodule checkouts to the recorded pins (init any missing / nested).
+  // 2. sync submodule URLs (repo renames) then checkout recorded pins — also
+  //    materialises empty dirs left by a plain `git pull` of a new submodule.
+  step('submodules', ['submodule', 'sync', '--recursive'], 'submodule URLs synced');
   step('submodules', ['submodule', 'update', '--init', '--recursive', '--force'], 'checkouts synced to pins');
   // 3. scrub every submodule working tree to bare pin state (tracked + untracked
   //    + gitignored, recursively) so none reports "modified content" upward.
@@ -747,6 +782,20 @@ function clean(args: string[]): never {
     } else {
       console.log('\n[clean] remaining after clean (inspect manually):');
       console.log(stillDirty);
+    }
+
+    // Gate the install path: empty/new submodule workspaces must have package.json.
+    try {
+      const pkgText = readFileSync(resolve(ROOT, 'package.json'), 'utf8');
+      const missing = missingWorkspacePackageJson(ROOT, readWorkspaceGlobs(pkgText));
+      if (missing.length > 0) {
+        console.error(`\n[clean] workspace package.json still missing: ${missing.join(', ')}`);
+        console.error('[clean] fix auth/network for submodule fetch, then re-run: bun fx clean && bun install');
+        process.exit(1);
+      }
+      console.log('[clean] workspace submodules ready — next: bun install');
+    } catch (e) {
+      console.warn(`[clean] workspace check skipped: ${(e as Error).message}`);
     }
   }
 

@@ -8,7 +8,7 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, openSync, readFileSync, renameSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PORT_ENGINE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
 import { parseSubmodulePaths } from './lib/repos.ts';
@@ -734,7 +734,11 @@ function restartStack(args: string[]): never {
 function clean(args: string[]): never {
   const dryRun = args.includes('--dry-run') || args.includes('-n');
   const deepRoot = args.includes('--deep') || args.includes('-x');
-  const rootCleanFlags = deepRoot ? '-fdx' : '-fd';
+  // Double -f (-ff): a plain `git clean -fd` SKIPS nested git directories
+  // ("Skipping repository packages/core"). After submodule renames/removals
+  // (e.g. packages/core → packages/cli), the old path often remains as an
+  // orphaned checkout with its own .git — -ff is required to delete it.
+  const rootCleanFlags = deepRoot ? '-ffdx' : '-ffd';
   // Submodule interiors are always deep-cleaned; -ff to descend into any nested
   // git dirs (e.g. an uninitialised nested submodule) rather than skip them.
   const subForeachCmd = dryRun
@@ -770,8 +774,15 @@ function clean(args: string[]): never {
   // 3. scrub every submodule working tree to bare pin state (tracked + untracked
   //    + gitignored, recursively) so none reports "modified content" upward.
   step('submodules', ['submodule', 'foreach', '--recursive', subForeachCmd], 'submodule trees scrubbed');
-  // 4. remove root untracked files, always preserving the harness floating clone.
+  // 4. remove root untracked files (incl. orphaned former-submodule dirs like
+  //    packages/core after rename), always preserving the harness floating clone.
   step('.', ['clean', rootCleanFlags, '-e', '.forgeax-harness', ...(dryRun ? ['-n'] : [])], 'root untracked removed');
+
+  // 5. Drop stale submodule.*.path config entries that no longer exist in
+  //    .gitmodules (rename leftovers keep local config otherwise).
+  if (!dryRun) {
+    dropStaleSubmoduleConfig();
+  }
 
   console.log(`\n${formatUpdateReport(results)}`);
 
@@ -801,6 +812,31 @@ function clean(args: string[]): never {
 
   const failed = results.filter((r) => r.result === 'failed').length;
   process.exit(failed > 0 ? 1 : 0);
+}
+
+/** Remove local `submodule.<name>.*` config when that name is gone from .gitmodules. */
+function dropStaleSubmoduleConfig(): void {
+  const configured = gitOut(['config', '--local', '--get-regexp', '^submodule\\..*\\.url$']);
+  if (!configured) return;
+  const gitmodules = join(ROOT, '.gitmodules');
+  const liveNames = new Set<string>();
+  if (existsSync(gitmodules)) {
+    for (const line of readFileSync(gitmodules, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\[submodule "(.+)"\]\s*$/);
+      if (m) liveNames.add(m[1]);
+    }
+  }
+  for (const line of configured.split(/\r?\n/)) {
+    const m = line.match(/^submodule\.(.+)\.url\s/);
+    if (!m) continue;
+    const name = m[1];
+    if (liveNames.has(name)) continue;
+    console.log(`[clean] drop stale git config section submodule.${name}`);
+    spawnSync('git', ['config', '--local', '--remove-section', `submodule.${name}`], {
+      cwd: ROOT,
+      stdio: 'inherit',
+    });
+  }
 }
 
 function main(): void {

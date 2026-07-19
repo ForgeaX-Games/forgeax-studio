@@ -203,7 +203,7 @@ mkdirSync(join(RES, 'node_modules/@forgeax'), { recursive: true });
 
 // (a) deref every real third-party dir from the hoisted root; skip the @forgeax
 // workspace scopes and any top-level entry that is itself a workspace package
-// (forgeax-cli, forgeax-interface, …) — identified by package.json name, not by
+// (@forgeax/orchestrator, forgeax-interface, …) — identified by package.json name, not by
 // a symlink probe (Windows-safe).
 copyThirdParty(join(RES, 'node_modules'));
 
@@ -435,7 +435,7 @@ function copyThirdParty(destNm: string): void {
       copyTree(entry, join(destNm, name), new Set());
       continue;
     }
-    // unscoped: skip if it's a workspace package (e.g. forgeax-cli/-interface)
+    // unscoped: skip if it's a workspace package (e.g. @forgeax/orchestrator/-interface)
     const pj = readJson(join(entry, 'package.json'));
     if (pj?.name && WS.has(pj.name)) continue;
     copyTree(entry, join(destNm, name), new Set());

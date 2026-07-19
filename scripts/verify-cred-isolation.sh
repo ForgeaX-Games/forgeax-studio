@@ -117,7 +117,7 @@ if [ -n "$SRVPID" ]; then
   if [ -n "$KCHILD" ]; then
     kill -0 "$KCHILD" 2>/dev/null && bad "kernel child $KCHILD LEAKED after disconnect (old bug)" || ok "kernel session reaped on disconnect (no leak)"
   else info "no live kernel child at kill time (serve session already idle-reaped) — reap path still asserted by host survival"; ok "no kernel child to leak"; fi
-  ORPH=$(pgrep -f "packages/core/src/cli/main.ts --serve" 2>/dev/null | while read -r k; do pp=$(ps -o ppid= "$k" 2>/dev/null|tr -d ' '); [ "$pp" = "1" ] && echo "$k"; done)
+  ORPH=$(pgrep -f "packages/cli/src/cli/main.ts --serve" 2>/dev/null | while read -r k; do pp=$(ps -o ppid= "$k" 2>/dev/null|tr -d ' '); [ "$pp" = "1" ] && echo "$k"; done)
   [ -z "$ORPH" ] && ok "no orphaned (ppid=1) forgeax-core kernels" || bad "orphan kernels leaked: $ORPH"
 else bad "could not find server on :$SRV to kill"; fi
 

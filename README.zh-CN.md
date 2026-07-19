@@ -75,7 +75,7 @@ bun fx start         # 启动 Studio 并打开默认 Web 客户端
 | [`server`](https://github.com/ForgeaX-Games/forgeax-server) | 运行时核心——单 Bun 进程、进程内 agent 内核、文件/HMR 桥(:18900) |
 | [`interface`](https://github.com/ForgeaX-Games/forgeax-interface) | 三栏 Studio 界面 + Tauri 2 桌面外壳 |
 | [`editor`](https://github.com/ForgeaX-Games/forgeax-editor) | 可视化场景编辑器——Edit/Play 同享一份落盘场景 |
-| [`cli`](https://github.com/ForgeaX-Games/forgeax-cli) | 多 agent 编排内核——AgentTree、XML 账本、slot 提示 |
+| [`orchestrator`](https://github.com/ForgeaX-Games/forgeax-orchestrator) | 多 agent 编排层——AgentTree、XML 账本、slot 提示 |
 | [`marketplace`](https://github.com/ForgeaX-Games/forgeax-marketplace) | 人格 agent · 技能 · 可视化 workbench 插件(内容即数据) |
 | [`games`](https://github.com/ForgeaX-Games/forgeax-games) | 真实、由 agent 编写的共享游戏库 |
 | [`build`](https://github.com/ForgeaX-Games/forgeax-build) | 构建与打包——recipe + validator 流水线 |

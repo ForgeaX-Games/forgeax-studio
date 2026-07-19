@@ -10,9 +10,9 @@
 	path = packages/build
 	url = https://github.com/ForgeaX-Games/forgeax-build.git
 	branch = main
-[submodule "packages/cli"]
-	path = packages/cli
-	url = https://github.com/ForgeaX-Games/forgeax-cli.git
+[submodule "packages/orchestrator"]
+	path = packages/orchestrator
+	url = https://github.com/ForgeaX-Games/forgeax-orchestrator.git
 	branch = main
 [submodule "packages/server"]
 	path = packages/server
@@ -42,9 +42,9 @@
 	path = packages/platform-io
 	url = https://github.com/ForgeaX-Games/forgeax-platform-io.git
 	branch = main
-[submodule "packages/core"]
-	path = packages/core
-	url = https://github.com/ForgeaX-Games/forgeax-core.git
+[submodule "packages/cli"]
+	path = packages/cli
+	url = https://github.com/ForgeaX-Games/forgeax-cli.git
 	branch = main
 [submodule "packages/chat"]
 	path = packages/chat

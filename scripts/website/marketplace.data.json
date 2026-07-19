@@ -1230,8 +1230,8 @@
       "en": "ForgeaX CLI"
     },
     "desc": {
-      "zh": "ForgeaX CLI 后端 · 把仓库内置的 forgeax 命令(`forgeax chat --stream`,packages/cli)接成 Studio 推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;无需外部 CLI 的原生后端。",
-      "en": "ForgeaX CLI backend — wires the in-repo forgeax command (`forgeax chat --stream`, packages/cli) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; the native backend, no external CLI needed."
+      "zh": "ForgeaX CLI 后端 · 把仓库内置的 forgeax 命令(`forgeax chat --stream`,packages/orchestrator)接成 Studio 推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;无需外部 CLI 的原生后端。",
+      "en": "ForgeaX CLI backend — wires the in-repo forgeax command (`forgeax chat --stream`, packages/orchestrator) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; the native backend, no external CLI needed."
     },
     "author": "ForgeaX",
     "keywords": [],

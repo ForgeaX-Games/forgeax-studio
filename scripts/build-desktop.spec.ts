@@ -24,10 +24,10 @@ describe('desktop server runtime closure', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.sh'), 'utf8');
 
     for (const pkg of [
-      'forgeax-cli',
+      '@forgeax/orchestrator',
       '@forgeax/agent-host',
       '@forgeax/agent-runtime',
-      '@forgeax/forgeax-core',
+      '@forgeax/cli',
       '@forgeax/platform-io',
       '@forgeax/types',
     ]) {

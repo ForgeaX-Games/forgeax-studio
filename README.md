@@ -84,7 +84,7 @@ git submodules under `packages/`. Each submodule is its own repo in the
 | [`server`](https://github.com/ForgeaX-Games/forgeax-server) | runtime core — one Bun process, in-process agent kernel, file/HMR bridge (:18900) |
 | [`interface`](https://github.com/ForgeaX-Games/forgeax-interface) | three-column Studio UI + Tauri 2 desktop shell |
 | [`editor`](https://github.com/ForgeaX-Games/forgeax-editor) | visual scene editor — Edit/Play on one disk-backed scene |
-| [`cli`](https://github.com/ForgeaX-Games/forgeax-cli) | multi-agent orchestration kernel — AgentTree, XML ledger, slot prompts |
+| [`orchestrator`](https://github.com/ForgeaX-Games/forgeax-orchestrator) | multi-agent orchestration layer — AgentTree, XML ledger, slot prompts |
 | [`marketplace`](https://github.com/ForgeaX-Games/forgeax-marketplace) | persona agents · skills · visual workbench plugins (content-as-data) |
 | [`games`](https://github.com/ForgeaX-Games/forgeax-games) | shared library of real, agent-authored games |
 | [`build`](https://github.com/ForgeaX-Games/forgeax-build) | build & packaging — recipe + validator pipeline |

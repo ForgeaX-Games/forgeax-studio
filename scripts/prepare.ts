@@ -13,7 +13,7 @@
 // FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_BOOTSTRAP · FORGEAX_BOOTSTRAP_YES
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { has, resolvePython, run } from './lib/sh.ts';
@@ -528,6 +528,51 @@ if (
     ok(`codec wasm built — ${codecTranscoderWasm}`);
   } else {
     warnY('codec wasm build failed — asset compression / KTX2 loading will not work until fixed.');
+  }
+}
+
+// ── 2e. Studio workspace dedupe symlinks ────────────────────────────────────
+// Vite's resolve.dedupe (studio vite.config.ts) resolves the whole @forgeax
+// family from the Studio root's node_modules. bun's workspace linker only
+// creates symlinks for DIRECT deps there; transitive workspace deps
+// (engine-runtime, engine-ecs, editor-core, …) are absent. When dedupe can't
+// find a package, game-file imports resolve a second module instance → ECS
+// component identity splits (e.g. Camera spawned by the game !== the Camera
+// the editor queries for) → "no Camera entity in play world". Fix: ensure
+// every @forgeax workspace package is symlinked into
+// packages/studio/node_modules/@forgeax/.
+{
+  const studioNm = join(ROOT, 'packages/studio/node_modules/@forgeax');
+  if (existsSync(join(ROOT, 'packages/studio/node_modules'))) {
+    mkdirSync(studioNm, { recursive: true });
+    const isWin = process.platform === 'win32';
+    let linked = 0;
+
+    const scanDir = (parent: string): void => {
+      if (!existsSync(parent)) return;
+      for (const e of readdirSync(parent, { withFileTypes: true })) {
+        if (!e.isDirectory()) continue;
+        const pkgJsonPath = join(parent, e.name, 'package.json');
+        if (!existsSync(pkgJsonPath)) continue;
+        const pkg = readJson(pkgJsonPath) as { name?: string } | null;
+        if (!pkg?.name?.startsWith('@forgeax/')) continue;
+        const shortName = pkg.name.slice('@forgeax/'.length);
+        const linkPath = join(studioNm, shortName);
+        if (existsSync(linkPath)) continue;
+        try {
+          symlinkSync(join(parent, e.name), linkPath, isWin ? 'junction' : 'dir');
+          linked++;
+        } catch (err) {
+          warnY(`dedupe symlink ${shortName}: ${err}`);
+        }
+      }
+    };
+
+    scanDir(join(ROOT, 'packages/editor/packages/engine/packages'));
+    scanDir(join(ROOT, 'packages/editor/packages'));
+
+    if (linked > 0) ok(`linked ${linked} transitive @forgeax package(s) into Studio node_modules (dedupe)`);
+    else ok('Studio @forgeax dedupe symlinks already complete');
   }
 }
 

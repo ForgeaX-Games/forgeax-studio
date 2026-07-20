@@ -740,11 +740,11 @@ function bunInstallWithRetry(dir: string): boolean {
 
 function installDir(dir: string): void {
   if (!existsSync(join(dir, 'package.json'))) return;
-  const nm = join(dir, 'node_modules');
-  if (existsSync(nm) && statSync(nm).mtimeMs > statSync(join(dir, 'package.json')).mtimeMs) {
-    ok(`${dir}  (cache fresh, skip)`);
-    return;
-  }
+  // `node_modules` mtime is not an install-completeness signal: pnpm creates or
+  // touches it before dependency lifecycle scripts finish, so an interrupted
+  // install can look newer than package.json while binaries such as esbuild are
+  // still unusable. Bun's install is idempotent and owns its own lock/cache
+  // checks; always let it verify and repair standalone plugin dependencies.
   console.log(`  → bun install (${dir})`);
   if (bunInstallWithRetry(dir)) ok(`${dir}  installed`);
   else warnY(`${dir}  install failed — continuing`);

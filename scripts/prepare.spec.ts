@@ -36,6 +36,11 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain('@forgeax/engine-codec');
     expect(src).toContain('healDanglingEngineSymlinks');
   });
+  it('always lets bun verify standalone plugin installs instead of trusting node_modules mtime', () => {
+    const src = prepareSource();
+    expect(src).not.toMatch(/statSync\(nm\)\.mtimeMs\s*>\s*statSync\(join\(dir,\s*['"]package\.json['"]\)\)\.mtimeMs/);
+    expect(src).toContain('if (bunInstallWithRetry(dir))');
+  });
   it('treats an incomplete wgpu/codec pkg/ as stale (gates on the glue, not just .wasm)', () => {
     const src = prepareSource();
     // wgpuWasmStale must re-provision when the JS glue engine-app imports is

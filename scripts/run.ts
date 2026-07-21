@@ -52,6 +52,7 @@ import {
   spawnService,
   waitForPort,
 } from './lib/proc.ts';
+import { resolveActiveServerRole, serverRuntimeInvocation } from './lib/server-role.ts';
 import { StartLock } from './lib/startlock.ts';
 import { vanityBanner, versionCheck, versionString, writeVersionJson } from './lib/version.ts';
 import { viteGuard, vitePurgeAll } from './lib/vite-cache.ts';
@@ -76,11 +77,6 @@ process.env.STUDIO = STUDIO;
 // ── 0 version banner + write ─────────────────────────────────────────────────
 console.log(vanityBanner(ROOT));
 process.env.FORGEAX_VERSION = versionString(ROOT);
-try {
-  writeVersionJson(ROOT, join(ROOT, 'packages/server/dist/version.json'));
-} catch {
-  // dist may not exist yet — server writes its own at build; non-fatal
-}
 versionCheck(ROOT);
 
 console.log();
@@ -107,6 +103,17 @@ if (!existsSync(envFile)) {
   }
 }
 const env = loadDotenv(envFile); // also injected into process.env
+const activeServer = resolveActiveServerRole({
+  root: ROOT,
+  profile: process.env.FORGEAX_SERVER_PROFILE,
+});
+const activeServerRuntime = serverRuntimeInvocation(activeServer);
+console.log(`[server] active runtime package: ${activeServer.packageName}`);
+try {
+  writeVersionJson(ROOT, join(activeServer.packageDir, 'dist/version.json'));
+} catch {
+  // dist may not exist yet — server writes its own at build; non-fatal
+}
 // Anchor the credentials file for /api/settings. It's INSTALL-GLOBAL: the
 // server loaded these creds into process.env once, here; a workspace hot-switch
 // only remaps FORGEAX_PROJECT_ROOT, so Settings must keep reading/writing THIS
@@ -473,7 +480,7 @@ const launch = (name: string, cmd: string, args: string[], opts: SpawnOpts): num
   return pid;
 };
 
-const srv = launch('server', 'bun', ['--watch', 'src/main.ts'], { cwd: join(ROOT, 'packages/server') });
+const srv = launch('server', 'bun', ['--watch', activeServerRuntime.entryPath], { cwd: activeServer.packageDir });
 
 // Wait for server to bind before starting interface (avoids proxy ECONNREFUSED race).
 await waitForPort(PORT_SERVER, 10_000);

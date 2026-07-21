@@ -32,9 +32,32 @@ import {
   selfAndAncestors,
   sleep,
 } from './lib/proc.ts';
+import {
+  resolveActiveServerRole,
+  serverOrphanNeedles,
+  serverRuntimeInvocation,
+} from './lib/server-role.ts';
 import { vitePurgeAll } from './lib/vite-cache.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+let activeServer = {
+  packageDir: join(ROOT, 'packages/server'),
+  entry: 'src/main.ts',
+  packageName: '@forgeax/server',
+  priority: 0,
+};
+try {
+  activeServer = resolveActiveServerRole({
+    root: ROOT,
+    profile: process.env.FORGEAX_SERVER_PROFILE,
+  });
+} catch (error) {
+  console.error(
+    `[stop] WARNING: server role resolution failed; retaining the base orphan signature (${(error as Error).message})`,
+  );
+}
+const activeServerSignature = serverRuntimeInvocation(activeServer).orphanSignature;
+const activeServerNeedles = serverOrphanNeedles(ROOT, activeServer);
 
 // ── args ──────────────────────────────────────────────────────────────────
 let force = true;
@@ -228,18 +251,22 @@ function readExtensionDevPorts(file: string): number[] {
 /** Match orphaned stack processes by command-line referencing this working tree. */
 function signatureMatchPids(root: string): number[] {
   if (IS_WIN) {
-    // PowerShell CIM: native processes whose command line references THIS tree.
-    const rootWin = root.replace(/\//g, '\\');
+    // Exact launcher/active-entry needles only. Other services are covered by
+    // ports, dev-stack.env and pidfiles; matching the whole root kills unrelated
+    // test/build commands from the same checkout.
     const ps = [
-      '$r = $env:FX_ROOT_WIN -replace "/","\\";',
-      '$names = @("bun.exe","node.exe","esbuild.exe","python.exe","vite.exe");',
+      '$needles = @(ConvertFrom-Json $env:FX_ORPHAN_NEEDLES);',
       'Get-CimInstance Win32_Process |',
-      'Where-Object { ($names -contains $_.Name) -and $_.CommandLine -and ((($_.CommandLine -replace "/","\\")) -like "*$r*") } |',
+      'Where-Object {',
+      '  $cmd = $_.CommandLine;',
+      '  $_.Name -eq "bun.exe" -and $cmd -and',
+      '    @($needles | Where-Object { $cmd.IndexOf([string]$_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0',
+      '} |',
       'ForEach-Object { $_.ProcessId }',
     ].join(' ');
     const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], {
       encoding: 'utf8',
-      env: { ...process.env, FX_ROOT_WIN: rootWin },
+      env: { ...process.env, FX_ORPHAN_NEEDLES: JSON.stringify(activeServerNeedles) },
       windowsHide: true,
     });
     return (r.stdout ?? '')
@@ -253,7 +280,7 @@ function signatureMatchPids(root: string): number[] {
   // orphan (defense-in-depth alongside listing its pid in dev-stack.env).
   const sigs = [
     `${root}/scripts/run.ts`,
-    `${root}/packages/server.*bun.*src/main.ts`,
+    activeServerSignature,
     `${root}/packages/.*vite`,
     `${root}/packages/editor/packages/.*vite`,
     `${root}/packages/marketplace/extensions/.*vite`,

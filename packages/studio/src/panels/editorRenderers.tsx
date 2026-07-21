@@ -56,9 +56,6 @@ import { appExtensionFromManifest } from '@forgeax/interface/core/app-shell/mani
 import { createChromeStatusFeedsExtension } from '@forgeax/interface/core/extensions/chrome-status-feeds';
 import { createDetachedAgentsBrowserExtension } from '@forgeax/interface/core/extensions/detached-agents-browser';
 import { createDetachedFilesBrowserExtension } from '@forgeax/interface/core/extensions/detached-files-browser';
-import { createSlotsMainAreaBodyExtension } from '@forgeax/interface/core/extensions/slots-main-area-body';
-import { createSlotsSidebarAgentsExtension } from '@forgeax/interface/core/extensions/slots-sidebar-agents';
-import { createSlotsCornerAgentPickerExtension } from '@forgeax/interface/core/extensions/slots-corner-agent-picker';
 import { createPanelsWorkbenchInlineExtension } from '@forgeax/interface/core/extensions/panels-workbench-plugins';
 
 // Resolve the active game slug: pinned slug first, else poll the workbench
@@ -509,8 +506,6 @@ export const studioExtensions: readonly AppExtension[] = [
     editorPanelIds: [...EDITOR_PANELS],
     panels: {
       ...editorPanels,
-      chat: { title: 'ForgeaX CLI', order: 10, render: () => <ChatPanel /> },
-      agents: { title: 'Agents', order: 20, render: () => <AgentsPanel /> },
     },
     surfaces: { SceneEditor: EditRealm },
   }),
@@ -540,15 +535,55 @@ export const studioExtensions: readonly AppExtension[] = [
     },
     components: { Settings: SettingsInjection },
   }),
+  appExtensionFromManifest({
+    manifest: {
+      schemaVersion: 1,
+      id: 'panels.chat',
+      version: '1.0.0',
+      kind: 'workbench',
+      displayName: { zh: 'ForgeaX CLI', en: 'ForgeaX CLI' },
+      description: { zh: 'ForgeaX CLI(D4 第二批 manifest 化)', en: 'ForgeaX CLI (D4 batch 2, manifest-declared)' },
+      author: { name: 'forgeax', email: 'dev@forgeax.local' },
+      provides: { workbench: { id: 'chat', position: 10 } },
+    },
+    components: { Panel: ChatPanel },
+  }),
+  appExtensionFromManifest({
+    manifest: {
+      schemaVersion: 1,
+      id: 'panels.agents',
+      version: '1.0.0',
+      kind: 'workbench',
+      displayName: { zh: 'Agents', en: 'Agents' },
+      description: { zh: 'Agents(D4 第二批 manifest 化)', en: 'Agents (D4 batch 2, manifest-declared)' },
+      author: { name: 'forgeax', email: 'dev@forgeax.local' },
+      provides: { workbench: { id: 'agents', position: 20 } },
+    },
+    components: { Panel: AgentsPanel },
+  }),
   createChromeStatusFeedsExtension(StatusFeedsInjection),
   createDetachedAgentsBrowserExtension(WorkbenchAgents),
   createDetachedFilesBrowserExtension(WorkbenchFiles),
   // MainArea body when app mode is 'ai' (plugin-launcher / catalog view);
   // sidebar agents list + workbench corner agent picker are ai-workbench UI —
   // interface (L1) only owns the slots.
-  createSlotsMainAreaBodyExtension(WorkbenchMode),
-  createSlotsSidebarAgentsExtension(AgentsPanel),
-  createSlotsCornerAgentPickerExtension(WorkbenchAgentPicker),
+  appExtensionFromManifest({
+    manifest: {
+      schemaVersion: 1,
+      id: 'slots.ai-workbench',
+      version: '1.0.0',
+      kind: 'workbench',
+      displayName: { zh: 'AI 工作台槽件', en: 'AI Workbench Slots' },
+      description: { zh: 'MainAreaBody / SidebarAgents / CornerAgentPicker(D4 第二批 manifest 化)', en: 'ai-workbench slot components (D4 batch 2, manifest-declared)' },
+      author: { name: 'forgeax', email: 'dev@forgeax.local' },
+      provides: { workbench: { id: 'ai-workbench-slots', surface: 'slot' } },
+    },
+    components: {
+      MainAreaBody: WorkbenchMode,
+      SidebarAgents: AgentsPanel,
+      CornerAgentPicker: WorkbenchAgentPicker,
+    },
+  }),
   // Inline (non-iframe) workbench panels, keyed by bus plugin id — DERIVED
   // from manifests (ADR 0025 M4): any workbench extension whose entry is a
   // `./src/panel.tsx` React module with no standalone server is inline. The

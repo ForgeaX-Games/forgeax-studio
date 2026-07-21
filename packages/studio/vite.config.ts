@@ -164,15 +164,36 @@ function standalonePluginProxies(): Record<string, ProxyOptions> {
     if (!Number.isInteger(port) || (port as number) <= 0 || (port as number) > 65535) continue;
     const shortId = id.replace(/^@[^/]+\//, '');
     const prefix = `/__fx-plugin/${shortId}`;
+    const rewritePluginRequest = (path: string): string => {
+      const hmrPath = `${prefix}/__vite_hmr`;
+      if (path === hmrPath || path.startsWith(`${hmrPath}?`)) return path;
+
+      const inner = path.slice(prefix.length) || '/';
+      // Vite page/module/static requests must keep the configured base prefix;
+      // plugin-owned APIs must be stripped so their dev-server middleware sees
+      // the same paths it handles in direct-port local development.
+      const apiPrefixes = [
+        '/api',
+        '/ws',
+        '/__ce-api__',
+        '/__graph__',
+        '/__gva__',
+        '/__reel__',
+        '/__tts__',
+        '/__minimax_music__',
+        '/__img__',
+        '/uploads',
+      ];
+      if (apiPrefixes.some((p) => inner === p || inner.startsWith(`${p}/`) || inner.startsWith(`${p}?`))) {
+        return inner;
+      }
+      return path;
+    };
     out[prefix] = {
       target: `http://127.0.0.1:${port}`,
       changeOrigin: true,
       ws: true,
-      rewrite: (path: string) => {
-        const hmrPath = `${prefix}/__vite_hmr`;
-        if (path === hmrPath || path.startsWith(`${hmrPath}?`)) return path;
-        return path.replace(prefix, '') || '/';
-      },
+      rewrite: rewritePluginRequest,
     };
   }
   return out;

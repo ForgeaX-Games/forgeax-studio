@@ -1,4 +1,4 @@
-import { defineConfig, type PluginOption } from 'vite';
+import { defineConfig, type PluginOption, type ProxyOptions } from 'vite';
 import react from '@vitejs/plugin-react';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +37,7 @@ const SERVER_WS = SERVER.replace(/^http/, 'ws');
 const ENGINE = process.env.FORGEAX_ENGINE_URL ?? 'http://127.0.0.1:15173';
 const ENGINE_WS = ENGINE.replace(/^http/, 'ws');
 const REEL = process.env.FORGEAX_REEL_URL ?? 'http://127.0.0.1:15175';
+const STANDALONE_PROXY_ENABLED = process.env.FORGEAX_STANDALONE_PROXY === '1';
 
 // Single-realm engine serve fragment. base '/' — studio's own origin serves both
 // the SPA and the engine modules, so shader/pack routes arrive un-prefixed (no
@@ -145,6 +146,38 @@ function knownWorkspaceRoots(): string[] {
   }
 }
 
+function standalonePluginProxies(): Record<string, ProxyOptions> {
+  if (!STANDALONE_PROXY_ENABLED) return {};
+  const portsFile = process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE
+    ?? resolve(PACKAGE_DIR, '../../.forgeax/extension-dev-ports.json');
+  if (!existsSync(portsFile)) return {};
+  let parsed: { plugins?: Record<string, { frontendPort?: unknown }> };
+  try {
+    parsed = JSON.parse(readFileSync(portsFile, 'utf-8'));
+  } catch {
+    return {};
+  }
+
+  const out: Record<string, ProxyOptions> = {};
+  for (const [id, entry] of Object.entries(parsed.plugins ?? {})) {
+    const port = entry.frontendPort;
+    if (!Number.isInteger(port) || (port as number) <= 0 || (port as number) > 65535) continue;
+    const shortId = id.replace(/^@[^/]+\//, '');
+    const prefix = `/__fx-plugin/${shortId}`;
+    out[prefix] = {
+      target: `http://127.0.0.1:${port}`,
+      changeOrigin: true,
+      ws: true,
+      rewrite: (path: string) => {
+        const hmrPath = `${prefix}/__vite_hmr`;
+        if (path === hmrPath || path.startsWith(`${hmrPath}?`)) return path;
+        return path.replace(prefix, '') || '/';
+      },
+    };
+  }
+  return out;
+}
+
 // Prefer a hand-rolled cert at `<root>/.tls/{cert,key}.pem` (covers remote IPs
 // in SAN); fall back to package-local then @vitejs/plugin-basic-ssl (localhost only).
 const ROOT_TLS = resolve(PACKAGE_DIR, '../../.tls');
@@ -185,6 +218,9 @@ export default defineConfig(() => ({
     // The in-process editor receives the pack-index URL explicitly from the
     // Studio host (editorRenderers.tsx). No global fetch patch or asset-origin
     // build global is needed: AssetRegistry resolves catalog entries against it.
+    'import.meta.env.VITE_FORGEAX_STANDALONE_PROXY': JSON.stringify(
+      process.env.FORGEAX_STANDALONE_PROXY ?? '',
+    ),
   },
   resolve: {
     // dockview declares react as a peer dep; under bun's isolated node_modules it
@@ -329,6 +365,7 @@ export default defineConfig(() => ({
       // back to interface/index.html.
       '/__ce-api__': { target: SERVER, changeOrigin: true },
       '/__reel__': { target: REEL, changeOrigin: true },
+      ...standalonePluginProxies(),
     },
   },
   optimizeDeps: {

@@ -33,10 +33,13 @@ export function GameVideoPlaySurface({ scenarioId, slug }: GameVideoPlaySurfaceP
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const src = useMemo(() => {
-    const proto = window.location.protocol;
-    const host = window.location.hostname;
     let q = `surface=player&scn=${encodeURIComponent(scenarioId)}`;
     if (slug) q += `&game=${encodeURIComponent(slug)}`;
+    if (import.meta.env.VITE_FORGEAX_STANDALONE_PROXY === '1') {
+      return `/__fx-plugin/wb-game-video/?${q}`;
+    }
+    const proto = window.location.protocol;
+    const host = window.location.hostname;
     return `${proto}//${host}:${GAMEVIDEO_PORT}/?${q}`;
   }, [scenarioId, slug]);
 

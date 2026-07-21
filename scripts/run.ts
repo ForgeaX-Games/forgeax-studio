@@ -395,6 +395,7 @@ interface ExtensionEntry {
   projectRoot: string;
 }
 const extensions: ExtensionEntry[] = [];
+const standaloneProxyEnabled = process.env.FORGEAX_STANDALONE_PROXY === '1';
 for (const d of discoverStandaloneExtensions(join(ROOT, 'packages/marketplace/extensions'))) {
   const seed = d.port + extensionPortOffset;
   const frontendPort = allocPort(seed);
@@ -567,6 +568,11 @@ if (
 const extensionPids: number[] = [];
 for (const p of extensions) {
   const cmd = extensionRunCmd(p.dir);
+  const pluginBase = standaloneProxyEnabled ? `/__fx-plugin/${p.shortId}/` : '';
+  const pluginHmrClientPort = standaloneProxyEnabled
+    ? (process.env.FORGEAX_HMR_CLIENT_PORT ?? process.env.FORGEAX_INTERFACE_PORT ?? '')
+    : '';
+  const pluginHmrPath = standaloneProxyEnabled ? '/__vite_hmr' : '';
   // Runner derives from the package's own `packageManager` declaration: bun is
   // canonical since 2026-07-07 (chore 6fba2a2), but node-editor apps still
   // declare pnpm — corepack hard-rejects a mismatched runner ("Unsupported
@@ -581,6 +587,9 @@ for (const p of extensions) {
       PORT: String(p.backendPort),
       VITE_DEV_PORT: String(p.frontendPort),
       VITE_API_TARGET: `http://localhost:${p.backendPort}`,
+      VITE_PLUGIN_BASE: pluginBase,
+      VITE_PLUGIN_HMR_CLIENT_PORT: pluginHmrClientPort,
+      VITE_PLUGIN_HMR_PATH: pluginHmrPath,
       VITE_DEV_HTTPS_CERT: extensionTlsCert,
       VITE_DEV_HTTPS_KEY: extensionTlsKey,
     },

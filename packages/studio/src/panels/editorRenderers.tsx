@@ -50,8 +50,9 @@ import { createExtensionPort, createWindowTransport } from '@forgeax/host-sdk';
 // no factory covers (workbench layout seed / editor bridge / host-sdk ports).
 import type { AppExtension } from '@forgeax/interface/core/app-shell/types';
 import { createPanelsEditorExtension } from '@forgeax/interface/core/extensions/panels-editor';
-import { createOverlaysDashboardExtension } from '@forgeax/interface/core/extensions/overlays-dashboard';
-import { createOverlaysSettingsExtension } from '@forgeax/interface/core/extensions/overlays-settings';
+// D4 第一批(ADR 0025 / ADR 0027,双基座 Day 9):dashboard/settings 不再走
+// 工厂注入,改由统一 manifest(forgeax-extension.json 语法)经 v9 适配器装载。
+import { appExtensionFromManifest } from '@forgeax/interface/core/app-shell/manifest-adapter';
 import { createChromeStatusFeedsExtension } from '@forgeax/interface/core/extensions/chrome-status-feeds';
 import { createDetachedAgentsBrowserExtension } from '@forgeax/interface/core/extensions/detached-agents-browser';
 import { createDetachedFilesBrowserExtension } from '@forgeax/interface/core/extensions/detached-files-browser';
@@ -513,8 +514,32 @@ export const studioExtensions: readonly AppExtension[] = [
     },
     surfaces: { SceneEditor: EditRealm },
   }),
-  createOverlaysDashboardExtension(Dashboard),
-  createOverlaysSettingsExtension(SettingsInjection),
+  appExtensionFromManifest({
+    manifest: {
+      schemaVersion: 1,
+      id: 'overlays.dashboard',
+      version: '1.0.0',
+      kind: 'workbench',
+      displayName: { zh: '仪表盘', en: 'Dashboard' },
+      description: { zh: '全屏仪表盘 overlay。', en: 'Full-screen dashboard overlay.' },
+      author: { name: 'forgeax', email: 'dev@forgeax.local' },
+      provides: { workbench: { id: 'dashboard', surface: 'overlay' } },
+    },
+    components: { Dashboard },
+  }),
+  appExtensionFromManifest({
+    manifest: {
+      schemaVersion: 1,
+      id: 'overlays.settings',
+      version: '1.0.0',
+      kind: 'workbench',
+      displayName: { zh: '设置', en: 'Settings' },
+      description: { zh: '全屏设置 overlay(含 sections 注册)。', en: 'Full-screen settings overlay with sections register.' },
+      author: { name: 'forgeax', email: 'dev@forgeax.local' },
+      provides: { workbench: { id: 'settings', surface: 'overlay' } },
+    },
+    components: { Settings: SettingsInjection },
+  }),
   createChromeStatusFeedsExtension(StatusFeedsInjection),
   createDetachedAgentsBrowserExtension(WorkbenchAgents),
   createDetachedFilesBrowserExtension(WorkbenchFiles),

@@ -538,7 +538,7 @@ export const studioExtensions: readonly AppExtension[] = [
   appExtensionFromManifest({
     manifest: {
       schemaVersion: 1,
-      id: 'panels.chat',
+      id: 'studio.panels.chat',
       version: '1.0.0',
       kind: 'workbench',
       displayName: { zh: 'ForgeaX CLI', en: 'ForgeaX CLI' },
@@ -551,7 +551,7 @@ export const studioExtensions: readonly AppExtension[] = [
   appExtensionFromManifest({
     manifest: {
       schemaVersion: 1,
-      id: 'panels.agents',
+      id: 'studio.panels.agents',
       version: '1.0.0',
       kind: 'workbench',
       displayName: { zh: 'Agents', en: 'Agents' },

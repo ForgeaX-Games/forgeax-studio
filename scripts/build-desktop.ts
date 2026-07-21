@@ -40,9 +40,14 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { desktopServerEntryAdapter, resolveActiveServerRole } from './lib/server-role.ts';
 import { writeVersionJson } from './lib/version.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const activeServer = resolveActiveServerRole({
+  root: ROOT,
+  profile: process.env.FORGEAX_SERVER_PROFILE,
+});
 const BUN = process.execPath;
 const IS_WIN = process.platform === 'win32';
 
@@ -71,6 +76,7 @@ const die = (s: string): never => {
   console.error(`[build-desktop] ERROR: ${s}`);
   process.exit(1);
 };
+log(`active server runtime package: ${activeServer.packageName}`);
 
 function readJson(file: string): any {
   try {
@@ -212,7 +218,7 @@ copyThirdParty(join(RES, 'node_modules'));
 // value-imports (engine-project/runtime/physics — referenced in code but not
 // declared, so the graph can't reach them on its own). Engine packages ship
 // dist+pkg only; everything else ships source (these export src/*.ts directly).
-const serverPkg = readJson(join(ROOT, 'packages/server/package.json')) ?? {};
+const serverPkg = readJson(join(activeServer.packageDir, 'package.json')) ?? {};
 const closureSeeds = [
   ...Object.keys(serverPkg.dependencies ?? {}).filter((k) => k.startsWith('@forgeax/')),
   '@forgeax/engine-project',
@@ -256,17 +262,21 @@ log(`  vendored engine closure: ${engineVendored.join(' ')}`);
 log('4/7 copying server source + builtin…');
 const serverDest = join(RES, 'server');
 mkdirSync(serverDest, { recursive: true });
-copyTree(join(ROOT, 'packages/server/src'), join(serverDest, 'src'), new Set());
-if (existsSync(join(ROOT, 'packages/server/builtin'))) {
-  copyTree(join(ROOT, 'packages/server/builtin'), join(serverDest, 'builtin'), new Set());
+copyTree(join(activeServer.packageDir, 'src'), join(serverDest, 'src'), new Set());
+const serverEntryAdapter = desktopServerEntryAdapter(activeServer.entry);
+if (serverEntryAdapter !== null) {
+  writeFileSync(join(serverDest, 'src/main.ts'), serverEntryAdapter);
 }
-cpSync(join(ROOT, 'packages/server/package.json'), join(serverDest, 'package.json'));
+if (existsSync(join(activeServer.packageDir, 'builtin'))) {
+  copyTree(join(activeServer.packageDir, 'builtin'), join(serverDest, 'builtin'), new Set());
+}
+cpSync(join(activeServer.packageDir, 'package.json'), join(serverDest, 'package.json'));
 
 // tsconfig carries the path aliases bun honors at RUN time. Keep the src-relative
 // ones (@/*, @server-lib/*, @forgeax/bus); strip the cross-package @forgeax/*
 // aliases (they point at ../../<pkg>/src, which doesn't exist in the bundle) so
 // bun resolves those from the node_modules/@forgeax/* we staged in step 3.
-const tsconfigSrc = join(ROOT, 'packages/server/tsconfig.json');
+const tsconfigSrc = join(activeServer.packageDir, 'tsconfig.json');
 if (existsSync(tsconfigSrc)) {
   const ts = readJson(tsconfigSrc) ?? {};
   const paths = ts.compilerOptions?.paths ?? {};

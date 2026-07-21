@@ -40,6 +40,7 @@ jobs:
         run: bun fx build desktop
         env:
           CI: "true"
+          FORGEAX_SERVER_PROFILE: base
       - name: Create DMG (macOS hdiutil fallback)
         if: runner.os == 'macOS'
         shell: bash

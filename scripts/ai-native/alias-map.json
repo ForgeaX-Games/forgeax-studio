@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "aliases": [
+    {
+      "old_control_id": "ctl_16cb9b8e203b60592d254384",
+      "new_control_id": "ctl_ad8f2b540ce577738453f5d0",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_2083e65db02492d52cd9f022",
+      "new_control_id": "ctl_a94cd63116534a7e21949a0f",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_22573875777313fa705c5401",
+      "new_control_id": "ctl_24c8ca19a22faec60dd04eb2",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_29a1b6e06b310dab2fc0edb0",
+      "new_control_id": "ctl_8424499c72596763d65f6ffd",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_2c9d4b9fe30bd5b85a0a4caa",
+      "new_control_id": "ctl_3a4d84d8200dd109e9a05225",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_4ba385f9b1e7db307f1a9f28",
+      "new_control_id": "ctl_890d59db45a193062407446b",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_565e2aad18a4146213a6b896",
+      "new_control_id": "ctl_b3279628fda1995868307f6f",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_5a21121e3a27c9f293376554",
+      "new_control_id": "ctl_5968be9aeecf316f3d693c1f",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_6eea7bf3a6a680320e182a0a",
+      "new_control_id": "ctl_4cc47b7a14099d5f876d1c8e",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_6f20e07f2571c12b4e8c582c",
+      "new_control_id": "ctl_8cfbae38100c5fc2f6bddf9b",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_8bf59d0abbc00e1eab70d771",
+      "new_control_id": "ctl_d7edfdb9b05b0f57b2a3bc2d",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_950a83013cdf2c1762936877",
+      "new_control_id": "ctl_a3dda857fc611578c752a1d4",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_a121c05232aabe0fdd8a80df",
+      "new_control_id": "ctl_43c4fdd21b6fb8cea05b59a9",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_a56bf93ef3d5b0fbcd7fc5ca",
+      "new_control_id": "ctl_6121eb75db55845a85fabc07",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_ac20cbcebe0ac047df5e6dc3",
+      "new_control_id": "ctl_8b4f2956d37eed01d1707f7d",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_af0bfc7dc676596318841fbb",
+      "new_control_id": "ctl_bd4571368564b7b1977b80da",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_b89a77a52fced37b71ba842e",
+      "new_control_id": "ctl_7ebda9b9d6a95c1cff1e2283",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_bd978334dfdc389a9cb1e3bb",
+      "new_control_id": "ctl_f09641fe5721ceafeb0733ca",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_c170278c4e2ede47c293ef1c",
+      "new_control_id": "ctl_53f3099dfe6e29a6ce6d8044",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_c9ea21dba25ef5f06c5bfcf5",
+      "new_control_id": "ctl_dc35408f0b6d0b79df6141e7",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_d6cfb22d34d004a473e73ea4",
+      "new_control_id": "ctl_55c1ccb41115547a5db9bcfd",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_dcd98d3b3da974ce43bf0ce8",
+      "new_control_id": "ctl_6a1ac5b1409d63cfb21a4ff9",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_e5fd00a4d334c7b573579b48",
+      "new_control_id": "ctl_3845d06a1465645f8821223d",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_eec7b28eba04503121737c03",
+      "new_control_id": "ctl_aadb70de310ea96abee1e618",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_ff671f8c9ad76f0a1aa2c3e7",
+      "new_control_id": "ctl_277c68686f04b5b6df95ba62",
+      "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    }
+  ]
+}

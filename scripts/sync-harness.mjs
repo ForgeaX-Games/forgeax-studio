@@ -107,6 +107,10 @@ if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
 }
 
 function main() {
+if (existsSync(resolve(root, '.forgeax-public-distribution'))) {
+  process.stdout.write('[harness:sync] public distribution — skipped\n');
+  process.exit(0);
+}
 if (process.env.FORGEAX_SKIP_HARNESS_SYNC) {
   process.stdout.write('[harness:sync] FORGEAX_SKIP_HARNESS_SYNC set — skipped\n');
   process.exit(0);

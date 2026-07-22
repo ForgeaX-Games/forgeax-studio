@@ -1,6 +1,6 @@
 {
   "name": "forgeax-studio",
-  "version": "0.3.20",
+  "version": "0.3.21",
   "private": true,
   "type": "module",
   "description": "ForgeaX Studio — AI-native game development environment",
@@ -15,7 +15,9 @@
     "lint:game-input": "bun scripts/check-game-input-contract.ts",
     "test:game-input": "bun test scripts/check-game-input-contract.spec.ts",
     "lint:boundaries": "bun scripts/check-boundaries.ts --strict && bun run lint:boundaries:cli-runtime && bun run lint:boundaries:orchestrator && bun run lint:boundaries:agent-host",
-    "test:boundaries": "bun test scripts/check-boundaries.spec.ts",
+    "test:boundaries": "bun test scripts/check-boundaries.spec.ts && bun run test:agent-runtime-guard",
+    "test:agent-runtime-guard": "bun test scripts/check-agent-runtime-guard.spec.ts",
+    "test:action-catalog-drift": "bun test scripts/check-action-catalog-drift.spec.ts",
     "lint:boundaries:agent-host": "cd packages/agent-host && bun run lint:boundaries",
     "lint:node-runnable": "node scripts/check-node-runnable.mjs",
     "lint:pins": "bun scripts/check-submodule-pins.ts",
@@ -45,6 +47,7 @@
     "packages/editor/packages/panels",
     "packages/editor/packages/edit-runtime",
     "packages/editor/packages/play-runtime",
+    "packages/editor/packages/ui",
     "packages/editor/packages/engine/packages/*",
     "packages/build/engine-src"
   ],

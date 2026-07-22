@@ -202,14 +202,33 @@ jobs:
         env:
           FORGEAX_SKIP_HARNESS: '1'
 
+      # publicDistribution skips engine builds in prepare.ts, but the editor
+      # typecheck needs engine .d.ts. When the dist cache misses, build here.
+      - name: Build engine packages (dist cache miss)
+        if: steps.engine-dist.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          cd packages/editor/packages/engine
+          pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+          # wgpu wasm — try prebuilt release first, fall back to compile
+          pnpm -F @forgeax/engine-wgpu-wasm fetch-wasm || \
+            pnpm -F @forgeax/engine-wgpu-wasm build:wasm || true
+          # build all engine packages (tsup dist)
+          pnpm -r build
+          # emit .d.ts (tsc composite project)
+          pnpm exec tsc -b || { pnpm exec tsc -b --clean && pnpm exec tsc -b; } || true
+
       # Restore mtime ordering so run.ts's freshness gates don't refuse to boot
       # (wgpu .wasm must be newer than the committed pkg/*.js; engine dist newer
       # than src on a cache hit). Content is correct; only mtime ordering needs repair.
       - name: Touch engine artifacts to satisfy run.ts freshness gates
         run: |
           set -eux
-          touch packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm
-          find packages/editor/packages/engine/packages/*/dist -type f -exec touch {} +
+          # wasm/dist may not exist on first run (publicDistribution skips engine builds);
+          # the touch is only needed when a cache restore made mtime ordering stale.
+          [ -f packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm ] && \
+            touch packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm || true
+          find packages/editor/packages/engine/packages/*/dist -type f -exec touch {} + 2>/dev/null || true
 
       # ── Per-package typecheck fan-out (prepare.ts does not typecheck) ────
       # Same package list and typecheck||lint fallback as internal CI. cli is

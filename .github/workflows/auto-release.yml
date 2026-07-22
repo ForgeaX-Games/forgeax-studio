@@ -15,6 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure git identity
+        run: |
+          git config user.name "forgeax"
+          git config user.email "forgeax@users.noreply.github.com"
+
       - name: Extract version from package.json
         id: ver
         run: |

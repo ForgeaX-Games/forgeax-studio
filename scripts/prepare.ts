@@ -27,6 +27,10 @@ if (process.env.FORGEAX_SKIP_PREPARE === '1') {
 }
 const force = process.env.FORGEAX_FORCE_PREPARE === '1';
 const skipPlugins = process.env.FORGEAX_SKIP_PLUGINS === '1';
+// The public mirror deliberately excludes the private, development-only harness
+// repositories. The marker is assembled into every public repository so this
+// remains true for a recursive clone and for an independently cloned child.
+const publicDistribution = existsSync(join(ROOT, '.forgeax-public-distribution'));
 
 
 const bold = (s: string) => console.log(`\x1b[1m${s}\x1b[0m`);
@@ -153,13 +157,20 @@ const parentOrigin = (spawnSync('git', ['config', '--get', 'remote.origin.url'],
   cwd: ROOT,
   encoding: 'utf8',
 }).stdout ?? '').trim();
-const cred = resolveCredentialConfig(parentOrigin, env, probeGitHubSsh);
+const cred = publicDistribution
+  ? { branch: 'noop-parent-is-not-https' as const, gitConfig: {} }
+  : resolveCredentialConfig(parentOrigin, env, probeGitHubSsh);
 const gitEnv: NodeJS.ProcessEnv = { ...hardenedGitEnv(env), ...cred.gitConfig };
 const noCredHelper = [...NO_CRED_ARGV];
 if (cred.branch === 'ssh-rewrite' || cred.branch === 'pat-rewrite') ok(cred.message!);
 else if (cred.branch === 'loud-warn-no-cred') warnY(cred.message!);
 const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
-{
+if (publicDistribution) {
+  // The public superproject is assembled as an already-complete recursive
+  // clone. Re-initialising submodules here is both redundant and invalid for
+  // the mirror smoke's filesystem overlay (which intentionally has no .git).
+  ok('public distribution submodules supplied by recursive clone');
+} else {
   const paths = parseSubmodulePaths(
     execFileSync('git', ['config', '--file', '.gitmodules', '--get-regexp', 'path'], {
       cwd: ROOT,
@@ -189,8 +200,10 @@ const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
   }
 }
 const failedSubmodules = prepareResults.filter((row) => row.result === 'failed');
-if (failedSubmodules.length === 0) ok('submodules ready');
-else warnY(`${failedSubmodules.length} submodule(s) failed; continuing and reporting at the end`);
+if (!publicDistribution) {
+  if (failedSubmodules.length === 0) ok('submodules ready');
+  else warnY(`${failedSubmodules.length} submodule(s) failed; continuing and reporting at the end`);
+}
 
 // Install repo githooks so a plain `git pull` materialises new submodule
 // workspaces before the next `bun install` (bun resolves workspaces pre-prepare).
@@ -247,8 +260,8 @@ else warnY(`${failedSubmodules.length} submodule(s) failed; continuing and repor
 // gate behind FORGEAX_SKIP_HARNESS so CI and bare `bun install` (which triggers
 // prepare on every run) don't re-clone the harness + re-run the Python skill
 // install into the agent dirs each time. Non-fatal either way.
-if (process.env.FORGEAX_SKIP_HARNESS === '1') {
-  console.log('  → harness sync + skill-install skipped (FORGEAX_SKIP_HARNESS=1)');
+if (process.env.FORGEAX_SKIP_HARNESS === '1' || publicDistribution) {
+  console.log(`  → harness sync + skill-install skipped (${publicDistribution ? 'public distribution' : 'FORGEAX_SKIP_HARNESS=1'})`);
 } else {
   syncHarness(ROOT, '.forgeax-harness floating clone');
   installHarnessSkills();
@@ -267,6 +280,13 @@ if (process.env.FORGEAX_SKIP_HARNESS === '1') {
 }
 
 // ── 3. engine submodule build ────────────────────────────────────────────────
+if (publicDistribution) {
+  // The mirrored source ships the engine's emitted dist files but deliberately
+  // excludes private release credentials and source-built WASM artifacts. A
+  // public `bun install` must therefore consume that published output, not try
+  // to rebuild the engine (which would require Rust/wasm-pack).
+  console.log('  → public distribution — skip engine package + WASM builds');
+} else {
 bold('[2/5] Building engine submodule packages');
 const engineDir = join(ROOT, 'packages/editor/packages/engine');
 if (!existsSync(engineDir)) fail('packages/editor/packages/engine (editor nested engine) submodule missing — run git submodule update --init --recursive');
@@ -359,6 +379,20 @@ const touchSentinel = () => {
   mkdirSync(dirname(wasmSentinel), { recursive: true });
   writeFileSync(wasmSentinel, '');
 };
+function wgpuWasmStale(): boolean {
+  const wgpuJs = join(wgpuDir, 'pkg/wgpu_wasm.js');
+  // An INCOMPLETE pkg/ counts as stale. engine-app's bundle imports
+  // `../pkg/wgpu_wasm.js` (the JS glue), so a pkg/ that has wgpu_wasm_bg.wasm
+  // but not wgpu_wasm.js (a partial fetch/extract, or an interrupted build) must
+  // NOT be treated as fresh — otherwise buildWgpuWasm skips and the engine build
+  // dies on "Could not resolve ../pkg/wgpu_wasm.js". Gate on BOTH files.
+  if (!existsSync(wasmArtefact) || !existsSync(wgpuJs)) return true;
+  const anchorMs = (existsSync(wasmSentinel) ? statSync(wasmSentinel) : statSync(wasmArtefact)).mtimeMs;
+  for (const c of [join(wgpuDir, 'Cargo.toml'), join(wgpuDir, 'Cargo.lock'), wgpuJs]) {
+    if (existsSync(c) && statSync(c).mtimeMs > anchorMs) return true;
+  }
+  return existsSync(join(wgpuDir, 'src')) && anyNewerThan(join(wgpuDir, 'src'), anchorMs);
+}
 function buildWgpuWasm(): void {
   bold('[2a/5] Provisioning engine wgpu wasm binary');
   if (!force && !wgpuWasmStale()) {
@@ -531,6 +565,8 @@ if (
   }
 }
 
+}
+
 // ── 2e. Studio workspace dedupe symlinks ────────────────────────────────────
 // Vite's resolve.dedupe (studio vite.config.ts) resolves the whole @forgeax
 // family from the Studio root's node_modules. bun's workspace linker only
@@ -698,21 +734,6 @@ function installHarnessSkills(): void {
   else warnY('forgeax-install failed — continuing');
 }
 
-function wgpuWasmStale(): boolean {
-  const wgpuJs = join(wgpuDir, 'pkg/wgpu_wasm.js');
-  // An INCOMPLETE pkg/ counts as stale. engine-app's bundle imports
-  // `../pkg/wgpu_wasm.js` (the JS glue), so a pkg/ that has wgpu_wasm_bg.wasm
-  // but not wgpu_wasm.js (a partial fetch/extract, or an interrupted build) must
-  // NOT be treated as fresh — otherwise buildWgpuWasm skips and the engine build
-  // dies on "Could not resolve ../pkg/wgpu_wasm.js". Gate on BOTH files.
-  if (!existsSync(wasmArtefact) || !existsSync(wgpuJs)) return true;
-  const anchorMs = (existsSync(wasmSentinel) ? statSync(wasmSentinel) : statSync(wasmArtefact)).mtimeMs;
-  for (const c of [join(wgpuDir, 'Cargo.toml'), join(wgpuDir, 'Cargo.lock'), wgpuJs]) {
-    if (existsSync(c) && statSync(c).mtimeMs > anchorMs) return true;
-  }
-  return existsSync(join(wgpuDir, 'src')) && anyNewerThan(join(wgpuDir, 'src'), anchorMs);
-}
-
 function anyNewerThan(dir: string, anchorMs: number): boolean {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
@@ -773,4 +794,3 @@ function pluginBuildFresh(dir: string): boolean {
   if (!walk(dir, 0)) return false;
   return found;
 }
-

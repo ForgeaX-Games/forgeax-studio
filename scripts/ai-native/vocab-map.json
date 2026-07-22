@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "overrides": {
+    "setters": {
+      "clearConsole": "console.clear",
+      "clearNetwork": "network.clear",
+      "closeOverlay": "overlay.close",
+      "closeSession": "session.close",
+      "createNewSession": "session.create",
+      "openOverlay": "overlay.open",
+      "openWorkbench": "workbench.open",
+      "refreshSessions": "sessions.refresh",
+      "renameTab": "session.rename",
+      "setFullscreen": "app.set_fullscreen",
+      "setMode": "app.set_mode",
+      "setTabAgent": "role.open",
+      "switchGame": "game.switch",
+      "switchToSession": "session.switch",
+      "toggleChatpanel": "panel.toggle_chatpanel",
+      "toggleFullscreen": "app.set_fullscreen",
+      "toggleSidebar": "panel.toggle_sidebar"
+    },
+    "commands": {
+      "app.dock.layoutToggle": "dock.toggle_layout",
+      "app.dock.reset": "dock.reset",
+      "app.panel.focus": "panel.focus",
+      "app.panel.open": "panel.open"
+    },
+    "actions": {}
+  },
+  "auto": {
+    "setters": {
+      "addDockedExtension": "store.add_docked_extension",
+      "closeOverlay": "overlay.close",
+      "closeSession": "session.close",
+      "createNewSession": "session.create",
+      "detachSurface": "store.detach_surface",
+      "getCachedAgentForSid": "store.get_cached_agent_for_sid",
+      "initSessions": "store.init_sessions",
+      "markSurfaceDocked": "store.mark_surface_docked",
+      "openOverlay": "overlay.open",
+      "openWorkbench": "workbench.open",
+      "pinReplyLanguage": "store.pin_reply_language",
+      "pushFileTouch": "store.push_file_touch",
+      "redockSurface": "store.redock_surface",
+      "refreshSessions": "sessions.refresh",
+      "removeDockedExtension": "store.remove_docked_extension",
+      "renameTab": "session.rename",
+      "setActiveEmitter": "store.set_active_emitter",
+      "setActiveSession": "store.set_active_session",
+      "setAgentBusy": "store.set_agent_busy",
+      "setCurrentSessionId": "store.set_current_session_id",
+      "setFollowInput": "store.set_follow_input",
+      "setFullscreen": "app.set_fullscreen",
+      "setLiveAgents": "store.set_live_agents",
+      "setMode": "app.set_mode",
+      "setOverlayParam": "store.set_overlay_param",
+      "setPinnedSlug": "store.set_pinned_slug",
+      "setProviderOverride": "store.set_provider_override",
+      "setReplyLanguage": "store.set_reply_language",
+      "setTabAgent": "role.open",
+      "setWorkbenchExpandedExtensionId": "store.set_workbench_expanded_extension_id",
+      "setWorkbenchTab": "store.set_workbench_tab",
+      "switchGame": "game.switch",
+      "switchToSession": "session.switch",
+      "toggleChatpanel": "panel.toggle_chatpanel",
+      "toggleFullscreen": "app.set_fullscreen",
+      "toggleSidebar": "panel.toggle_sidebar",
+      "updateFileTouchStatus": "store.update_file_touch_status"
+    },
+    "commands": {
+      "app.chat.insertPill": "app.chat.insert_pill",
+      "app.dock.layoutToggle": "dock.toggle_layout",
+      "app.dock.reset": "dock.reset",
+      "app.editor.focus": "app.editor.focus",
+      "app.panel.focus": "panel.focus",
+      "app.panel.open": "panel.open",
+      "app.set_fullscreen": "app.set_fullscreen",
+      "app.set_mode": "app.set_mode",
+      "overlay.close": "overlay.close",
+      "overlay.open": "overlay.open",
+      "panel.toggle_chatpanel": "panel.toggle_chatpanel",
+      "panel.toggle_sidebar": "panel.toggle_sidebar",
+      "workbench.open": "workbench.open"
+    },
+    "actions": {
+      "app.set_fullscreen": "app.set_fullscreen",
+      "app.set_mode": "app.set_mode",
+      "console.clear": "console.clear",
+      "console.read": "console.read",
+      "game.create": "game.create",
+      "game.switch": "game.switch",
+      "network.clear": "network.clear",
+      "overlay.close": "overlay.close",
+      "overlay.open": "overlay.open",
+      "panel.toggle_chatpanel": "panel.toggle_chatpanel",
+      "panel.toggle_sidebar": "panel.toggle_sidebar",
+      "role.create": "role.create",
+      "role.list": "role.list",
+      "role.open": "role.open",
+      "session.close": "session.close",
+      "session.create": "session.create",
+      "session.rename": "session.rename",
+      "session.switch": "session.switch",
+      "sessions.list": "sessions.list",
+      "sessions.refresh": "sessions.refresh",
+      "trajectory.clear": "trajectory.clear",
+      "trajectory.read": "trajectory.read",
+      "workbench.list_plugins": "workbench.list_plugins",
+      "workbench.open": "workbench.open",
+      "workbench.open_plugin": "workbench.open_plugin"
+    }
+  },
+  "server_endpoint_overrides": {
+    "game.switch": [
+      "POST /api/workbench/games/:slug/activate"
+    ],
+    "session.close": [
+      "DELETE /api/sessions/:sid"
+    ],
+    "session.create": [
+      "POST /api/sessions/"
+    ]
+  }
+}

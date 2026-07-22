@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "jsx_event_rules": [
+    {
+      "event": "onAnimationEnd",
+      "reason": "CSS animation lifecycle callback; no user-operated business effect"
+    },
+    {
+      "event": "onAnimationStart",
+      "reason": "CSS animation lifecycle callback; no user-operated business effect"
+    },
+    {
+      "event": "onTransitionEnd",
+      "reason": "CSS transition lifecycle callback; no user-operated business effect"
+    },
+    {
+      "event": "onLoad",
+      "reason": "resource lifecycle callback, not a human-operable entry"
+    },
+    {
+      "event": "onError",
+      "reason": "resource/error lifecycle callback, not a human-operable entry"
+    },
+    {
+      "event": "onReady",
+      "reason": "component initialization lifecycle callback, not a human-operated command"
+    },
+    {
+      "event": "onOpened",
+      "reason": "component post-open lifecycle notification; the opening control is inventoried at its trigger"
+    },
+    {
+      "event": "onPointerCancel",
+      "reason": "pointer gesture cancellation cleanup, not a completed human business action"
+    },
+    {
+      "file": "packages/interface/src/components/CommandPalette/CommandPalette.tsx",
+      "element": "Command.Item",
+      "event": "onSelect",
+      "reason": "per-action palette controls are derived from ActionRegistry; this dynamic renderer would double-count them"
+    },
+    {
+      "file": "packages/interface/src/components/ContextMenu/ContextMenu.tsx",
+      "element": "DropdownMenuItem",
+      "event": "onSelect",
+      "reason": "concrete native/context menu entries are derived from menuRegistry and editor menu data; the generic renderer would double-count them"
+    }
+  ],
+  "listener_rules": [
+    {
+      "file": "packages/chat/src/session-store/store.ts",
+      "element": "es",
+      "reason": "AG-UI EventSource tail transport, not a distinct human command surface",
+      "verified_applicability": "Verified 2026-07-17: the TAIL_EVENTS registrations plus the fallback message event all feed the same onAguiFrame state-reconciliation handler after a run was already started by an inventoried composer control."
+    },
+    {
+      "file": "packages/chat/src/session-bridge.ts",
+      "element": "ws",
+      "reason": "session WebSocket lifecycle and frame transport, not a human-operated entry",
+      "verified_applicability": "Verified 2026-07-17: open/message/close/error registrations maintain the session transport, update connection state, and deliver frames; originating send/reconnect controls are inventoried elsewhere."
+    },
+    {
+      "file": "packages/interface/src/lib/global-shortcuts.ts",
+      "event": "keydown",
+      "reason": "expanded combo rows are collected from the shortcut registry; the single router listener would double-count them",
+      "verified_applicability": "Verified 2026-07-17: the one listener only routes to the 25 shortcut declarations collected by collectShortcutControls; it has no independent control effect."
+    },
+    {
+      "event": "resize",
+      "reason": "viewport/layout observation, not an explicit human command",
+      "verified_applicability": "Verified 2026-07-17: all 6 listeners only remeasure/reposition interface overlays or chat text/capsule geometry."
+    },
+    {
+      "event": "scroll",
+      "reason": "viewport/layout observation, not an explicit human command",
+      "verified_applicability": "Verified 2026-07-17: all 3 listeners only schedule geometry synchronization for SlotDebugOverlay, TourOverlay, or SurfaceKeepAliveLayer."
+    },
+    {
+      "event": "visibilitychange",
+      "reason": "document lifecycle observation",
+      "verified_applicability": "Verified 2026-07-17: all 5 listeners refresh read-only version/agent data, reacquire a UI lease, reconcile chat visibility state, or flush logs; none is a user command entry."
+    },
+    {
+      "event": "focus",
+      "reason": "window lifecycle refresh hook",
+      "verified_applicability": "Verified 2026-07-17: both listeners only refresh GET /api/version data or maintain the active-tab UI lease."
+    },
+    {
+      "event": "error",
+      "reason": "runtime telemetry hook",
+      "verified_applicability": "Verified 2026-07-17: the sole listener converts uncaught shell errors into health telemetry and exposes no human-operated action."
+    },
+    {
+      "event": "unhandledrejection",
+      "reason": "runtime telemetry hook",
+      "verified_applicability": "Verified 2026-07-17: the sole listener converts rejected promises into health telemetry and exposes no human-operated action."
+    },
+    {
+      "file": "packages/interface/src/components/StatusBar/healthBridge.ts",
+      "event": "message",
+      "calls": [
+        "ingestVagTelemetry",
+        "pushConsole",
+        "pushHealth",
+        "pushNetwork"
+      ],
+      "reason": "iframe health/console/network/telemetry ingestion, not a human-operated message effect",
+      "verified_applicability": "Verified 2026-07-17: these 4 call families only ingest observability streams; call-scoped matching leaves any future business branch visible."
+    },
+    {
+      "file": "packages/interface/src/lib/vag-action-bridge.ts",
+      "event": "message",
+      "calls": [
+        "handleManifest",
+        "resolve"
+      ],
+      "reason": "VAG action manifest/result transport; concrete action controls are inventoried at their registry declarations",
+      "verified_applicability": "Verified 2026-07-17: the 2 matched call families register iframe action metadata or settle an existing invocation; call-scoped matching leaves new branches visible."
+    },
+    {
+      "file": "packages/interface/src/lib/ui-bridge.ts",
+      "event": "message",
+      "calls": [
+        "dispatchEvent"
+      ],
+      "reason": "iframe shortcut forwarding transport; concrete shortcut rows are collected from the shortcut registry",
+      "verified_applicability": "Verified 2026-07-17: the matched branch only replays a keydown into the already-inventoried 25 shortcut declarations; call-scoped matching leaves new branches visible."
+    },
+    {
+      "event": "storage",
+      "reason": "cross-tab persistence synchronization",
+      "verified_applicability": "Verified 2026-07-17: all 5 listeners mirror onboarding, browser prefs, locale, provider, or reply-language state written by another tab; origin controls are inventoried elsewhere."
+    },
+    {
+      "event": "beforeunload",
+      "reason": "document lifecycle flush",
+      "verified_applicability": "Verified 2026-07-17: both listeners only flush browser preferences or clear their periodic timer during teardown."
+    },
+    {
+      "event": "pagehide",
+      "reason": "document lifecycle flush",
+      "verified_applicability": "Verified 2026-07-17: the sole listener sends the queued observability log beacon during document teardown."
+    },
+    {
+      "event": "load",
+      "reason": "resource lifecycle callback",
+      "verified_applicability": "Verified 2026-07-17: the sole listener boots the iframe SDK transport after resource load; it is not a human-operated entry."
+    },
+    {
+      "event": "forgeax:ui-action-dispatch",
+      "reason": "internal action telemetry event",
+      "verified_applicability": "Verified 2026-07-17: both registrations use the shared UI_ACTION_DISPATCH_EVENT constant and only render AI highlights or record action trajectory after the originating action was inventoried."
+    },
+    {
+      "event": "forgeax:onboarding-changed",
+      "reason": "cross-component onboarding state synchronization",
+      "verified_applicability": "Verified 2026-07-17: the interface and chat listeners only re-read onboarding milestones after an already-inventoried originating control changes them."
+    },
+    {
+      "event": "forgeax:open-connect-prompt",
+      "reason": "internal continuation from an already-inventoried composer send attempt",
+      "verified_applicability": "Verified 2026-07-17: ConnectModelPrompt opens after the composer detects a missing model path; the user's send control is the command entry."
+    },
+    {
+      "event": "forgeax:resume-send",
+      "reason": "internal continuation after model connection",
+      "verified_applicability": "Verified 2026-07-17: the composer resumes the pending message after ConnectModelPrompt succeeds; it is not a second user command."
+    },
+    {
+      "event": "event",
+      "reason": "EventSource transport event",
+      "verified_applicability": "Verified 2026-07-17: both EventSource listeners only update confirmation/plugin-reload state from server transport events; user verdict/run controls are inventoried at their buttons/forms."
+    }
+  ],
+  "subscription_rules": [
+    {
+      "receiver": "props",
+      "reason": "React callback-prop invocation, not a source-level subscription registration",
+      "verified_applicability": "Verified 2026-07-17: matched calls invoke callbacks supplied through React props; the concrete JSX callback usage is inventoried by the React event-prop collector."
+    },
+    {
+      "receiver": "this.props",
+      "reason": "React class callback-prop invocation, not a source-level subscription registration",
+      "verified_applicability": "Defensive explicit family: class-component callback props are downstream invocations and belong to the JSX callback surface if introduced."
+    },
+    {
+      "receiver": "boot.control",
+      "method": "onPanelsChange",
+      "reason": "React useSyncExternalStore invalidation subscription, not a human-operated command",
+      "verified_applicability": "Verified 2026-07-17: App.tsx uses this callback only to invalidate the derived panel-renderer snapshot after registry changes."
+    },
+    {
+      "receiver": "host.contextKeys",
+      "method": "onChange",
+      "reason": "React context-key state observation, not a human-operated command",
+      "verified_applicability": "Verified 2026-07-17: HostProvider mirrors context-key changes into local React state and disposes the observation on effect cleanup."
+    },
+    {
+      "receiver": "port",
+      "reason": "Extension host RPC/transport callback registration already represented by concrete rpc-handler controls",
+      "verified_applicability": "Verified 2026-07-17: ExtensionIframeHost registers onChat/onToolCall/onNavigate on its port; the host JSX callbacks are inventoried by collectRpcControls."
+    },
+    {
+      "receiver": "getSessionClient()",
+      "method": "onSessionEvent",
+      "reason": "Session stream transport subscription, not a distinct human-operated command",
+      "verified_applicability": "Verified 2026-07-17: file activity, UI bridge, narrative, permission, and perception handlers consume server frames after originating controls are inventoried elsewhere."
+    },
+    {
+      "receiver": "this.cb",
+      "reason": "TurnAccumulator callback-sink invocation, not a subscription registration",
+      "verified_applicability": "Verified 2026-07-17: onMessage/onUpdateMessage/onTurn calls deliver already-accumulated chat events to constructor-supplied callbacks; identifier payload arguments are data, not listeners."
+    },
+    {
+      "receiver": "mainCbs",
+      "reason": "Chat replay callback-sink invocation, not a subscription registration",
+      "verified_applicability": "Verified 2026-07-17: store replay wrappers forward msg/merged/turn payloads into previously built callback implementations."
+    },
+    {
+      "receiver": "this",
+      "method": "onListenerError",
+      "reason": "EventBus error callback-sink invocation, not a subscription registration",
+      "verified_applicability": "Verified 2026-07-17: both calls report caught listener failures to the constructor-supplied error callback."
+    },
+    {
+      "receiver": "panelsRegistry",
+      "method": "onChange",
+      "reason": "Internal contribution-registry observation wrapped by the excluded React panel snapshot subscription",
+      "verified_applicability": "Verified 2026-07-17: host.ts forwards the listener into panelsRegistry; App.tsx consumes it solely as useSyncExternalStore invalidation, so collecting both layers would duplicate one non-command observation."
+    },
+    {
+      "receiver": "Promise",
+      "method": "then",
+      "reason": "Promise continuation, not a custom pub/sub subscription",
+      "verified_applicability": "Defensive explicit family: the current on[A-Z] matcher cannot select lowercase then; retained so a future matcher broadening cannot silently absorb Promise continuations."
+    },
+    {
+      "receiver": "Promise",
+      "method": "catch",
+      "reason": "Promise rejection continuation, not a custom pub/sub subscription",
+      "verified_applicability": "Defensive explicit family: the current on[A-Z] matcher cannot select lowercase catch; retained so a future matcher broadening cannot silently absorb Promise continuations."
+    },
+    {
+      "receiver": "Promise",
+      "method": "finally",
+      "reason": "Promise cleanup continuation, not a custom pub/sub subscription",
+      "verified_applicability": "Defensive explicit family: the current on[A-Z] matcher cannot select lowercase finally; retained so a future matcher broadening cannot silently absorb Promise continuations."
+    },
+    {
+      "file": "packages/studio/src/panels/editorRenderers.tsx",
+      "receiver": "import.meta.hot",
+      "method": "on",
+      "event": "forgeax:game-code-change",
+      "reason": "Vite HMR development transport hook, not a human-operated control",
+      "verified_applicability": "Verified 2026-07-17: this exact import.meta.hot.on topic receives Vite game-code-change notifications and restarts an already-running preview during development; the file/receiver/method/topic scope matches only editorRenderers.tsx:188."
+    },
+    {
+      "file": "packages/interface/src/core/extension-foundation/loader.ts",
+      "receiver": "capabilities",
+      "method": "on",
+      "event": "added",
+      "reason": "Extension capability-availability lifecycle plumbing, not a human-operated entry",
+      "verified_applicability": "Verified 2026-07-17: loader.ts:137 only enqueues scanAndActivate after an internal capability registration; the exact topic scope leaves other capability subscriptions visible."
+    },
+    {
+      "file": "packages/interface/src/core/extension-foundation/loader.ts",
+      "receiver": "capabilities",
+      "method": "on",
+      "event": "removed",
+      "reason": "Extension capability-removal lifecycle plumbing, not a human-operated entry",
+      "verified_applicability": "Verified 2026-07-17: loader.ts:138 only tears down or re-pends extensions after an internal capability removal; the exact topic scope leaves other capability subscriptions visible."
+    },
+    {
+      "file": "packages/interface/src/core/extension-foundation/capabilities.ts",
+      "receiver": "bus",
+      "method": "on",
+      "reason": "CapabilityRegistry facade forwarding to EventBus, not an independent subscription consumer",
+      "verified_applicability": "Verified 2026-07-17: capabilities.ts:40 implements CapabilityRegistry.on by forwarding its event and listener arguments unchanged to bus.on; concrete consumers are audited at their own call sites."
+    },
+    {
+      "file": "packages/interface/src/components/ExtensionHost/ExtensionIframeHost.tsx",
+      "receiver": "port.surface",
+      "method": "subscribe",
+      "reason": "Host-SDK surface-state transport synchronization, not a human-operated command",
+      "verified_applicability": "Verified 2026-07-17: ExtensionIframeHost.tsx:107 mirrors plugin surface descriptors into the host surface store; user actions are inventoried at their declared surface controls."
+    },
+    {
+      "file": "packages/interface/src/components/DockShell/DockRegion.tsx",
+      "receiver": "host.bus",
+      "method": "on",
+      "event": "dock:reset",
+      "reason": "Downstream handler for the already-inventoried app.dock.reset command",
+      "verified_applicability": "Verified 2026-07-17: DockRegion.tsx:565 applies the layout reset emitted by builtinCommandsExtension; collecting both the command and its bus consumer would double-count one operation."
+    },
+    {
+      "file": "packages/interface/src/components/DockShell/DockRegion.tsx",
+      "receiver": "host.bus",
+      "method": "on",
+      "event": "panel:open",
+      "reason": "Downstream handler for the already-inventoried app.panel.open command",
+      "verified_applicability": "Verified 2026-07-17: DockRegion.tsx:572 opens/focuses the requested panel after builtinCommandsExtension emits panel:open; the originating command/control is inventoried separately."
+    },
+    {
+      "file": "packages/interface/src/components/DockShell/DockRegion.tsx",
+      "receiver": "host.bus",
+      "method": "on",
+      "event": "panel:focus",
+      "reason": "Downstream handler for the already-inventoried app.panel.focus command",
+      "verified_applicability": "Verified 2026-07-17: DockRegion.tsx:591 focuses an existing panel after builtinCommandsExtension emits panel:focus; the command is the semantic entry."
+    },
+    {
+      "file": "packages/interface/src/components/DockShell/DockRegion.tsx",
+      "receiver": "host.bus",
+      "method": "on",
+      "event": "dock:layout-toggle",
+      "reason": "Downstream handler for the already-inventoried app.dock.layoutToggle command",
+      "verified_applicability": "Verified 2026-07-17: DockRegion.tsx:881 toggles the layout menu from the command-bus emission; collecting the bus consumer would duplicate the originating command/button."
+    },
+    {
+      "file": "packages/interface/src/lib/ui-bridge.ts",
+      "receiver": "useShellStore",
+      "method": "subscribe",
+      "reason": "Active-session UI lease synchronization, not a human-operated command",
+      "verified_applicability": "Verified 2026-07-17: ui-bridge.ts:229 observes activeSid changes only to acquire/refresh the transport lease and manifest after the originating session selection is handled elsewhere."
+    },
+    {
+      "file": "packages/interface/src/lib/platform/window-manager.ts",
+      "receiver": "win",
+      "method": "once",
+      "event": "tauri://created",
+      "reason": "Tauri window-creation acknowledgement that only settles an existing open request",
+      "verified_applicability": "Verified 2026-07-17: window-manager.ts:111 clears the timeout and resolves true after openSurfaceWindow has already been invoked; it exposes no independent human command."
+    },
+    {
+      "file": "packages/interface/src/lib/platform/window-manager.ts",
+      "receiver": "win",
+      "method": "once",
+      "event": "tauri://error",
+      "reason": "Tauri window-creation error acknowledgement that only settles an existing open request",
+      "verified_applicability": "Verified 2026-07-17: window-manager.ts:115 clears the timeout and resolves false for the already-requested window creation; it is lifecycle/error plumbing."
+    },
+    {
+      "file": "packages/chat/src/session-store/daemon-tick.ts",
+      "receiver": "useShellStore",
+      "method": "subscribe",
+      "reason": "Daemon-tick orphan-state garbage collection after session removal",
+      "verified_applicability": "Verified 2026-07-17: daemon-tick.ts:79 observes tab removal only to delete stale tick-id mappings; the session-close control is inventoried at its origin."
+    },
+    {
+      "file": "packages/chat/src/session-store/store.ts",
+      "receiver": "useShellStore",
+      "method": "subscribe",
+      "reason": "Chat registry garbage collection after session removal",
+      "verified_applicability": "Verified 2026-07-17: store.ts:1328 observes removed session tabs to abort streams and delete chat buckets/queues; it is cleanup downstream of an inventoried session-close control."
+    }
+  ]
+}

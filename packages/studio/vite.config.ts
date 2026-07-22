@@ -21,7 +21,7 @@ import { vitePluginBrand } from './vite-plugin-brand';
 // chain's extensionless relative imports (ERR_MODULE_NOT_FOUND). The relative
 // path keeps the preset INSIDE the esbuild config bundle, which handles TS +
 // extensionless fine. Runtime source imports must still use the facade.
-import { engineVitePreset } from '../editor/packages/edit-runtime/src/viewport/engine-vite-preset';
+import { engineVitePreset } from '../editor/packages/edit-runtime/src/viewport/runtime-vite-preset';
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_ENV = resolve(PACKAGE_DIR, '../../.env');

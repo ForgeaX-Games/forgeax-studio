@@ -278,11 +278,13 @@ function signatureMatchPids(root: string): number[] {
   // `scripts/run.ts` is the launcher itself — it holds no port and records no
   // pidfile for itself, so without this it survives `bun fx stop` as an idle
   // orphan (defense-in-depth alongside listing its pid in dev-stack.env).
+  // Do not match every Vite process under the checkout: packages/editor is a
+  // separately managed standalone stack and may be running on :15290/:15280/
+  // :15273 at the same time. Root-owned services are already covered by their
+  // fixed ports, recorded PIDs, and the active server signature below.
   const sigs = [
     `${root}/scripts/run.ts`,
     activeServerSignature,
-    `${root}/packages/.*vite`,
-    `${root}/packages/editor/packages/.*vite`,
     `${root}/packages/marketplace/extensions/.*vite`,
     `${root}/packages/marketplace/extensions/.*headless-renderer.mjs`,
   ];

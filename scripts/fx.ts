@@ -10,7 +10,7 @@ import { existsSync, openSync, readFileSync, renameSync, statSync, utimesSync } 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PORT_ENGINE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
+import { PORT_ENGINE, PORT_GATEWAY_BRIDGE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
 import { parseSubmodulePaths } from './lib/repos.ts';
 import {
   missingWorkspacePackageJson,
@@ -49,6 +49,12 @@ const START_PORTS: readonly StartPort[] = [
   ['engine', PORT_ENGINE],
 ];
 
+function startPorts(): readonly StartPort[] {
+  if (process.env.FORGEAX_BRIDGE === '0') return START_PORTS;
+  const bridgePort = Number.parseInt(process.env.FORGEAX_BRIDGE_PORT ?? String(PORT_GATEWAY_BRIDGE), 10);
+  return [...START_PORTS, ['gw-bridge', Number.isFinite(bridgePort) ? bridgePort : PORT_GATEWAY_BRIDGE]];
+}
+
 const script = (name: string): string => resolve(ROOT, 'scripts', name);
 
 const SCRIPT_COMMANDS = new Map<string, string>([
@@ -73,6 +79,7 @@ const BUILTIN_COMMANDS = new Set([
   // git update orchestration
   'update',
   'clean',
+  'ci',
 
   // dev lifecycle orchestration
   'start',
@@ -133,6 +140,7 @@ Common commands:
   status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)
   versions              Derived version manifest: pin / branch / nearest tag per submodule
   check [--all]         Run each dirty repo's own gates (lint/test); --all gates everything
+  ci                    Run the local Studio PR CI surface (root gates + editor CI)
   commit -m "msg"       Leaf-first multi-repo commit [path...] [--push] [--dry-run] [--no-verify]
   bump <path...>        Advance a submodule (fetch+ff) and stage its new pin in root
   doctor [--fix]        Diagnose common local setup problems
@@ -145,6 +153,7 @@ Examples:
   bun fx start
   bun fx update
   bun fx start desktop debug
+  bun fx ci
   bun fx sync --dry-run
   bun fx commit -m "fix: adjust dock layout" --push
   bun fx status
@@ -353,7 +362,7 @@ function portOwner(port: number): string {
 }
 
 export function startBusyPorts(owner: (port: number) => string = portOwner): Array<[string, number, string]> {
-  return START_PORTS
+  return startPorts()
     .map(([name, port]) => [name, port, owner(port)] as [string, number, string])
     .filter(([, , pid]) => pid !== '');
 }
@@ -709,6 +718,32 @@ function restartStack(args: string[]): never {
   startStudio(args);
 }
 
+// Local PR gate for the Studio superrepo. Run this PR's root contracts plus
+// its pinned editor leaf; unrelated dirty submodules belong to parallel PRs
+// and must not make this command non-deterministic. Frozen installs come first
+// so a lock rewrite cannot hide the same failure GitHub would reject.
+function ci(args: string[]): never {
+  if (args.length > 0) {
+    console.error('usage: bun fx ci');
+    process.exit(2);
+  }
+  const steps: readonly [string, string, string[], string][] = [
+    ['root frozen Bun install', BUN, ['install', '--frozen-lockfile', '--ignore-scripts'], ROOT],
+    ['root repository gates', BUN, [script('repos.ts'), 'check', '.'], ROOT],
+    ['editor PR CI projection', BUN, ['scripts/fx.ts', 'ci'], join(ROOT, 'packages', 'editor')],
+  ];
+  for (const [name, command, argv, cwd] of steps) {
+    console.log(`\n[ci] ${name}`);
+    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env: process.env });
+    if ((result.status ?? 1) !== 0) {
+      console.error(`[ci] FAIL: ${name}`);
+      process.exit(result.status ?? 1);
+    }
+  }
+  console.log('\n[ci] PASS: local Studio PR CI');
+  process.exit(0);
+}
+
 // ── clean ──────────────────────────────────────────────────────────────────
 // Restore the working tree to a fully-clean `git status`, recursively across the
 // root repo AND every submodule (incl. the editor→engine nesting).
@@ -871,6 +906,9 @@ function main(): void {
       break;
     case 'clean':
       clean(plan.args);
+      break;
+    case 'ci':
+      ci(plan.args);
       break;
     case 'restart':
       restartStack(plan.args);

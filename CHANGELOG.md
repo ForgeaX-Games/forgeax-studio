@@ -14,6 +14,34 @@
 
 ---
 
+## v0.3.22 — 2026-07-24
+
+**Play 模式冻结彻底修复 + 新建游戏白屏彻底修复 + 编辑器 UX 多项修复 + 端口隔离 + 编辑器面板贡献 + 视频资源管理 + Onboarding Tour 增强 + Hellforge 垂直切片**
+
+### Fixes
+- fix(editor): Play 模式下切换界面再返回，3D 渲染不再冻结
+- fix(interface): 新建/切换游戏不再白屏，引擎完全就绪后才加载视口
+- fix(editor): Hierarchy 搜索双 X 按钮修复、折叠全部时保持 Scene 根节点展开
+- fix(editor): Content Browser 键盘 Delete 键支持所有资源类型
+- fix(studio): 编辑器 gateway 端口隔离，standalone editor 不再与 Studio 端口冲突
+- fix(workbench): AI workspace 初始化方式优化
+- fix: 引擎升级兼容性加固
+- fix(cli): 修复打包后运行时找不到 zod 依赖的问题
+
+### Features
+- feat: 编辑器面板贡献（Editor Panel Contributions）— 支持插件注册自定义面板
+- feat: 视频资源统一管理（Video Asset Management）
+- feat: Activity Rail 导航 + 可调整大小的聊天面板
+- feat(interface): Onboarding tour 支持多锚点区域联合
+- feat(server): Game charter 改为资产驱动
+- feat(harness): 在 `.forgeax` 目录安装 skills
+
+### Hellforge
+- 垂直切片打磨计划 + PR0-PR7 子计划落地
+- PR1 品质房间相机、PR2a 闪避终结缝合、PR2b VFX 数据模型、PR2c 氛围与评分、PR3 模块化种子地牢
+
+---
+
 ## v0.3.21 — 2026-07-22
 
 **Play 模式渲染冻结修复 + 新建游戏白屏修复 + CLI zod 依赖补全**

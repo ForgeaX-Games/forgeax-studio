@@ -95,8 +95,7 @@ if (!existsSync(envFile)) {
   } else if (existsSync(envExample)) {
     copyFileSync(envExample, envFile);
     console.log(`\n  Created ${envFile} from ${envExample}.`);
-    console.log('  Edit it to set ANTHROPIC_API_KEY=sk-ant-... then run again.\n');
-    process.exit(1);
+    console.log('  No model key configured — continuing; chat/agent features will be unavailable.\n');
   } else {
     console.error(`  ERROR: no .env at ${envFile} and no .env.example to seed from.`);
     process.exit(1);
@@ -225,6 +224,7 @@ const preflight: Array<[string, number]> = [
   ['interface', PORT_INTERFACE],
   ['engine', PORT_ENGINE],
 ];
+if (process.env.FORGEAX_BRIDGE !== '0') preflight.push(['gw-bridge', PORT_GATEWAY_BRIDGE]);
 let preflightBusy = false;
 for (const [name, port] of preflight) {
   if (isPortBusy(port)) {

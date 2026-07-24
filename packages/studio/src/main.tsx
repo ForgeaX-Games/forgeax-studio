@@ -192,6 +192,12 @@ function bootFullShell(el: HTMLElement) {
         Promise.resolve(
           window.confirm(`Delete ${assets.length} assets? This cannot be undone.`),
         ),
+      confirmDeleteFolder: (folderPath) =>
+        Promise.resolve(
+          window.confirm(`Delete folder "${folderPath}" and all its contents?`),
+        ),
+      promptRenameAsset: (currentName) =>
+        Promise.resolve(window.prompt('New name', currentName)),
       // Cast through unknown: buildKeyboardRouterDeps returns the structural
       // KeyboardRouterDepsShape (edit-runtime declares it locally to stay off the
       // L1 framework); interface's KeyboardRouterDeps has since added richer asset

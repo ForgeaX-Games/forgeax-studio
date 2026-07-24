@@ -1,6 +1,6 @@
 {
   "name": "forgeax-studio",
-  "version": "0.3.21",
+  "version": "0.3.22",
   "private": true,
   "type": "module",
   "description": "ForgeaX Studio — AI-native game development environment",
@@ -45,6 +45,7 @@
     "packages/editor/packages/core",
     "packages/editor/packages/content-browser",
     "packages/editor/packages/panels",
+    "packages/editor/packages/ui",
     "packages/editor/packages/edit-runtime",
     "packages/editor/packages/play-runtime",
     "packages/editor/packages/ui",

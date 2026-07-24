@@ -11,12 +11,19 @@
 // head comment locks this in ("editor viewport + ep:* panels are now in-process
 // React components ... not a /editor iframe"); this file is the concrete wiring.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { useShellStore } from '@forgeax/interface/store';
 import { useTranslation } from '@forgeax/interface/i18n';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
 import { PulseFeeds } from '@forgeax/interface/components/StatusBar/feeds/PulseFeeds';
 import { VersionBadge } from '@forgeax/interface/components/StatusBar/VersionBadge';
-import { installInterfaceBridge, setContextMenuRenderer, panelBridge, gateway } from '@forgeax/editor/bridge';
+import {
+  createEditorPanelContributionsExtension,
+  installInterfaceBridge,
+  setContextMenuRenderer,
+  panelBridge,
+  gateway,
+} from '@forgeax/editor/bridge';
 import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
 // ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
 // teardown) come from the editor facade's ./viewport subpath; EDITOR_PANEL_COMPONENTS
@@ -24,6 +31,7 @@ import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout'
 // standalone/main.tsx (the standalone editor shell that first landed this).
 import { ViewportComponent, resetEditRealm } from '@forgeax/editor/viewport';
 import { EDITOR_PANELS, EDITOR_PANEL_COMPONENTS } from '@forgeax/editor/panels';
+import { EditorOverlayProvider } from '@forgeax/editor/ui/overlays';
 // studio→chat is a legal aggregation edge (studio composes interface + apps).
 // interface stays chat-agnostic (no @forgeax/chat import); studio injects the
 // chat surface here through the panels.chat descriptor, exactly like edit/preview.
@@ -406,8 +414,19 @@ const EDITOR_PANEL_TITLES: Record<string, string> = {
 // Each descriptor bakes in the title from EDITOR_PANEL_TITLES + a stable order.
 const editorPanels: Record<string, PanelDescriptor> = Object.fromEntries(
   EDITOR_PANELS.map((id, i) => [id, {
-    title: EDITOR_PANEL_TITLES[id] ?? id,
+    title: id === 'assets' ? 'Content Browser' : (EDITOR_PANEL_TITLES[id] ?? id),
     order: 100 + i,
+    ...(id === 'assets'
+      ? {
+          header: { visible: true, showTitle: false },
+          content: { padding: 'none' as const, scroll: 'none' as const, tone: 'tool' as const },
+        }
+      : id === 'hierarchy'
+        ? {
+            header: { visible: true, showTitle: false },
+            content: { padding: 'none' as const, scroll: 'none' as const, tone: 'tool' as const },
+          }
+      : {}),
     render: () => <EditorPanelBody id={id} />,
   }]),
 );
@@ -477,7 +496,13 @@ const studioEditorIntegrationExtension: AppExtension = {
   id: 'studio.editor-integration', version: '1.0.0',
   requires: ['panels'],
   setup(ctx) {
-    return ctx.contributePanels({
+    const overlayEl = document.createElement('div');
+    overlayEl.id = 'editor-overlay-root';
+    document.body.appendChild(overlayEl);
+    const overlayRoot: Root = createRoot(overlayEl);
+    overlayRoot.render(<EditorOverlayProvider>{null}</EditorOverlayProvider>);
+
+    const cleanupPanels = ctx.contributePanels({
       // Interface owns the workspace-key protocol; editor owns the actual chrome
       // layout. Studio and standalone both bind this same layout to `scene`.
       builtinWorkbenchLayouts: { scene: DEFAULT_EDITOR_DOCK_LAYOUT },
@@ -491,6 +516,12 @@ const studioEditorIntegrationExtension: AppExtension = {
         createWindowTransport,
       },
     });
+
+    return () => {
+      cleanupPanels();
+      overlayRoot.unmount();
+      overlayEl.remove();
+    };
   },
 };
 
@@ -509,6 +540,7 @@ export const studioExtensions: readonly AppExtension[] = [
     },
     surfaces: { SceneEditor: EditRealm },
   }),
+  createEditorPanelContributionsExtension(),
   appExtensionFromManifest({
     manifest: {
       schemaVersion: 1,

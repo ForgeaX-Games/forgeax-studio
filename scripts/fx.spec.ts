@@ -78,6 +78,12 @@ describe('scripts/fx.ts command routing', () => {
     ]);
   });
 
+  it('preflights the Studio-owned gateway relay too', () => {
+    expect(startBusyPorts((port) => (port === 15295 ? 'pid-15295' : ''))).toEqual([
+      ['gw-bridge', 15295, 'pid-15295'],
+    ]);
+  });
+
   it('does not expose legacy dev/web/app commands at the fx top level', () => {
     expect(resolveCommand(['dev'])).toEqual({ type: 'unknown', command: 'dev', args: [] });
     expect(resolveCommand(['dev:local'])).toEqual({ type: 'unknown', command: 'dev:local', args: [] });

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const source = (file: string): string => readFileSync(join(root, 'scripts', file), 'utf8');
+const workflow = (file: string): string => readFileSync(join(root, '.github', 'workflows', file), 'utf8');
 
 describe('server role script integration', () => {
   it.each(['run.ts', 'stop.ts', 'build-desktop.ts'])('%s delegates discovery to the shared resolver', (file) => {
@@ -42,5 +43,15 @@ describe('server role script integration', () => {
     expect(text).toContain("join(activeServer.packageDir, 'builtin')");
     expect(text).toContain("join(activeServer.packageDir, 'tsconfig.json')");
     expect(text).toContain('desktopServerEntryAdapter(activeServer.entry)');
+  });
+
+  it('CI smoke keeps auto server profile resolution', () => {
+    const text = workflow('ci.yml');
+    const smokeStep = text.match(
+      /      - name: Smoke — bun scripts\/run\.ts \+ probe ports\n[\s\S]*?(?=\n      - name:)/,
+    )?.[0];
+
+    expect(smokeStep).toBeDefined();
+    expect(smokeStep).not.toContain('FORGEAX_SERVER_PROFILE: base');
   });
 });

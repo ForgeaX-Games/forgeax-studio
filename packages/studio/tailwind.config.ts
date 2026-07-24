@@ -21,6 +21,7 @@ const config = {
     './src/**/*.{ts,tsx}',
     '../interface/index.html',
     '../interface/src/**/*.{ts,tsx}',
+    '../editor/packages/ui/src/**/*.{ts,tsx}',
     '../marketplace/extensions/**/src/**/*.{ts,tsx}',
     // 关键：上面的 `**` 会穿透各插件的 node_modules / dist（如
     // plugins/wb-reel/node_modules/<pkg>/src/**.ts），让 Tailwind JIT 扫描

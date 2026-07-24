@@ -724,7 +724,7 @@ function installHarnessSkills(): void {
     warnY('forgeax-install IR or a working Python missing — skipping');
     return;
   }
-  for (const m of ['.codebuddy', '.cursor', '.agents', '.claude', '.claude-internal', '.workbuddy']) {
+  for (const m of ['.forgeax', '.codebuddy', '.cursor', '.agents', '.claude', '.claude-internal', '.workbuddy']) {
     mkdirSync(join(ROOT, m, 'skills'), { recursive: true });
     mkdirSync(join(ROOT, m, 'rules'), { recursive: true });
   }

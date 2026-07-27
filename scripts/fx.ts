@@ -134,7 +134,8 @@ Common commands:
                         unless --deep. --dry-run/-n previews. Keeps .forgeax-harness.
   start [web|app|local] Start Studio and open the selected client (default: web)
                         local = 127.0.0.1-only on a third port band (:38920) — use
-                        when default and dev-local ports are both taken
+                        when default and dev-local ports are both taken.
+                        Add --rhi-debug to enable editor RHI capture.
   stop                  Stop web-dev stack
   restart               Stop then start web-dev stack
   status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)

@@ -22,7 +22,7 @@ const TITLE = '鬼市门 · 幽冥渡'
 
 const HERE = dirname(fileURLToPath(import.meta.url)) // <repo>/scripts/guishimen
 const REPO_ROOT = join(HERE, '..', '..') // <repo>
-const BLOBS_DIR = join(REPO_ROOT, '.forgeax/games/guishimen/game-video/assets/blobs')
+const BLOBS_DIR = join(REPO_ROOT, '.forgeax/games/guishimen/assets/blobs')
 
 /**
  * 真实时长解析器:mediaId → mp4 真实时长(ms)。

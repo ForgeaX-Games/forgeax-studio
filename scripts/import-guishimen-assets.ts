@@ -1,16 +1,18 @@
 // 鬼市门一次性导入:拷贝 40 视频→blobs/(重命名),生成 manifest/forge/scenarios。
 // 幂等:重跑覆盖(不追加)。用法:bun scripts/import-guishimen-assets.ts
 /* eslint-disable no-console */
-import { mkdirSync, copyFileSync, writeFileSync, statSync, existsSync } from 'fs'
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, statSync, existsSync } from 'fs'
 import { join } from 'path'
 import { CLIP_MAP } from './guishimen/clip-map'
 import { assembleDb, SCENARIO_ID } from './guishimen/assemble'
+import { mergeSharedAssetManifest } from './video-asset-manifest'
 
 const SRC = '/Users/you/Downloads/video.chi1.4.boarding-1'
 const REPO = '/Users/you/github/forgeax-studio'
 const GAME = join(REPO, '.forgeax/games/guishimen')
 const GV = join(GAME, 'game-video')
-const BLOBS = join(GV, 'assets/blobs')
+const ASSETS = join(GAME, 'assets')
+const BLOBS = join(ASSETS, 'blobs')
 const NOW = 1751414400000 // 固定时间戳,保证幂等(不用 Date.now())
 
 function main() {
@@ -29,18 +31,27 @@ function main() {
     const dst = join(BLOBS, e.blob)
     copyFileSync(join(SRC, e.src), dst)
     const bytes = statSync(dst).size
-    const id = e.blob.replace(/\.mp4$/, '')
     return {
-      id,
+      id: e.mediaId,
       kind: 'video' as const,
-      filename: `blobs/${e.blob}`,
+      name: e.blob,
+      status: 'ready' as const,
       mimeType: 'video/mp4',
       bytes,
       createdAt: NOW,
-      meta: { mediaId: e.mediaId, scenarioId: SCENARIO_ID, source: 'local-import' },
+      updatedAt: NOW,
+      provider: { kind: 'local' as const, ref: `blobs/${e.blob}` },
+      meta: { scenarioId: SCENARIO_ID, source: 'local-import' },
     }
   })
-  writeFileSync(join(GV, 'assets/manifest.json'), JSON.stringify({ version: 1, assets }, null, 2))
+  const manifestPath = join(ASSETS, 'manifest.json')
+  const existingManifest = existsSync(manifestPath)
+    ? JSON.parse(readFileSync(manifestPath, 'utf8'))
+    : undefined
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify(mergeSharedAssetManifest(existingManifest, assets), null, 2)}\n`,
+  )
 
   // 3) forge.json
   writeFileSync(

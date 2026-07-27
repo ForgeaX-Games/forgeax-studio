@@ -323,6 +323,25 @@ mkdirSync(join(ENG, 'node_modules/@forgeax'), { recursive: true });
 for (const f of ['index.html', 'vite.config.ts', 'package.json', 'pack-catalog.ts', 'tsconfig.json']) {
   if (existsSync(join(ENG_SRC, f))) cpSync(join(ENG_SRC, f), join(ENG, f));
 }
+// vite.config.ts imports editor-core via a RELATIVE path ('../core/src/asset-roots')
+// that only works inside the monorepo. In the bundled .app, editor-core lives at
+// node_modules/@forgeax/editor-core (copied in the editor-* loop below), so rewrite
+// the import to the package export. Without this the engine sidecar crashes on
+// startup with UNRESOLVED_IMPORT.
+{
+  const vcPath = join(ENG, 'vite.config.ts');
+  if (existsSync(vcPath)) {
+    const src = readFileSync(vcPath, 'utf8');
+    const patched = src.replace(
+      /from\s+['"]\.\.\/core\/src\/asset-roots['"]/g,
+      "from '@forgeax/editor-core/asset-roots'",
+    );
+    if (patched !== src) {
+      writeFileSync(vcPath, patched);
+      log('  patched vite.config.ts: ../core/src/asset-roots → @forgeax/editor-core/asset-roots');
+    }
+  }
+}
 copyTree(join(ENG_SRC, 'src'), join(ENG, 'src'), new Set());
 if (existsSync(join(ENG_SRC, 'public'))) copyTree(join(ENG_SRC, 'public'), join(ENG, 'public'), new Set());
 

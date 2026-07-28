@@ -703,166 +703,6 @@
     "updated": "2026-07-14",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-nodia"
   },
-  "agent-reel-editor": {
-    "slug": "agent-reel-editor",
-    "id": "@forgeax-extension/agent-reel-editor",
-    "version": "0.1.0",
-    "kind": "agent",
-    "kindLabel": {
-      "zh": "Agent",
-      "en": "Agent"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "剪辑师 · 影游",
-      "en": "Timeline Editor · Reel"
-    },
-    "desc": {
-      "zh": "影游剪辑师（REIA 的专业子智能体，不直接接用户）。专精在已成片的时间轴上做精修：调镜头变速/定格、改入场转场与首尾动画、增删改字幕台词 / 花字 / QTE 节奏点 / 音频(BGM·音效·配音含音量与淡入淡出) / 标记点。全部经细分 reel:edit-* / reel:update-shot 工具走 scene 级增量编辑，落共享 scenario 状态。由 REIA 经 delegate_to_subagent 派单；不拆分镜（→ reel-storyboard）、不出关键帧/视频（→ reel-visual / reel-video）。用户的「我要做影游」整体需求仍归 REIA，不要直接派到这里。",
-      "en": "Reel timeline editor (REIA's specialist sub-agent; not user-facing). Polishes an already-produced timeline at the scene level: shot speed/freeze, entrance transitions and clip in/out animations, and add/update/remove of subtitles, text overlays (花字), QTE cues, audio (BGM/SFX/VO incl. volume & fades) and markers — all via the fine-grained reel:edit-* / reel:update-shot tools, landing in the shared scenario state. Dispatched by REIA via delegate_to_subagent; does NOT storyboard (→ reel-storyboard) or generate keyframes/video (→ reel-visual / reel-video). Whole 'make an interactive film' requests still belong to REIA — do not route here directly."
-    },
-    "author": "ForgeaX",
-    "keywords": [],
-    "caps": {
-      "workbench": null,
-      "lens": null,
-      "skills": 0,
-      "skillTriggers": [],
-      "tools": 0,
-      "toolSample": []
-    },
-    "created": "2026-06-29",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-reel-editor"
-  },
-  "agent-reel-storyboard": {
-    "slug": "agent-reel-storyboard",
-    "id": "@forgeax-extension/agent-reel-storyboard",
-    "version": "0.1.0",
-    "kind": "agent",
-    "kindLabel": {
-      "zh": "Agent",
-      "en": "Agent"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "分镜导演 · 影游",
-      "en": "Storyboard Director · Reel"
-    },
-    "desc": {
-      "zh": "影游分镜导演（REIA 的专业子智能体，不直接接用户）。专精把一个节点/整本剧本按导演语言拆成多镜分镜：建立镜/主镜/特写/插入镜的景别、运镜、时长与连贯组，写回 scene.shots[] 并在时间轴铺成可预览站位。由 REIA 经 delegate_to_subagent 派单；只持有 reel:generate-storyboard（+读 scenario）。用户的「我要做影游」整体需求仍归 REIA，不要直接派到这里。",
-      "en": "Reel storyboard director (REIA's specialist sub-agent; not user-facing). Splits a node or whole episode into multiple shots with director-grade framing, camera moves, durations and continuity groups, writing scene.shots[] as previewable timeline placeholders. Dispatched by REIA via delegate_to_subagent; holds only reel:generate-storyboard (+ read scenario). Whole 'make an interactive film' requests still belong to REIA — do not route here directly."
-    },
-    "author": "ForgeaX",
-    "keywords": [],
-    "caps": {
-      "workbench": null,
-      "lens": null,
-      "skills": 0,
-      "skillTriggers": [],
-      "tools": 0,
-      "toolSample": []
-    },
-    "created": "2026-06-19",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-reel-storyboard"
-  },
-  "agent-reel-video": {
-    "slug": "agent-reel-video",
-    "id": "@forgeax-extension/agent-reel-video",
-    "version": "0.1.0",
-    "kind": "agent",
-    "kindLabel": {
-      "zh": "Agent",
-      "en": "Agent"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "出片 · 影游",
-      "en": "Video Output · Reel"
-    },
-    "desc": {
-      "zh": "影游出片专家（REIA 的专业子智能体，不直接接用户）。专精逐镜出片：sd2/Seedance 运镜提示词、时长结算、尾帧续接拼接。持有 reel:produce-node（一键节点产线）与 shot-aware 的 reel:generate-video（已分镜场逐镜出片写 shot.videoMediaRef、后台并发不挡剪辑）。由 REIA 经 delegate_to_subagent 派单；产物落共享 scenario 状态。用户的影游整体需求归 REIA，不要直接派到这里。",
-      "en": "Reel video-output specialist (REIA's sub-agent; not user-facing). Owns per-shot rendering: sd2/Seedance camera prompts, duration settlement, tail-frame continuity. Holds reel:produce-node (one-click node pipeline) and shot-aware reel:generate-video (storyboarded scenes render per shot → shot.videoMediaRef, concurrent background, never blocks editing). Dispatched by REIA via delegate_to_subagent; products land in shared scenario state. Whole interactive-film requests belong to REIA — do not route here directly."
-    },
-    "author": "ForgeaX",
-    "keywords": [],
-    "caps": {
-      "workbench": null,
-      "lens": null,
-      "skills": 0,
-      "skillTriggers": [],
-      "tools": 0,
-      "toolSample": []
-    },
-    "created": "2026-06-19",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-reel-video"
-  },
-  "agent-reel-visual": {
-    "slug": "agent-reel-visual",
-    "id": "@forgeax-extension/agent-reel-visual",
-    "version": "0.1.0",
-    "kind": "agent",
-    "kindLabel": {
-      "zh": "Agent",
-      "en": "Agent"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "视觉/关键帧 · 影游",
-      "en": "Visual & Keyframe · Reel"
-    },
-    "desc": {
-      "zh": "影游视觉/关键帧专家（REIA 的专业子智能体，不直接接用户）。专精锚点一致性与画面质感：提取并生成角色定妆照/场景基准图/关键道具图（reel:generate-visuals），以及对已分镜节点逐镜出关键帧（reel:generate-keyframes，写 shot.keyframeMediaRef）。由 REIA 经 delegate_to_subagent 派单；产物落共享 scenario 状态。用户的影游整体需求归 REIA，不要直接派到这里。",
-      "en": "Reel visual & keyframe specialist (REIA's sub-agent; not user-facing). Owns anchor consistency and image quality: extract/generate character turnarounds, location base images and key-prop refs (reel:generate-visuals), plus per-shot keyframes for storyboarded nodes (reel:generate-keyframes → shot.keyframeMediaRef). Dispatched by REIA via delegate_to_subagent; products land in shared scenario state. Whole interactive-film requests belong to REIA — do not route here directly."
-    },
-    "author": "ForgeaX",
-    "keywords": [],
-    "caps": {
-      "workbench": null,
-      "lens": null,
-      "skills": 0,
-      "skillTriggers": [],
-      "tools": 0,
-      "toolSample": []
-    },
-    "created": "2026-06-19",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-reel-visual"
-  },
-  "agent-reia": {
-    "slug": "agent-reia",
-    "id": "@forgeax-extension/agent-reia",
-    "version": "0.1.0",
-    "kind": "agent",
-    "kindLabel": {
-      "zh": "Agent",
-      "en": "Agent"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "Reia · 影游导演",
-      "en": "Reia · Reel Director"
-    },
-    "desc": {
-      "zh": "互动影游 (FMV) 导演 — 做「影游 / 互动影片 / 真人短剧 / 可点按悬念片 / 限时点按恋爱选择片」(《完蛋!我被美女包围了》类) 的不二人选。拼提示词、调视频、定 QTE 节拍、织剧情分支与多结局。专门驱动 wb-reel「影游工坊」插件，把作者一句 idea 变成可点按、可试玩的悬念片。用户说「我想要一个影游 / 互动影片 / FMV / 选择驱动的悬念片」时就派给她。(长篇分支剧本 / 94 品类剧情管线归 kotone,不归她。)",
-      "en": "Interactive FMV director — the go-to agent for 影游 / interactive films / clickable suspense reels / timed-choice dating shorts (think 'Love Is All Around'-style FMV). Forges prompts, plans video shots, paces QTEs and weaves branching narratives with multiple endings. Drives the wb-reel workbench end-to-end, turning one idea into a clickable, playable suspense film. Route here whenever the user wants an interactive film / FMV / choice-driven reel. (Long branching scripts / the 94-category narrative pipeline belong to kotone, not Reia.)"
-    },
-    "author": "ForgeaX",
-    "keywords": [],
-    "caps": {
-      "workbench": null,
-      "lens": null,
-      "skills": 0,
-      "skillTriggers": [],
-      "tools": 0,
-      "toolSample": []
-    },
-    "created": "2026-05-29",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-reia"
-  },
   "agent-rin": {
     "slug": "agent-rin",
     "id": "@forgeax-extension/agent-rin",
@@ -1230,8 +1070,8 @@
       "en": "ForgeaX CLI"
     },
     "desc": {
-      "zh": "ForgeaX CLI 后端 · 把仓库内置的 forgeax 命令(`forgeax chat --stream`,packages/orchestrator)接成 Studio 推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;无需外部 CLI 的原生后端。",
-      "en": "ForgeaX CLI backend — wires the in-repo forgeax command (`forgeax chat --stream`, packages/orchestrator) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; the native backend, no external CLI needed."
+      "zh": "ForgeaX CLI 后端 · 把仓库内置的 forgeax 命令(`forgeax chat --stream`,packages/cli)接成 Studio 推理后端,支持流式 / 思考 / 工具调用 / 子 agent / 会话;无需外部 CLI 的原生后端。",
+      "en": "ForgeaX CLI backend — wires the in-repo forgeax command (`forgeax chat --stream`, packages/cli) in as a Studio reasoning backend with streaming, thinking, tool calls, sub-agents and sessions; the native backend, no external CLI needed."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -1389,7 +1229,7 @@
   },
   "wb-2d-scene-asset-generator": {
     "slug": "wb-2d-scene-asset-generator",
-    "id": "@forgeax-extension/wb-2d-scene-asset-generator",
+    "id": "@forgeax-plugin/wb-2d-scene-asset-generator",
     "version": "0.1.0",
     "kind": "workbench",
     "kindLabel": {
@@ -1398,7 +1238,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "2D 场景资产生成器",
+      "zh": "2D场景资产",
       "en": "2D Scene Asset Generator"
     },
     "desc": {
@@ -1426,12 +1266,12 @@
       ]
     },
     "created": "2026-06-08",
-    "updated": "2026-06-08",
+    "updated": "2026-07-14",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-2d-scene-asset-generator"
   },
   "wb-3d-lowpoly": {
     "slug": "wb-3d-lowpoly",
-    "id": "@forgeax-extension/wb-3d-lowpoly",
+    "id": "@forgeax-plugin/wb-3d-lowpoly",
     "version": "0.1.0",
     "kind": "workbench",
     "kindLabel": {
@@ -1440,7 +1280,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "3D 低多边形生成器",
+      "zh": "3D低多边形",
       "en": "3D Lowpoly Generator"
     },
     "desc": {
@@ -1468,7 +1308,7 @@
       ]
     },
     "created": "2026-06-02",
-    "updated": "2026-06-02",
+    "updated": "2026-07-14",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-3d-lowpoly"
   },
   "wb-agent-persona": {
@@ -1567,7 +1407,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "动画",
+      "zh": "动画设计",
       "en": "Animation"
     },
     "desc": {
@@ -1638,7 +1478,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "BGM / 音效",
+      "zh": "音乐音效",
       "en": "BGM & SFX"
     },
     "desc": {
@@ -1682,7 +1522,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "角色编辑器",
+      "zh": "角色编辑",
       "en": "Character Editor"
     },
     "desc": {
@@ -1761,20 +1601,20 @@
     },
     "experimental": true,
     "name": {
-      "zh": "Diffusion Renderer · 实时画面增强渲染",
-      "en": "Diffusion Renderer · Live Viewport"
+      "zh": "Diffusion Renderer",
+      "en": "Diffusion Renderer"
     },
     "desc": {
-      "zh": "从 Diffusion Renderer 插件面板启动基于 diffusion 的实时画面增强渲染,把引擎视口画面送到增强后端,并在同一个面板中预览结果,不覆盖原始视口。",
-      "en": "Starts live diffusion-based render enhancement from the Diffusion Renderer plugin panel, streams the engine viewport to a realtime enhancement backend, and previews results in the same panel without covering the original viewport."
+      "zh": "从游戏世界的语义状态、动作、相机与可选视口媒体生成独立表现层画面。支持 FluxRT 与 LingBot World 2，且绝不反向驱动游戏 ECS。",
+      "en": "Generates a separate presentation stream from semantic game state, actions, camera state, and optional viewport media. Supports FluxRT and LingBot World 2 without ever driving game ECS."
     },
     "author": "forgeax",
     "keywords": [
       "diffusion-renderer",
       "realtime",
       "viewport",
-      "diffusion-rendering",
-      "fluxrt"
+      "fluxrt",
+      "lingbot"
     ],
     "caps": {
       "workbench": "wb-diffusion-renderer",
@@ -1790,8 +1630,8 @@
   },
   "wb-game-video": {
     "slug": "wb-game-video",
-    "id": "@forgeax-extension/wb-game-video",
-    "version": "0.1.0",
+    "id": "@forgeax/wb-game-video",
+    "version": "0.1.2",
     "kind": "workbench",
     "kindLabel": {
       "zh": "工作台",
@@ -1799,7 +1639,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "视频游戏工坊",
+      "zh": "视频游戏",
       "en": "Video Game Studio"
     },
     "desc": {
@@ -1817,20 +1657,20 @@
       "graph"
     ],
     "caps": {
-      "workbench": "gamevideo",
+      "workbench": "wb-game-video",
       "lens": "by-category",
       "skills": 1,
       "skillTriggers": [
-        "/gamevideo"
+        "/wb-game-video"
       ],
       "tools": 11,
       "toolSample": [
-        "gvid:get-graph",
-        "gvid:save-graph",
-        "gvid:list-videos",
-        "gen:generate-shot-script",
-        "gen:generate-keyframe",
-        "gen:generate-video"
+        "wb-game-video:get-graph",
+        "wb-game-video:save-graph",
+        "wb-game-video:list-videos",
+        "wb-game-video:generate-shot-script",
+        "wb-game-video:generate-keyframe",
+        "wb-game-video:generate-video"
       ]
     },
     "created": "2026-06-30",
@@ -1848,7 +1688,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "3D 角色生成",
+      "zh": "3D角色",
       "en": "3D Character Generation"
     },
     "desc": {
@@ -1894,7 +1734,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "道具 / 图标",
+      "zh": "道具图标",
       "en": "Items & Icons"
     },
     "desc": {
@@ -2023,7 +1863,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "叙事工坊",
+      "zh": "叙事设计",
       "en": "Narrative Studio"
     },
     "desc": {
@@ -2178,7 +2018,7 @@
   },
   "wb-scene-generator": {
     "slug": "wb-scene-generator",
-    "id": "@forgeax-extension/wb-scene-generator",
+    "id": "@forgeax-plugin/wb-scene-generator",
     "version": "0.1.0",
     "kind": "workbench",
     "kindLabel": {
@@ -2187,7 +2027,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "场景生成器",
+      "zh": "场景生成",
       "en": "Scene Generator"
     },
     "desc": {
@@ -2206,7 +2046,7 @@
         "/compose-sino-scene",
         "/design-scene-brief"
       ],
-      "tools": 28,
+      "tools": 29,
       "toolSample": [
         "scene:projects.list",
         "scene:projects.create",
@@ -2217,7 +2057,7 @@
       ]
     },
     "created": "2026-06-02",
-    "updated": "2026-06-02",
+    "updated": "2026-07-14",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-scene-generator"
   },
   "wb-skill": {
@@ -2231,7 +2071,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "技能 / VFX",
+      "zh": "技能特效",
       "en": "Skills & VFX"
     },
     "desc": {
@@ -2300,7 +2140,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "UI 工坊",
+      "zh": "UI设计",
       "en": "UI Workshop"
     },
     "desc": {

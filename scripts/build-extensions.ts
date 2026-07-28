@@ -15,6 +15,10 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  extensionBuildCommands,
+  UnsupportedExtensionPackageManagerError,
+} from './lib/extension-build.ts';
 import { run } from './lib/sh.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -53,7 +57,10 @@ for (const e of readdirSync(pluginsDir, { withFileTypes: true })) {
   if (e.isSymbolicLink()) continue; // node-editor apps run their own dev server
   const d = join(pluginsDir, e.name);
   if (!existsSync(join(d, 'package.json'))) continue;
-  const pkg = JSON.parse(readFileSync(join(d, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
+  const pkg = JSON.parse(readFileSync(join(d, 'package.json'), 'utf8')) as {
+    packageManager?: string;
+    scripts?: Record<string, string>;
+  };
   if (!pkg.scripts?.build) continue;
 
   const dist = distDirFor(d);
@@ -64,8 +71,18 @@ for (const e of readdirSync(pluginsDir, { withFileTypes: true })) {
   console.log(`[build-plugins] building ${e.name} (dist broken/missing)…`);
   // Always install before (re)build: a stale node_modules makes tsc builds fail
   // with no obvious cause; install is cheap when already satisfied.
-  const okInstall = run('pnpm', ['install', '--no-frozen-lockfile'], { cwd: d });
-  if (okInstall && run('pnpm', ['build'], { cwd: d })) {
+  let commands;
+  try {
+    commands = extensionBuildCommands(pkg);
+  } catch (error) {
+    if (!(error instanceof UnsupportedExtensionPackageManagerError)) throw error;
+    console.log(`\x1b[33m  ⚠ ${e.name} ${error.message}\x1b[0m`);
+    failed++;
+    continue;
+  }
+  const [[installCommand, installArgs], [buildCommand, buildArgs]] = commands;
+  const okInstall = run(installCommand, [...installArgs], { cwd: d });
+  if (okInstall && run(buildCommand, [...buildArgs], { cwd: d })) {
     if (isBroken(dist)) {
       console.log(`\x1b[33m  ⚠ ${e.name} built but dist still broken\x1b[0m`);
       failed++;

@@ -34,6 +34,19 @@ import {
   type FetchLike,
 } from './lib/sse.ts';
 import {
+  assertLockedProviderOnWire,
+  buildGoldenServerManifest,
+  createCliCaptureProxy,
+  launchGoldenServer,
+  lockAgentModelFile,
+  MODEL_EXECUTION_M3_CLOSURE,
+  MODEL_EXECUTION_WAIVER_NOTE,
+  verifyAgentModelFileLock,
+  waitForTurnModelEvidence,
+  type GoldenL4bEvidenceAdapter,
+} from './lib/l4b-evidence.ts';
+import {
+  buildGoldenCliEnvironment,
   cleanupGoldenArtifacts,
   cleanupStaleGoldenRuns,
   GOLDEN_SLUG_RE,
@@ -80,12 +93,143 @@ function completedCliProcess(
   };
 }
 
+function fakeL4bHarness(model = 'locked-model'): Pick<
+  Parameters<typeof runGoldenCase>[1],
+  'manageServer' | 'launchServer' | 'l4bEvidenceAdapter' | 'verifyTurnModelEvidence'
+> {
+  const lock = {
+    sid: 's-fixture',
+    agentId: 'forge',
+    model,
+    agentJsonFile: '/fixture/agent.json',
+    previousModel: null,
+    writtenModel: model,
+    configSha256: 'fixture-config-sha',
+  };
+  const adapter: GoldenL4bEvidenceAdapter = {
+    async lockAgentModel(input) {
+      return {
+        ...lock,
+        sid: input.sid,
+        agentId: input.agentId,
+        model: input.model,
+        writtenModel: input.model,
+      };
+    },
+    async verifyAgentModelLock(evidence) { return evidence; },
+    async readAgentLedger() { return { files: [], events: [] }; },
+    async createCliCaptureProxy(targetBaseUrl) {
+      return {
+        baseUrl: targetBaseUrl,
+        capturedCallId: () => 'turn-call-fixture',
+        close() {},
+      };
+    },
+  };
+  return {
+    manageServer: true,
+    async launchServer(options) {
+      const port = 28900;
+      return {
+        port,
+        baseUrl: `http://127.0.0.1:${port}`,
+        startup: {
+          manifest: buildGoldenServerManifest({
+            projectRoot: options.projectRoot,
+            port,
+            kernel: options.kernel,
+          }),
+          readyAfterMs: 0,
+          healthStatus: 200,
+        },
+        async stop() {
+          return {
+            exitCode: 0,
+            forced: false,
+            stdout: '',
+            stderr: '',
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          };
+        },
+      };
+    },
+    l4bEvidenceAdapter: adapter,
+    async verifyTurnModelEvidence(input) {
+      return {
+        callId: input.callId,
+        correlationMethod: 'runner-injected-nonce+isolated-ledger-delta',
+        correlationNonceSha256: 'fixture-nonce-sha',
+        requestedModel: input.expectedModel,
+        userEventOffset: 0,
+        assistantEventOffset: 1,
+        ledgerEventCountBefore: 0,
+        ledgerEventCountAfter: 2,
+        ledgerFiles: ['/fixture/events-1.jsonl'],
+        promptSha256: 'fixture-prompt-sha',
+      };
+    },
+  };
+}
+
 afterEach(() => {
   for (const root of tempRoots) rmSync(root, { recursive: true, force: true });
   tempRoots.clear();
 });
 
 describe('runner report and exit semantics', () => {
+  it('rejects L4b when runner-owned server evidence is disabled', async () => {
+    const definition = {
+      name: 'l4b-no-server-evidence',
+      description: 'fixture',
+      modes: ['l4b'],
+      kernel: { providerId: 'locked-provider', model: 'locked-model' },
+      steps: [],
+    } satisfies GoldenCaseDefinition;
+
+    await expect(runGoldenCase(definition, {
+      mode: 'l4b',
+      serverPort: 0,
+      manageServer: false,
+      manageArtifacts: false,
+      projectRoot: fixtureRoot(),
+      slugFactory: () => 'gc-0a0b0c0d',
+    })).rejects.toThrow(/runner-owned server/i);
+  });
+
+  it('uses a frozen deep clone of the validated L4b kernel definition', async () => {
+    const definition = {
+      name: 'l4b-frozen-kernel',
+      description: 'fixture',
+      modes: ['l4b'],
+      kernel: { providerId: 'locked-provider', model: 'locked-model' },
+      steps: [],
+    } satisfies GoldenCaseDefinition;
+    const harness = fakeL4bHarness();
+    const baseLaunch = harness.launchServer!;
+    let launchedKernel: { model: string; frozen: boolean } | undefined;
+
+    const outcome = await runGoldenCase(definition, {
+      mode: 'l4b',
+      serverPort: 0,
+      ...harness,
+      async launchServer(options) {
+        definition.kernel.model = 'mutated-after-validation';
+        launchedKernel = {
+          model: options.kernel.model,
+          frozen: Object.isFrozen(options.kernel),
+        };
+        return baseLaunch(options);
+      },
+      manageArtifacts: false,
+      projectRoot: fixtureRoot(),
+      slugFactory: () => 'gc-0e0f1011',
+    });
+
+    expect(launchedKernel).toEqual({ model: 'locked-model', frozen: true });
+    expect(outcome.report.kernel).toEqual({ providerId: 'locked-provider', model: 'locked-model' });
+  });
+
   it('runs the L4a smoke case with fake fetch and emits a structured pass report', async () => {
     const calls: Array<{ url: string; method: string; body?: unknown }> = [];
     const fetchImpl: FetchLike = async (input, init) => {
@@ -122,7 +266,7 @@ describe('runner report and exit semantics', () => {
     expect(outcome.report).toMatchObject({
       case: 'smoke-tools-list',
       mode: 'l4a',
-      pass: true,
+      runCompleted: true,
       startedAt: '2023-11-14T22:13:20.000Z',
       durationMs: 25,
       metadata: { slug: 'gc-01020304' },
@@ -167,7 +311,7 @@ describe('runner report and exit semantics', () => {
       slugFactory: () => 'gc-aabbccdd',
     });
     expect(outcome.exitCode).toBe(1);
-    expect(outcome.report.pass).toBe(false);
+    expect(outcome.report.runCompleted).toBe(false);
     expect(outcome.report.failure).toEqual({
       kind: 'assertion',
       message: 'expected assertion failure',
@@ -205,7 +349,10 @@ describe('runner report and exit semantics', () => {
       description: 'fixture',
       modes: ['l4a'],
       steps: [],
-      teardown: () => assertGolden(false, 'strict teardown failed'),
+      teardown: () => {
+        assertGolden(false, 'strict teardown failed');
+        return {};
+      },
     } satisfies GoldenCaseDefinition;
 
     const outcome = await runGoldenCase(definition, {
@@ -217,7 +364,7 @@ describe('runner report and exit semantics', () => {
     });
 
     expect(outcome.exitCode).toBe(1);
-    expect(outcome.report.pass).toBe(false);
+    expect(outcome.report.runCompleted).toBe(false);
     expect(outcome.report.failure).toEqual({
       kind: 'assertion',
       message: 'strict teardown failed',
@@ -232,10 +379,10 @@ describe('runner report and exit semantics', () => {
   it('executes L4b through the CLI seam and checks nested partial order', async () => {
     let spawned: { command: readonly string[]; cwd: string } | undefined;
     const stdout = [
-      { event: 'tool-call', data: { type: 'tool-call', name: 'ui_act_role_create', callId: 'c1', args: { id: 'm1-forge-accept' } } },
-      { event: 'tool-result', data: { type: 'tool-result', callId: 'c1', ok: true, result: { status: 'completed', stateDigest: { id: 'm1-forge-accept', scope: 'global' }, executedVia: 'headless' } } },
-      { event: 'tool-call', data: { type: 'tool-call', name: 'ui_act_role_list', callId: 'c2', args: {} } },
-      { event: 'done', data: { type: 'done', stopReason: 'end_turn' } },
+      { event: 'tool-call', data: { type: 'tool-call', providerId: 'locked-provider', name: 'ui_act_role_create', callId: 'c1', args: { id: 'm1-forge-accept' } } },
+      { event: 'tool-result', data: { type: 'tool-result', providerId: 'locked-provider', callId: 'c1', ok: true, result: { status: 'completed', stateDigest: { id: 'm1-forge-accept', scope: 'global' }, executedVia: 'headless' } } },
+      { event: 'tool-call', data: { type: 'tool-call', providerId: 'locked-provider', name: 'ui_act_role_list', callId: 'c2', args: {} } },
+      { event: 'done', data: { type: 'done', providerId: 'locked-provider', stopReason: 'end_turn' } },
     ].map((event) => JSON.stringify(event)).join('\n');
     const spawnCli: GoldenCliSpawner = (command, options) => {
       spawned = { command, cwd: options.cwd };
@@ -307,7 +454,8 @@ describe('runner report and exit semantics', () => {
 
     const outcome = await runGoldenCase(definition, {
       mode: 'l4b',
-      serverPort: 28900,
+      serverPort: 0,
+      ...fakeL4bHarness(),
       projectRoot: fixtureRoot(),
       spawnCli,
       manageArtifacts: false,
@@ -323,7 +471,9 @@ describe('runner report and exit semantics', () => {
         './packages/orchestrator/bin/forge',
         'run',
         '--json',
-        'perform the operation',
+        expect.stringMatching(
+          /^perform the operation\n\n\[forgeax-golden-correlation-nonce:[0-9a-f-]+\]$/,
+        ),
         '--agent',
         'forge',
         '--session',
@@ -342,6 +492,29 @@ describe('runner report and exit semantics', () => {
         events: ['tool-call', 'tool-result', 'tool-call', 'done'],
       },
     });
+    expect(outcome.report.steps).toContainEqual({
+      name: 'assert: l4b verification completeness',
+      ok: true,
+      evidence: {
+        bl2Verdict: 'PARTIAL',
+        providerVerified: 'PASS',
+        requestedModelVerified: 'PASS',
+        modelExecutedVerified: 'WAIVED',
+        modelExecutionWaiver: MODEL_EXECUTION_WAIVER_NOTE,
+        m3Closure: MODEL_EXECUTION_M3_CLOSURE,
+      },
+    });
+    expect(outcome.report.verification).toMatchObject({
+      bl2Verdict: 'PARTIAL',
+      providerVerified: 'PASS',
+      requestedModelVerified: 'PASS',
+      modelExecutedVerified: 'WAIVED',
+      modelExecutionWaiver: MODEL_EXECUTION_WAIVER_NOTE,
+      m3Closure: MODEL_EXECUTION_M3_CLOSURE,
+    });
+    expect(outcome.report).toHaveProperty('runCompleted', true);
+    expect(outcome.report).not.toHaveProperty('pass');
+    expect((outcome.report as unknown as Record<string, unknown>).BL2).toBeUndefined();
     expect(outcome.report.steps).toContainEqual({
       name: 'assert: allowed partial order',
       ok: true,
@@ -370,15 +543,19 @@ describe('runner report and exit semantics', () => {
 
     const outcome = await runGoldenCase(definition, {
       mode: 'l4b',
-      serverPort: 28900,
+      serverPort: 0,
+      ...fakeL4bHarness(),
       projectRoot: fixtureRoot(),
-      spawnCli: () => completedCliProcess('', { stderr: 'boom\n', exitCode: 7 }),
+      spawnCli: () => completedCliProcess(`${JSON.stringify({
+        event: 'done',
+        data: { type: 'done', providerId: 'locked-provider' },
+      })}\n`, { stderr: 'api_key=super-secret-cli-value\n', exitCode: 7 }),
       manageArtifacts: false,
       slugFactory: () => 'gc-66778899',
     });
 
     expect(outcome.exitCode).toBe(1);
-    expect(outcome.report.pass).toBe(false);
+    expect(outcome.report.runCompleted).toBe(false);
     expect(outcome.report.failure).toEqual({
       kind: 'assertion',
       message: 'forge run exited with code 7',
@@ -389,7 +566,10 @@ describe('runner report and exit semantics', () => {
       evidence: {
         error: 'forge run exited with code 7',
         type: 'GoldenAssertionError',
-        detail: expect.objectContaining({ exitCode: 7, stderr: 'boom\n' }),
+        detail: expect.objectContaining({
+          exitCode: 7,
+          stderr: 'api_key=<redacted>\n',
+        }),
       },
     });
   });
@@ -424,13 +604,14 @@ describe('runner report and exit semantics', () => {
     const noisy = [
       'not-json',
       '',
-      JSON.stringify({ event: 'tool-call', data: { name: 'ui_act_role_create' } }),
+      JSON.stringify({ event: 'tool-call', data: { providerId: 'locked-provider', name: 'ui_act_role_create' } }),
       '',
-      JSON.stringify({ event: 'done', data: { type: 'done' } }),
+      JSON.stringify({ event: 'done', data: { type: 'done', providerId: 'locked-provider' } }),
     ].join('\r\n');
     const outcome = await runGoldenCase(definition, {
       mode: 'l4b',
-      serverPort: 28900,
+      serverPort: 0,
+      ...fakeL4bHarness(),
       projectRoot: fixtureRoot(),
       spawnCli: () => completedCliProcess(noisy),
       manageArtifacts: false,
@@ -442,6 +623,46 @@ describe('runner report and exit semantics', () => {
       name: 'model turn',
       ok: true,
       evidence: { eventNames: ['message', 'tool-call', 'done'] },
+    });
+  });
+
+  it('fails when the observed provider differs from the declared lock', async () => {
+    const definition = {
+      name: 'provider-mismatch',
+      description: 'fixture',
+      modes: ['l4b'],
+      kernel: { providerId: 'locked-provider', model: 'locked-model' },
+      setup: async (ctx) => {
+        await ctx.recordSession('s-provider-mismatch');
+        return {};
+      },
+      steps: [{
+        name: 'model turn',
+        async run(ctx) {
+          await ctx.runCli({ prompt: 'x', agentId: 'forge' });
+          return {};
+        },
+      }],
+    } satisfies GoldenCaseDefinition;
+    const stdout = `${JSON.stringify({
+      event: 'done',
+      data: { type: 'done', providerId: 'unexpected-provider' },
+    })}\n`;
+
+    const outcome = await runGoldenCase(definition, {
+      mode: 'l4b',
+      serverPort: 0,
+      ...fakeL4bHarness(),
+      projectRoot: fixtureRoot(),
+      spawnCli: () => completedCliProcess(stdout),
+      manageArtifacts: false,
+      slugFactory: () => 'gc-78899aab',
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.report.failure).toEqual({
+      kind: 'assertion',
+      message: 'model turn did not stay on locked provider locked-provider',
     });
   });
 
@@ -481,7 +702,8 @@ describe('runner report and exit semantics', () => {
 
     const outcome = await runGoldenCase(definition, {
       mode: 'l4b',
-      serverPort: 28900,
+      serverPort: 0,
+      ...fakeL4bHarness(),
       projectRoot: fixtureRoot(),
       spawnCli: () => cliProcess,
       manageArtifacts: false,
@@ -518,7 +740,8 @@ describe('runner report and exit semantics', () => {
 
     const outcome = await runGoldenCase(definition, {
       mode: 'l4b',
-      serverPort: 28900,
+      serverPort: 0,
+      ...fakeL4bHarness(),
       projectRoot: fixtureRoot(),
       spawnCli: () => {
         spawned = true;
@@ -562,6 +785,274 @@ describe('runner report and exit semantics', () => {
     });
     expect(outcome.exitCode).toBe(0);
     expect(outcome.report.metadata).toEqual({ slug: 'gc-99887766', sid: 's-created' });
+  });
+});
+
+describe('L4b fail-closed evidence', () => {
+  it('uses an explicit CLI environment allowlist', () => {
+    expect(buildGoldenCliEnvironment({
+      PATH: '/bin',
+      HOME: '/home/you',
+      NO_COLOR: '1',
+      GOLDEN_TEST_API_KEY: 'must-not-pass',
+      FORGEAX_PROVIDER_API: 'must-not-pass',
+    })).toEqual({
+      PATH: '/bin',
+      HOME: '/home/you',
+      NO_COLOR: '1',
+    });
+  });
+
+  it('checks every attributable wire event and rejects missing or zero attribution', () => {
+    expect(() => assertLockedProviderOnWire([
+      { event: 'token', data: { type: 'token', text: 'x' }, raw: '' },
+      { event: 'done', data: { type: 'done', providerId: 'locked-provider' }, raw: '' },
+    ], 'locked-provider')).toThrow('did not stay on locked provider locked-provider');
+
+    expect(() => assertLockedProviderOnWire([
+      { event: 'message', data: 'diagnostic only', raw: 'diagnostic only' },
+    ], 'locked-provider')).toThrow('zero provider-attributable wire events');
+  });
+
+  it('atomically replaces model fallback arrays with one string and detects overwrite', async () => {
+    const root = fixtureRoot();
+    const sid = 's-model-lock';
+    const agentDir = join(root, '.forgeax', 'games', 'acceptance', 'sessions', sid, 'agents', 'forge');
+    const agentJson = join(agentDir, 'agent.json');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(agentJson, JSON.stringify({
+      role: 'main',
+      models: { model: ['old-primary', 'old-fallback'] },
+    }, null, 2));
+
+    const locked = await lockAgentModelFile({
+      projectRoot: root,
+      sid,
+      agentId: 'forge',
+      model: 'locked-model',
+    });
+    const afterWrite = JSON.parse(readFileSync(agentJson, 'utf8')) as {
+      models: { model: unknown };
+    };
+    expect(afterWrite.models.model).toBe('locked-model');
+    expect(Array.isArray(afterWrite.models.model)).toBe(false);
+    expect(locked.previousModel).toEqual(['old-primary', 'old-fallback']);
+    await expect(verifyAgentModelFileLock(locked)).resolves.toMatchObject({
+      writtenModel: 'locked-model',
+    });
+
+    writeFileSync(agentJson, JSON.stringify({ role: 'main', models: { model: ['overwritten'] } }));
+    await expect(verifyAgentModelFileLock(locked)).rejects.toThrow(
+      'agent model lock was overwritten during the turn',
+    );
+    await expect(lockAgentModelFile({
+      projectRoot: root,
+      sid,
+      agentId: '../forge',
+      model: 'locked-model',
+    })).rejects.toThrow('unsafe agent id');
+  });
+
+  it('does not claim callId-level ledger correlation when ledger rows carry no callId', async () => {
+    const correlationNonce = 'nonce-fixture-123';
+    const correlatedPrompt = `perform the operation\n\n[forgeax-golden-correlation-nonce:${correlationNonce}]`;
+    const before = { files: ['/fixture/events-1.jsonl'], events: [] };
+    const after = {
+      files: ['/fixture/events-1.jsonl'],
+      events: [
+        { type: 'user_input', payload: { content: correlatedPrompt } },
+        { type: 'hook:turnStart', payload: { providerId: 'locked-provider' } },
+        { type: 'hook:assistantMessage', payload: { model: 'locked-model' } },
+        { type: 'hook:turnEnd', payload: { reason: 'end_turn' } },
+      ],
+    };
+    const evidence = await waitForTurnModelEvidence({
+      read: async () => after,
+      before,
+      prompt: correlatedPrompt,
+      expectedModel: 'locked-model',
+      callId: 'turn-call-123',
+      correlationNonce,
+      timeoutMs: 10,
+    });
+    expect(evidence).toMatchObject({
+      callId: 'turn-call-123',
+      correlationMethod: 'runner-injected-nonce+isolated-ledger-delta',
+      correlationNonceSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      requestedModel: 'locked-model',
+      userEventOffset: 0,
+      assistantEventOffset: 2,
+    });
+
+    await expect(waitForTurnModelEvidence({
+      read: async () => ({
+        ...after,
+        events: [
+          { type: 'user_input', payload: { content: 'perform the operation' } },
+          ...after.events.slice(1),
+        ],
+      }),
+      before,
+      prompt: correlatedPrompt,
+      expectedModel: 'locked-model',
+      callId: 'turn-call-123',
+      correlationNonce,
+      timeoutMs: 10,
+    })).rejects.toThrow('timed out waiting for ledger-backed requested-model evidence');
+  });
+
+  it('captures the real forge-run request callId through a one-turn loopback proxy', async () => {
+    let proxyFetch: ((request: Request) => Promise<Response>) | undefined;
+    let stopped = false;
+    const proxy = await createCliCaptureProxy('http://target.invalid', {
+      async fetchImpl(_input, init) {
+        return new Response(String(init?.body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+      serve(options) {
+        proxyFetch = options.fetch;
+        return {
+          port: 29875,
+          stop() { stopped = true; },
+        };
+      },
+    });
+    try {
+      const response = await proxyFetch!(new Request(`${proxy.baseUrl}/api/cli/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: 'x', callId: 'captured-call-id' }),
+      }));
+      expect(response.status).toBe(200);
+      expect(proxy.capturedCallId()).toBe('captured-call-id');
+    } finally {
+      proxy.close();
+    }
+    expect(stopped).toBe(true);
+  });
+
+  it('owns server env, readiness, logs, and teardown without persisting secrets', async () => {
+    let stdoutController!: ReadableStreamDefaultController<Uint8Array>;
+    let stderrController!: ReadableStreamDefaultController<Uint8Array>;
+    let resolveExit!: (code: number) => void;
+    let captured: {
+      command: readonly string[];
+      env: Record<string, string | undefined>;
+    } | undefined;
+    const previousTestKey = process.env.GOLDEN_TEST_API_KEY;
+    process.env.GOLDEN_TEST_API_KEY = 'super-secret-golden-value';
+    let runtime: Awaited<ReturnType<typeof launchGoldenServer>>;
+    try {
+      runtime = await launchGoldenServer({
+        projectRoot: fixtureRoot(),
+        requestedPort: 0,
+        reservePort: async () => 29876,
+        kernel: { providerId: 'locked-provider', model: 'locked-model' },
+        fetchImpl: async () => jsonResponse({ status: 'ok' }),
+        now: (() => {
+          const times = [100, 125];
+          return () => times.shift() ?? 125;
+        })(),
+        spawnServer(command, options) {
+          captured = { command, env: options.env };
+          const exited = new Promise<number>((resolve) => { resolveExit = resolve; });
+          return {
+            stdout: new ReadableStream({ start(controller) { stdoutController = controller; } }),
+            stderr: new ReadableStream({ start(controller) { stderrController = controller; } }),
+            exited,
+            kill() {
+              stdoutController.enqueue(new TextEncoder().encode(
+                'server stopped super-secret-golden-value Authorization: Bearer bearer-from-log api_key=query-secret\n',
+              ));
+              stdoutController.close();
+              stderrController.close();
+              resolveExit(0);
+            },
+          };
+        },
+      });
+    } finally {
+      if (previousTestKey === undefined) delete process.env.GOLDEN_TEST_API_KEY;
+      else process.env.GOLDEN_TEST_API_KEY = previousTestKey;
+    }
+
+    expect(runtime.startup.manifest).toEqual(buildGoldenServerManifest({
+      projectRoot: runtime.startup.manifest.environment.FORGEAX_PROJECT_ROOT,
+      port: runtime.port,
+      kernel: { providerId: 'locked-provider', model: 'locked-model' },
+    }));
+    expect(captured?.env.FORGEAX_KERNEL).toBe('kernel');
+    expect(captured?.env.FORGEAX_KERNEL_IMPL).toBe('locked-provider');
+    expect(captured?.env.FORGEAX_SERVER_PORT).toBe(String(runtime.port));
+    expect(captured?.env.FORGEAX_NO_KERNEL).toBeUndefined();
+    expect(JSON.stringify(runtime.startup.manifest)).not.toContain('API_KEY');
+
+    const stopped = await runtime.stop();
+    expect(stopped).toMatchObject({ exitCode: 0, forced: false });
+    expect(stopped.stdout).toContain('server stopped');
+    expect(stopped.stdout).not.toContain('super-secret-golden-value');
+    expect(stopped.stdout).not.toContain('bearer-from-log');
+    expect(stopped.stdout).not.toContain('query-secret');
+    expect(stopped.stdout.match(/<redacted>/g)?.length).toBe(3);
+  });
+
+  it('rejects a fixed port for the runner-owned L4b server', async () => {
+    await expect(launchGoldenServer({
+      projectRoot: fixtureRoot(),
+      requestedPort: 29876,
+      kernel: { providerId: 'locked-provider', model: 'locked-model' },
+      fetchImpl: async () => jsonResponse({ status: 'ok' }),
+      spawnServer() {
+        return {
+          stdout: textStream(),
+          stderr: textStream(),
+          exited: Promise.resolve(0),
+          kill() {},
+        };
+      },
+    })).rejects.toThrow('must request port 0');
+  });
+
+  it('does not leak a secret prefix when the secret crosses the log cap boundary', async () => {
+    let stdoutController!: ReadableStreamDefaultController<Uint8Array>;
+    let resolveExit!: (code: number) => void;
+    const secret = 'boundary-crossing-secret-value';
+    const previousTestKey = process.env.GOLDEN_TEST_API_KEY;
+    process.env.GOLDEN_TEST_API_KEY = secret;
+    let runtime: Awaited<ReturnType<typeof launchGoldenServer>>;
+    try {
+      runtime = await launchGoldenServer({
+        projectRoot: fixtureRoot(),
+        requestedPort: 0,
+        reservePort: async () => 29877,
+        kernel: { providerId: 'locked-provider', model: 'locked-model' },
+        fetchImpl: async () => jsonResponse({ status: 'ok' }),
+        spawnServer() {
+          const exited = new Promise<number>((resolve) => { resolveExit = resolve; });
+          return {
+            stdout: new ReadableStream({ start(controller) { stdoutController = controller; } }),
+            stderr: textStream(),
+            exited,
+            kill() {
+              const prefixBytes = 256 * 1024 - 4;
+              stdoutController.enqueue(new TextEncoder().encode(`${'x'.repeat(prefixBytes)}${secret}`));
+              stdoutController.close();
+              resolveExit(0);
+            },
+          };
+        },
+      });
+    } finally {
+      if (previousTestKey === undefined) delete process.env.GOLDEN_TEST_API_KEY;
+      else process.env.GOLDEN_TEST_API_KEY = previousTestKey;
+    }
+
+    const stopped = await runtime.stop();
+    expect(stopped.stdout.slice(-32)).not.toContain(secret.slice(0, 4));
+    expect(stopped.stdout).not.toContain(secret);
+    expect(stopped.stdoutTruncated).toBe(true);
   });
 });
 
@@ -874,7 +1365,14 @@ describe('role-slice repeatability', () => {
       sid: 's-role-slice',
       runCli: async (options) => {
         message = options.prompt;
-        return { command: [], exitCode: 0, stdout: '', stderr: '', events: [] };
+        return {
+          callId: 'turn-role-fixture',
+          command: [],
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          events: [],
+        };
       },
     } as GoldenCaseContext, {} as GoldenCaseState);
 
@@ -1140,12 +1638,16 @@ describe('CLI argument parsing', () => {
     expect(parseRunnerArgs(['--case', 'smoke-tools-list'], {
       FORGEAX_SERVER_PORT: '28900',
     })).toMatchObject({ serverPort: 28900, mode: 'l4a' });
-    expect(parseRunnerArgs([
+    expect(() => parseRunnerArgs([
       '--case', 'smoke-tools-list',
       '--server-port', '29900',
       '--mode', 'l4b',
+    ], { FORGEAX_SERVER_PORT: '28900' })).toThrow('must request port 0');
+    expect(parseRunnerArgs([
+      '--case', 'role-slice',
+      '--mode', 'l4b',
     ], { FORGEAX_SERVER_PORT: '28900' })).toMatchObject({
-      serverPort: 29900,
+      serverPort: 0,
       mode: 'l4b',
     });
   });

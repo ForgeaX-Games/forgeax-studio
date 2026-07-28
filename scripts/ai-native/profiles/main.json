@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "profile_id": "main",
+  "status": "approved",
+  "description": "Approved default Forge agent profile: own trust, disconnected UI, and the L0-only standard plugin combination. Formal capture permits only the named supervisory extension-kind waiver.",
+  "agent": {
+    "id": "forge",
+    "expected_trust_tier": "own",
+    "expected_source": "forge",
+    "expected_host_tool_allow": [
+      "character:*",
+      "gen3d:*",
+      "team:*"
+    ],
+    "expected_host_tool_deny": []
+  },
+  "kernel": {
+    "provider_id": "forgeax-core"
+  },
+  "fixture": {
+    "game_slug": "ai-native-runtime-snapshot",
+    "session_alias": "runtime-snapshot-main-session",
+    "thread_id": "runtime-snapshot-main-thread",
+    "call_id": "runtime-snapshot-main-call",
+    "message": "Inspect the available product capabilities without executing a tool."
+  },
+  "ui_state": {
+    "lease": "absent",
+    "runtime_manifest": "absent"
+  },
+  "plugin_policy": {
+    "safe_boot": true,
+    "layers": [
+      "L0"
+    ]
+  },
+  "product_shell": {
+    "host_tools": "studioHostTools",
+    "system_prompt_composer": "GameSystemPromptComposer"
+  },
+  "formal_gate": {
+    "required_orchestrator_ancestor": "c6286cb910b0e9c524da24f9309d405ec614d6f4",
+    "waiver": {
+      "waived_blockers": [
+        "extension-kind-issues"
+      ],
+      "waived_instances": [
+        "asset2d:templates.list",
+        "asset2d:templates.get"
+      ],
+      "max_count": 2,
+      "reason": "The named third-party plugin exposes exactly two reviewed duplicate tool-id instances; any changed, additional, or excess instance fails closed, and all profile, pin, accounting, scan, and merge gates remain enforced.",
+      "issuer": "supervisory-lane",
+      "date": "2026-07-24"
+    }
+  },
+  "tool_accounting": {
+    "capture_frame": {
+      "explicit_out_of_scope_reason": "foundation-observation-outside-ui-control-effects"
+    },
+    "character_generate-portrait": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "character_generate-turnaround": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "character_get": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "character_list": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "character_rename": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "editor_gateway_eval": {
+      "explicit_out_of_scope_reason": "editor-subsystem-protocol-outside-main-studio-profile"
+    },
+    "gen3d_apply-motion": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_auto-rig": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_generate-meshy-text-mock": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_image-to-3d": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_list-assets": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_list-motions": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_pose-standardization": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_provider-status": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_refine-mesh": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_rename-asset": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_score-quality": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_text-to-3d": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "gen3d_views-to-3d": {
+      "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
+    },
+    "list_games": {
+      "explicit_out_of_scope_reason": "foundation-observation-outside-ui-control-effects"
+    },
+    "memory_search": {
+      "explicit_out_of_scope_reason": "orchestration-memory-foundation"
+    },
+    "query_world": {
+      "explicit_out_of_scope_reason": "foundation-observation-outside-ui-control-effects"
+    },
+    "remember": {
+      "explicit_out_of_scope_reason": "orchestration-memory-foundation"
+    },
+    "ui_act_app_set_mode": {
+      "mapped_effects": [
+        "app.set_mode"
+      ]
+    },
+    "ui_act_console_read": {
+      "mapped_effects": [
+        "console.read"
+      ]
+    },
+    "ui_act_game_create": {
+      "mapped_effects": [
+        "game.create"
+      ]
+    },
+    "ui_act_game_switch": {
+      "mapped_effects": [
+        "game.switch"
+      ]
+    },
+    "ui_act_role_create": {
+      "mapped_effects": [
+        "role.create"
+      ]
+    },
+    "ui_act_role_list": {
+      "mapped_effects": [
+        "role.list"
+      ]
+    },
+    "ui_act_role_open": {
+      "mapped_effects": [
+        "role.open"
+      ]
+    },
+    "ui_act_session_close": {
+      "mapped_effects": [
+        "session.close"
+      ]
+    },
+    "ui_act_session_create": {
+      "mapped_effects": [
+        "session.create"
+      ]
+    },
+    "ui_act_session_switch": {
+      "mapped_effects": [
+        "session.switch"
+      ]
+    },
+    "ui_act_trajectory_read": {
+      "mapped_effects": [
+        "trajectory.read"
+      ]
+    },
+    "ui_act_workbench_list_plugins": {
+      "mapped_effects": [
+        "workbench.list_plugins"
+      ]
+    },
+    "ui_act_workbench_open": {
+      "mapped_effects": [
+        "workbench.open"
+      ]
+    },
+    "ui_act_workbench_open_plugin": {
+      "mapped_effects": [
+        "workbench.open_plugin"
+      ]
+    },
+    "ui_invoke": {
+      "explicit_out_of_scope_reason": "ui-control-transport-foundation"
+    },
+    "ui_screenshot": {
+      "explicit_out_of_scope_reason": "ui-control-transport-foundation"
+    },
+    "ui_snapshot": {
+      "explicit_out_of_scope_reason": "ui-control-transport-foundation"
+    }
+  },
+  "approval_record": {
+    "approver": "supervisory-lane(orchestration)",
+    "date": "2026-07-24",
+    "profile_sha256": "10dbb7881ea9c32b21c87b4fc041db54af0f99a33e226fab86b0f21b44f1289c",
+    "channel": "orchestration session 2026-07-23",
+    "pending_user_ratification": true
+  }
+}

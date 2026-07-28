@@ -72,6 +72,11 @@
       "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
     },
     {
+      "old_control_id": "ctl_a9c2f28cc7e9b32cc47fde32",
+      "new_control_id": "ctl_290b1e3d0d0515e487b69ca3",
+      "reason": "v0.6.1 UploadPanel i18n structure migration: the confirm button still invokes doConfirm and preserves the same upload execute plus outcome/phase/plan effects"
+    },
+    {
       "old_control_id": "ctl_ac20cbcebe0ac047df5e6dc3",
       "new_control_id": "ctl_8b4f2956d37eed01d1707f7d",
       "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
@@ -100,6 +105,11 @@
       "old_control_id": "ctl_c9ea21dba25ef5f06c5bfcf5",
       "new_control_id": "ctl_dc35408f0b6d0b79df6141e7",
       "reason": "v0.3.0 palette evidence correction: identity now anchors the real registerAction source"
+    },
+    {
+      "old_control_id": "ctl_d5aab93c45bd5c183539d1bf",
+      "new_control_id": "ctl_b673a9f0967713d8de5a18f4",
+      "reason": "v0.6.1 UploadPanel i18n structure migration: the cancel button still invokes cancel and preserves the same phase/plan reset effects"
     },
     {
       "old_control_id": "ctl_d6cfb22d34d004a473e73ea4",

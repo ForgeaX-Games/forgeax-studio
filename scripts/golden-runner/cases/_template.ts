@@ -11,6 +11,7 @@ import type {
   FetchLike,
   StreamEvent,
 } from '../lib/sse.ts';
+import type { GoldenModelLockEvidence } from '../lib/l4b-evidence.ts';
 
 export type GoldenMode = 'l4a' | 'l4b';
 
@@ -38,6 +39,7 @@ export interface GoldenCliRunOptions {
 }
 
 export interface GoldenCliRunResult {
+  callId: string;
   command: string[];
   exitCode: number;
   stdout: string;
@@ -71,7 +73,13 @@ export interface GoldenCaseContext {
   /** Record a created session immediately so crash recovery can remove it. */
   recordSession(sid: string): Promise<void>;
 
-  /** L4b transport. Session/server/--json are runner-owned and cannot drift. */
+  /**
+   * Lock the case model after the product scaffold has created agent.json.
+   * The runner writes one string atomically and verifies it again after runCli.
+   */
+  lockAgentModel(agentId: string): Promise<GoldenModelLockEvidence>;
+
+  /** L4b transport. Session/server/--json and provider verification are runner-owned. */
   runCli(options: GoldenCliRunOptions): Promise<GoldenCliRunResult>;
 }
 

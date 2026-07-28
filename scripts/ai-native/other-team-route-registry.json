@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "registrations": [
+    {
+      "repo": "platform-io",
+      "owner": "ForgeaX-Games/forgeax-platform-io",
+      "verified_pin": "a939f6abe1b2e86bc8d3798c277c1ac1026381d9",
+      "mount_file": "packages/orchestrator/src/app.ts",
+      "mounts": [
+        {
+          "prefix": "/api/projects",
+          "factory": "createProjectsRouter",
+          "source": "packages/platform-io/src/api/projects.ts",
+          "routes": [
+            { "method": "GET", "path": "/", "introduced_in_anchor": false },
+            { "method": "POST", "path": "/", "introduced_in_anchor": false },
+            { "method": "POST", "path": "/open", "introduced_in_anchor": false },
+            { "method": "DELETE", "path": "/registered", "introduced_in_anchor": false },
+            {
+              "method": "DELETE",
+              "path": "/:id",
+              "introduced_in_anchor": false,
+              "effect_id": "platform_io.project.delete",
+              "registration_reason": "effect-host-migration"
+            }
+          ]
+        },
+        {
+          "prefix": "/api/game-host",
+          "factory": "createGameHostRouter",
+          "source": "packages/platform-io/src/api/game-host.ts",
+          "routes": [
+            { "method": "GET", "path": "/games/:slug/package", "introduced_in_anchor": true },
+            {
+              "method": "PUT",
+              "path": "/games/:slug/package",
+              "introduced_in_anchor": true,
+              "effect_id": "platform_io.game_host.package.write",
+              "registration_reason": "known-other-team-call"
+            },
+            {
+              "method": "POST",
+              "path": "/games/:slug/versions",
+              "introduced_in_anchor": true,
+              "effect_id": "platform_io.game_host.version.create",
+              "registration_reason": "known-other-team-call"
+            },
+            { "method": "GET", "path": "/games/:slug/versions/current", "introduced_in_anchor": true },
+            { "method": "GET", "path": "/games/:slug/versions", "introduced_in_anchor": true },
+            { "method": "GET", "path": "/games/:slug/versions/:tag/package", "introduced_in_anchor": true },
+            { "method": "GET", "path": "/games/:slug/components/*", "introduced_in_anchor": true }
+          ]
+        },
+        {
+          "prefix": "/api/files",
+          "factory": "createFilesRouter",
+          "source": "packages/platform-io/src/api/files.ts",
+          "routes": [
+            { "method": "GET", "path": "/", "introduced_in_anchor": false },
+            { "method": "POST", "path": "/", "introduced_in_anchor": false },
+            { "method": "POST", "path": "/upload", "introduced_in_anchor": false },
+            { "method": "GET", "path": "/raw", "introduced_in_anchor": false },
+            { "method": "GET", "path": "/tree", "introduced_in_anchor": false },
+            { "method": "DELETE", "path": "/", "introduced_in_anchor": false },
+            {
+              "method": "POST",
+              "path": "/rename",
+              "introduced_in_anchor": true,
+              "effect_id": "platform_io.file.rename",
+              "registration_reason": "known-other-team-call"
+            },
+            {
+              "method": "POST",
+              "path": "/reveal",
+              "introduced_in_anchor": true,
+              "effect_id": "platform_io.file.reveal",
+              "registration_reason": "known-other-team-call"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -9,6 +9,10 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { controlId, resolveAlias, validateAliasMap } from './control-id';
+import {
+  computeInventoryScannerConfigurationFingerprint,
+  RUNTIME_PIN_PATH,
+} from './runtime-artifact-integrity.ts';
 import type {
   AliasMap,
   ControlOwner,
@@ -21,11 +25,28 @@ import type {
   UiRepo,
 } from './types';
 
-export const SCANNER_VERSION = '0.5.0';
 export const DEFAULT_ROOT = resolve(import.meta.dir, '../..');
-const SCANNER_PREVIOUS_BASELINE_ID = 'b0-2026-07-17-0.4.0';
-const PINNED_PRODUCT_BASELINE_ID = 'b0-2026-07-17-0.1.0';
-const SCANNER_CHANGE_NOTE = 'Added a separately audited lowercase method family for exact property calls named on, once, or subscribe; callback literals/identifiers reuse the existing subscription effect propagation and unresolved-control manual pool, while infrastructure calls require signed call-scoped exclusions.';
+export const DEFAULT_SCANNER_CONFIG = 'scripts/ai-native/scanner-config.json';
+const SCANNER_CHANGE_NOTE = 'Declarative menu registrations are collected at their data SSOT; manual-pool identity excludes coordinates and prose; platform-io routes remain outside endpoint enumeration and enter only through a pin-bound ownership registry.';
+
+export interface ScannerLifecycleConfig {
+  series: string;
+  scannerVersion: string;
+  previousBaselineId: string | null;
+  currentBaselineId?: string;
+  currentBaselineDate?: string;
+  baselineNote?: string;
+  /** Repository-relative immutable pin JSON, or `live` for non-freezing development scans. */
+  productPinSource: string;
+}
+
+interface ScannerConfigFile {
+  series?: unknown;
+  baseline_id?: unknown;
+  scanner_version?: unknown;
+  previous_baseline_id?: unknown;
+  baseline_note?: unknown;
+}
 
 const NARROW_SUBSCRIPTION_METHODS = new Set(['on', 'once', 'subscribe']);
 
@@ -61,7 +82,7 @@ const RETAINED_METHOD_SUBSCRIPTION_REVIEWS: readonly RetainedMethodSubscriptionR
   },
   {
     file: 'packages/studio/src/panels/editorRenderers.tsx',
-    line: 200,
+    line: 206,
     receiver: 'panelBridge',
     method: 'on',
     topic: 'assetsChanged',
@@ -70,7 +91,7 @@ const RETAINED_METHOD_SUBSCRIPTION_REVIEWS: readonly RetainedMethodSubscriptionR
   },
   {
     file: 'packages/studio/src/panels/editorRenderers.tsx',
-    line: 234,
+    line: 240,
     receiver: 'panelBridge',
     method: 'on',
     topic: 'editorHealth',
@@ -79,7 +100,7 @@ const RETAINED_METHOD_SUBSCRIPTION_REVIEWS: readonly RetainedMethodSubscriptionR
   },
   {
     file: 'packages/studio/src/panels/editorRenderers.tsx',
-    line: 327,
+    line: 333,
     receiver: 'panelBridge',
     method: 'on',
     topic: 'editorHealth',
@@ -102,6 +123,7 @@ export const DEFAULT_UI_SCAN_ROOTS: readonly UiScanRoot[] = [
 const OTHER_TEAM_REPOS = [
   { repo: 'editor', owner: 'ForgeaX-Games/forgeax-editor' },
   { repo: 'marketplace', owner: 'ForgeaX-Games/forgeax-marketplace' },
+  { repo: 'platform-io', owner: 'ForgeaX-Games/forgeax-platform-io' },
   { repo: 'settings', owner: 'ForgeaX-Games/forgeax-settings' },
   { repo: 'workbench', owner: 'ForgeaX-Games/forgeax-workbench' },
   { repo: 'dashboard', owner: 'ForgeaX-Games/forgeax-dashboard' },
@@ -134,6 +156,7 @@ interface ParsedFile {
   // TypeScript SourceFile; kept as any so the root package needs no TS types.
   sf: any;
   locals: Map<string, any[]>;
+  symbolLocals: Map<string, any[]>;
   localStateSetters: Set<string>;
   constantDeclarations: Map<string, any>;
   imports: Map<string, { imported: string; source: string }>;
@@ -211,6 +234,39 @@ interface EndpointDef {
   file: string;
   line: number;
   factory: string | null;
+  effectId?: string;
+}
+
+interface OtherTeamRouteRegistry {
+  schema_version: 1;
+  registrations: Array<{
+    repo: string;
+    owner: string;
+    verified_pin: string;
+    mount_file: string;
+    mounts: Array<{
+      prefix: string;
+      factory: string;
+      source: string;
+      routes: Array<{
+        method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+        path: string;
+        introduced_in_anchor: boolean;
+        effect_id?: string;
+        registration_reason?: 'effect-host-migration' | 'known-other-team-call';
+      }>;
+    }>;
+  }>;
+}
+
+interface ManualPoolEffectPromotionRegistry {
+  schema_version: 1;
+  promotions: Array<{
+    effect_id: string;
+    disposition: 'tool' | 'read';
+    domain: string;
+    source_control_ids: string[];
+  }>;
 }
 
 interface HandlerAnalysis {
@@ -218,6 +274,88 @@ interface HandlerAnalysis {
   forwardedProps: Set<string>;
   owner: ControlOwner;
 }
+
+interface KnownCallEffect {
+  effectId: string;
+  owner?: ControlOwner;
+  binding:
+    | { kind: 'import'; sourceSuffix: string }
+    | { kind: 'store-selector'; hook: string; sourceSuffix: string }
+    | { kind: 'receiver-factory'; factory: string; sourceSuffix: string };
+}
+
+const MAX_HANDLER_CALL_DEPTH = 8;
+
+/**
+ * Imported clients and selected store callbacks hide their HTTP route behind a
+ * typed product seam. Keep this occurrence-level map small and source-reviewed:
+ * it complements endpoint discovery; it never adds the callee repository to an
+ * endpoint scanning root.
+ */
+const KNOWN_CALL_EFFECTS: Readonly<Record<string, KnownCallEffect>> = {
+  activateWorkspace: {
+    effectId: 'server.post_api_workspaces_activate',
+    binding: { kind: 'import', sourceSuffix: 'lib/workspace-activate' },
+  },
+  cleanPackage: {
+    effectId: 'server.post_api_workbench_package_clean',
+    binding: { kind: 'receiver-factory', factory: 'getWorkbenchClient', sourceSuffix: 'store' },
+  },
+  deleteGame: {
+    effectId: 'server.delete_api_workbench_games_slug',
+    binding: { kind: 'receiver-factory', factory: 'getWorkbenchClient', sourceSuffix: 'store' },
+  },
+  deletePackageHistory: {
+    effectId: 'server.delete_api_workbench_package_history_id',
+    binding: { kind: 'receiver-factory', factory: 'getWorkbenchClient', sourceSuffix: 'store' },
+  },
+  packageGame: {
+    effectId: 'server.post_api_workbench_games_slug_package',
+    binding: { kind: 'receiver-factory', factory: 'getWorkbenchClient', sourceSuffix: 'store' },
+  },
+  performOverwriteDirty: {
+    effectId: 'server.post_api_sessions_sid_rewind_overwrite_dirty',
+    binding: { kind: 'store-selector', hook: 'useChatStore', sourceSuffix: 'session-store' },
+  },
+  performRewind: {
+    effectId: 'server.post_api_sessions_sid_rewind',
+    binding: { kind: 'store-selector', hook: 'useChatStore', sourceSuffix: 'session-store' },
+  },
+  performRewindCancel: {
+    effectId: 'server.post_api_sessions_sid_rewind_cancel',
+    binding: { kind: 'store-selector', hook: 'useChatStore', sourceSuffix: 'session-store' },
+  },
+  performUndoOverwrite: {
+    effectId: 'server.post_api_sessions_sid_rewind_undo_overwrite',
+    binding: { kind: 'store-selector', hook: 'useChatStore', sourceSuffix: 'session-store' },
+  },
+  rewindPreview: {
+    effectId: 'server.post_api_sessions_sid_rewind_preview',
+    binding: { kind: 'import', sourceSuffix: 'lib/checkpoint-api' },
+  },
+  sendMessage: {
+    effectId: 'chat.post_message',
+    binding: { kind: 'store-selector', hook: 'useChatStore', sourceSuffix: 'session-store' },
+  },
+  setAgentModels: {
+    effectId: 'server.post_api_commands_name_execute',
+    binding: { kind: 'import', sourceSuffix: 'lib/model-config' },
+  },
+  setModelHidden: {
+    effectId: 'server.post_api_commands_name_execute',
+    binding: { kind: 'import', sourceSuffix: 'lib/model-config' },
+  },
+};
+
+function knownCallEffect(name: string): KnownCallEffect | undefined {
+  return Object.prototype.hasOwnProperty.call(KNOWN_CALL_EFFECTS, name)
+    ? KNOWN_CALL_EFFECTS[name]
+    : undefined;
+}
+
+// Historical v0.6.2 attribution anchor. The map is intentionally empty: the
+// former ProjectSwitcher.onDelete host is gone and no ghost binding remains.
+const COMPONENT_CALL_EFFECTS: Readonly<Record<string, KnownCallEffect>> = {};
 
 interface RawControl {
   repo: string;
@@ -239,6 +377,39 @@ interface RawControl {
   notes: string[];
   forwardedProps: Set<string>;
   effects: Map<string, string[]>;
+  manual?: {
+    kind: ManualPoolRow['kind'];
+    candidate: string;
+    reason: string;
+    details: Record<string, unknown>;
+  };
+}
+
+export interface DeclarativeMenuAuditRow {
+  file: string;
+  evidence_line: number;
+  menu: string;
+  item_id: string;
+  command_id: string | null;
+  disposition: 'control' | 'manual-command' | 'placeholder' | 'submenu-container';
+  effect_id: string | null;
+  control_id: string | null;
+}
+
+export interface OtherTeamRouteAuditRow {
+  repo: string;
+  owner: string;
+  verified_pin: string;
+  prefix: string;
+  factory: string;
+  source: string;
+  method: string;
+  path: string;
+  full_path: string;
+  source_line: number;
+  introduced_in_anchor: boolean;
+  effect_id: string | null;
+  registration_reason: 'effect-host-migration' | 'known-other-team-call' | null;
 }
 
 interface ProviderDiBranch {
@@ -292,6 +463,15 @@ export interface InventoryStats {
   narrowSubscriptionRetained: number;
   narrowSubscriptionExcluded: number;
   narrowSubscriptionExclusionRules: number;
+  declarativeMenuDefinitions: number;
+  declarativeMenuControls: number;
+  declarativeMenuPlaceholders: number;
+  declarativeMenuContainers: number;
+  declarativeMenuManualCommands: number;
+  declarativeMenuGroups: number;
+  registeredOtherTeamRoutes: number;
+  registeredOtherTeamIntroducedRoutes: number;
+  registeredOtherTeamEffects: number;
 }
 
 interface ConstantListenerAudit {
@@ -347,7 +527,15 @@ export interface InventoryResult {
   otherTeamSurface: OtherTeamSurfaceRow[];
   constantListeners: ConstantListenerAudit[];
   methodSubscriptionAudit: MethodSubscriptionAudit[];
-  negativeCandidates: Array<{ stratum: string; file: string }>;
+  negativeCandidates: NegativeCandidate[];
+  declarativeMenuAudit: DeclarativeMenuAuditRow[];
+  otherTeamRouteAudit: OtherTeamRouteAuditRow[];
+}
+
+export interface NegativeCandidate {
+  layer: 'tsx' | 'ts';
+  stratum: string;
+  file: string;
 }
 
 interface BaselineControlDiff {
@@ -365,6 +553,10 @@ export interface BuildOptions {
   root?: string;
   baselineDate?: string;
   uiRoots?: readonly UiScanRoot[];
+  scannerConfig?: ScannerLifecycleConfig;
+  scannerConfigPath?: string;
+  /** Audit-only path: trust the immutable pin file and execute no git process. */
+  noGit?: boolean;
 }
 
 function hash(value: string): string {
@@ -377,6 +569,58 @@ function slash(value: string): string {
 
 function sortRecord<T>(record: Record<string, T>): Record<string, T> {
   return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function requiredConfigString(value: unknown, field: string, pattern: RegExp): string {
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    throw new Error(`scanner config ${field} is invalid: ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
+export function loadScannerLifecycleConfig(
+  root: string = DEFAULT_ROOT,
+  configPath: string = DEFAULT_SCANNER_CONFIG,
+): ScannerLifecycleConfig {
+  const resolvedRoot = resolve(root);
+  const abs = resolve(resolvedRoot, configPath);
+  const rel = slash(relative(resolvedRoot, abs));
+  if (rel === '..' || rel.startsWith('../')) throw new Error(`scanner config escapes repository root: ${configPath}`);
+  const raw = JSON.parse(readFileSync(abs, 'utf8')) as ScannerConfigFile;
+  const unknownKeys = Object.keys(raw).filter((key) => ![
+    'series', 'baseline_id', 'scanner_version', 'previous_baseline_id', 'baseline_note',
+  ].includes(key));
+  if (unknownKeys.length > 0) {
+    throw new Error(`scanner config contains unknown keys: ${unknownKeys.join(', ')}`);
+  }
+  const previous = raw.previous_baseline_id;
+  if (previous !== null && (typeof previous !== 'string' || !/^b[0-9]+-\d{4}-\d{2}-\d{2}-[0-9A-Za-z.-]+$/.test(previous))) {
+    throw new Error(`scanner config previous_baseline_id is invalid: ${JSON.stringify(previous)}`);
+  }
+  const baselineNote = raw.baseline_note;
+  if (baselineNote !== undefined && (typeof baselineNote !== 'string' || !baselineNote.trim())) {
+    throw new Error(`scanner config baseline_note is invalid: ${JSON.stringify(baselineNote)}`);
+  }
+  const series = requiredConfigString(raw.series, 'series', /^b[1-9][0-9]*$/);
+  const scannerVersion = requiredConfigString(raw.scanner_version, 'scanner_version', /^\d+\.\d+\.\d+$/);
+  const currentBaselineId = requiredConfigString(
+    raw.baseline_id,
+    'baseline_id',
+    /^b[1-9][0-9]*-\d{4}-\d{2}-\d{2}-\d+\.\d+\.\d+$/,
+  );
+  const baselineMatch = /^(b[1-9][0-9]*)-(\d{4}-\d{2}-\d{2})-(\d+\.\d+\.\d+)$/.exec(currentBaselineId)!;
+  if (baselineMatch[1] !== series || baselineMatch[3] !== scannerVersion) {
+    throw new Error('scanner config baseline_id must agree with series and scanner_version');
+  }
+  return {
+    series,
+    scannerVersion,
+    previousBaselineId: previous as string | null,
+    currentBaselineId,
+    currentBaselineDate: baselineMatch[2],
+    ...(baselineNote === undefined ? {} : { baselineNote: baselineNote as string }),
+    productPinSource: RUNTIME_PIN_PATH,
+  };
 }
 
 function lineOf(sf: any, node: any): number {
@@ -433,7 +677,18 @@ function staticString(node: any, substitutions: Record<string, string> = {}): st
   return null;
 }
 
-type StaticValue = string | StaticValue[] | Record<string, StaticValue>;
+function structuralString(node: any): string | null {
+  const direct = staticString(node);
+  if (direct !== null) return direct;
+  const value = unwrap(node);
+  if (!value || !ts.isTemplateExpression(value)) return null;
+  let result = value.head.text;
+  for (const span of value.templateSpans) result += '${}' + span.literal.text;
+  return result;
+}
+
+interface StaticValueRecord { [key: string]: StaticValue }
+type StaticValue = string | StaticValue[] | StaticValueRecord;
 
 function importedSourceFile(
   files: Map<string, ParsedFile>,
@@ -635,6 +890,11 @@ function addLocal(locals: Map<string, any[]>, name: string, node: any): void {
   locals.set(name, list);
 }
 
+function bindingScope(node: any): any {
+  if (ts.isParameter(node) && node.parent?.body) return node.parent.body;
+  return lexicalContainer(node);
+}
+
 function lexicalContainer(node: any): any {
   let current = node.parent;
   while (current) {
@@ -659,6 +919,138 @@ function resolveLocal(parsed: ParsedFile, name: string, at: any): any | null {
     const bDistance = Math.abs(at.pos - b.pos);
     return aDistance - bDistance;
   })[0] ?? null;
+}
+
+function resolveSymbolLocal(parsed: ParsedFile, name: string, at: any): any | null {
+  const candidates = parsed.symbolLocals.get(name) ?? [];
+  const visible = candidates.filter((candidate) => {
+    const scope = bindingScope(candidate);
+    return scope.pos <= at.pos && at.end <= scope.end;
+  });
+  return [...visible].sort((a, b) => {
+    const aScope = bindingScope(a);
+    const bScope = bindingScope(b);
+    const width = (aScope.end - aScope.pos) - (bScope.end - bScope.pos);
+    if (width !== 0) return width;
+    return Math.abs(at.pos - a.pos) - Math.abs(at.pos - b.pos);
+  })[0] ?? null;
+}
+
+function sourceMatches(source: string, suffix: string): boolean {
+  return source === suffix || source.endsWith(`/${suffix}`);
+}
+
+function resolvedImport(
+  parsed: ParsedFile,
+  localName: string,
+  at: any,
+): { imported: string; source: string } | null {
+  if (resolveSymbolLocal(parsed, localName, at)) return null;
+  return parsed.imports.get(localName) ?? null;
+}
+
+function returnedExpression(fn: any): any | null {
+  const body = unwrap(fn.body);
+  if (!body) return null;
+  if (!ts.isBlock(body)) return body;
+  const returns = body.statements.filter((statement: any) => ts.isReturnStatement(statement) && statement.expression);
+  return returns.length === 1 ? unwrap(returns[0].expression) : null;
+}
+
+function storeSelectorProperty(parsed: ParsedFile, localName: string, at: any): string | null {
+  const declaration = resolveSymbolLocal(parsed, localName, at);
+  if (!declaration || !ts.isVariableDeclaration(declaration)) return null;
+  const initializer = unwrap(declaration.initializer);
+  if (!initializer || !ts.isCallExpression(initializer)) return null;
+  const hookExpression = unwrap(initializer.expression);
+  if (!ts.isIdentifier(hookExpression)) return null;
+  const selector = unwrap(initializer.arguments[0]);
+  if (!selector || (!ts.isArrowFunction(selector) && !ts.isFunctionExpression(selector))) return null;
+  const parameter = selector.parameters[0]?.name;
+  if (!parameter || !ts.isIdentifier(parameter)) return null;
+  const selected = returnedExpression(selector);
+  if (!selected || !ts.isPropertyAccessExpression(selected)) return null;
+  if (!ts.isIdentifier(unwrap(selected.expression)) || unwrap(selected.expression).text !== parameter.text) return null;
+  const known = knownCallEffect(selected.name.text);
+  if (!known || known.binding.kind !== 'store-selector') return null;
+  const hook = resolvedImport(parsed, hookExpression.text, initializer);
+  if (
+    !hook
+    || hook.imported !== known.binding.hook
+    || !sourceMatches(hook.source, known.binding.sourceSuffix)
+  ) return null;
+  return selected.name.text;
+}
+
+function knownCallForExpression(
+  expression: any,
+  parsed: ParsedFile,
+  _component: string,
+  at: any,
+): { name: string; known: KnownCallEffect } | null {
+  const expr = unwrap(expression);
+  if (ts.isIdentifier(expr)) {
+    const imported = resolvedImport(parsed, expr.text, at);
+    if (imported) {
+      const known = knownCallEffect(imported.imported);
+      if (
+        known?.binding.kind === 'import'
+        && sourceMatches(imported.source, known.binding.sourceSuffix)
+      ) return { name: imported.imported, known };
+    }
+
+    const selected = storeSelectorProperty(parsed, expr.text, at);
+    if (selected) return { name: selected, known: knownCallEffect(selected)! };
+    return null;
+  }
+
+  if (ts.isPropertyAccessExpression(expr)) {
+    const known = knownCallEffect(expr.name.text);
+    if (!known || known.binding.kind !== 'receiver-factory') return null;
+    const receiver = unwrap(expr.expression);
+    if (!receiver || !ts.isCallExpression(receiver)) return null;
+    const factoryExpression = unwrap(receiver.expression);
+    if (!ts.isIdentifier(factoryExpression)) return null;
+    const factory = resolvedImport(parsed, factoryExpression.text, receiver);
+    if (
+      !factory
+      || factory.imported !== known.binding.factory
+      || !sourceMatches(factory.source, known.binding.sourceSuffix)
+    ) return null;
+    return { name: expr.name.text, known };
+  }
+  return null;
+}
+
+function invokedParameterIndices(fn: any): number[] {
+  const parameters = fn.parameters.map((parameter: any) => (
+    ts.isIdentifier(parameter.name) ? parameter.name.text : null
+  ));
+  const invoked = new Set<number>();
+  visit(fn.body, (node) => {
+    if (!ts.isCallExpression(node)) return;
+    const expression = unwrap(node.expression);
+    if (!ts.isIdentifier(expression)) return;
+    const index = parameters.indexOf(expression.text);
+    if (index >= 0) invoked.add(index);
+  });
+  return [...invoked].sort((a, b) => a - b);
+}
+
+function isInsideDeferredNestedFunction(node: any, root: any): boolean {
+  let current = node.parent;
+  while (current && current !== root) {
+    if (
+      ts.isArrowFunction(current)
+      || ts.isFunctionExpression(current)
+      || ts.isFunctionDeclaration(current)
+    ) {
+      const parent = current.parent;
+      if (!(ts.isCallExpression(parent) && parent.arguments.includes(current))) return true;
+    }
+    current = current.parent;
+  }
+  return false;
 }
 
 function listSourceFiles(dir: string): string[] {
@@ -742,8 +1134,15 @@ function repoInfo(root: string, abs: string): { repo: string; repoRelative: stri
 
 function indexParsedFile(parsed: ParsedFile): void {
   visit(parsed.sf, (node) => {
-    if (ts.isFunctionDeclaration(node) && node.name) addLocal(parsed.locals, node.name.text, node);
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      addLocal(parsed.locals, node.name.text, node);
+      addLocal(parsed.symbolLocals, node.name.text, node);
+    }
+    if (ts.isParameter(node) && ts.isIdentifier(node.name)) {
+      addLocal(parsed.symbolLocals, node.name.text, node);
+    }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      addLocal(parsed.symbolLocals, node.name.text, node);
       const init = unwrap(node.initializer);
       if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) addLocal(parsed.locals, node.name.text, init);
       if (ts.isCallExpression(init) && ['useCallback', 'useMemo'].includes(nodeName(init.expression))) {
@@ -811,6 +1210,7 @@ function parseFile(
     text,
     sf,
     locals: new Map(),
+    symbolLocals: new Map(),
     localStateSetters: new Set(),
     constantDeclarations: new Map(),
     imports: new Map(),
@@ -1097,6 +1497,113 @@ function extractEndpoints(root: string): { endpoints: EndpointDef[]; manual: Man
   return { endpoints: [...byKey.values()], manual };
 }
 
+export function collectRegisteredOtherTeamRoutes(
+  root: string,
+  productCombo: Readonly<Record<string, string>>,
+): { endpoints: EndpointDef[]; audit: OtherTeamRouteAuditRow[] } {
+  const registryPath = join(root, 'scripts/ai-native/other-team-route-registry.json');
+  const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as OtherTeamRouteRegistry;
+  if (registry.schema_version !== 1 || !Array.isArray(registry.registrations)) {
+    throw new Error('invalid other-team route registry schema');
+  }
+  const endpoints: EndpointDef[] = [];
+  const audit: OtherTeamRouteAuditRow[] = [];
+  const effectIds = new Set<string>();
+  for (const registration of registry.registrations) {
+    if (!/^[0-9a-f]{40}$/.test(registration.verified_pin)) {
+      throw new Error(`invalid registered route pin for ${registration.repo}`);
+    }
+    const livePin = productCombo[registration.repo];
+    if (livePin !== registration.verified_pin) {
+      throw new Error(
+        `registered other-team route probe is stale for ${registration.repo}: `
+        + `verified ${registration.verified_pin}, current ${livePin ?? '<missing>'}; re-compare routes and record the new pin`,
+      );
+    }
+    const mountFile = parseFile(root, join(root, registration.mount_file));
+    for (const mount of registration.mounts) {
+      let mountMatches = 0;
+      visit(mountFile.sf, (node) => {
+        if (!ts.isCallExpression(node) || callLastName(node) !== 'route') return;
+        if (staticString(node.arguments[0]) !== mount.prefix) return;
+        const factoryCall = unwrap(node.arguments[1]);
+        if (factoryCall && ts.isCallExpression(factoryCall) && callLastName(factoryCall) === mount.factory) mountMatches += 1;
+      });
+      if (mountMatches !== 1) {
+        throw new Error(
+          `registered other-team mount ${mount.prefix} -> ${mount.factory} matched ${mountMatches} times in ${registration.mount_file}`,
+        );
+      }
+      const parsed = parseFile(root, join(root, mount.source));
+      const observed: Array<{ method: string; path: string; line: number }> = [];
+      visit(parsed.sf, (node) => {
+        if (!ts.isCallExpression(node)) return;
+        const method = callLastName(node).toUpperCase();
+        if (!['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) return;
+        if (receiverName(node) !== 'r') return;
+        const path = routeString(node.arguments[0]);
+        if (path === null) return;
+        observed.push({ method, path, line: lineOf(parsed.sf, node) });
+      });
+      const expectedKeys = mount.routes.map((route) => `${route.method} ${route.path}`).sort();
+      const observedKeys = observed.map((route) => `${route.method} ${route.path}`).sort();
+      if (JSON.stringify(expectedKeys) !== JSON.stringify(observedKeys)) {
+        throw new Error(
+          `registered other-team route comparison changed for ${mount.factory}: `
+          + `expected=${JSON.stringify(expectedKeys)} observed=${JSON.stringify(observedKeys)}`,
+        );
+      }
+      for (const route of mount.routes) {
+        if ((route.effect_id === undefined) !== (route.registration_reason === undefined)) {
+          throw new Error(`registered route ${mount.factory} ${route.method} ${route.path} must pair effect_id and registration_reason`);
+        }
+        const source = observed.find((candidate) => candidate.method === route.method && candidate.path === route.path)!;
+        const fullPath = joinRoute(mount.prefix, route.path);
+        if (route.effect_id !== undefined) {
+          if (effectIds.has(route.effect_id)) throw new Error(`duplicate registered other-team effect: ${route.effect_id}`);
+          effectIds.add(route.effect_id);
+          if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(route.method)) {
+            throw new Error(`registered other-team effect must be side-effecting: ${route.effect_id}`);
+          }
+          endpoints.push({
+            method: route.method as EndpointDef['method'],
+            path: fullPath,
+            repo: registration.repo,
+            file: mount.source,
+            line: source.line,
+            factory: mount.factory,
+            effectId: route.effect_id,
+          });
+        }
+        audit.push({
+          repo: registration.repo,
+          owner: registration.owner,
+          verified_pin: registration.verified_pin,
+          prefix: mount.prefix,
+          factory: mount.factory,
+          source: mount.source,
+          method: route.method,
+          path: route.path,
+          full_path: fullPath,
+          source_line: source.line,
+          introduced_in_anchor: route.introduced_in_anchor,
+          effect_id: route.effect_id ?? null,
+          registration_reason: route.registration_reason ?? null,
+        });
+      }
+    }
+  }
+  return {
+    endpoints: endpoints.sort((left, right) => (left.effectId ?? '').localeCompare(right.effectId ?? '')),
+    audit: audit.sort((left, right) => (
+      left.repo.localeCompare(right.repo)
+      || left.prefix.localeCompare(right.prefix)
+      || left.method.localeCompare(right.method)
+      || left.path.localeCompare(right.path)
+    )),
+  };
+}
+
 /** Audit/test view of the source-level Hono side-effect route table. */
 export function scanServerEndpoints(root: string = DEFAULT_ROOT): Array<{
   method: 'POST' | 'PUT' | 'DELETE';
@@ -1228,12 +1735,20 @@ function analyzeHandler(
       for (const via of vias) addEffect(effects, effect, prefix ? `${prefix}>${via}` : via);
     }
     for (const prop of other.forwardedProps) forwardedProps.add(prop);
-    if (other.owner === 'editor') owner = 'editor';
+    if (other.owner === 'other-team') owner = 'other-team';
+    else if (other.owner === 'editor' && owner === 'us') owner = 'editor';
+  };
+
+  const addKnown = (known: KnownCallEffect | undefined, via: string): void => {
+    if (!known) return;
+    addEffect(effects, known.effectId, via);
+    if (known.owner === 'other-team') owner = 'other-team';
+    else if (known.owner === 'editor' && owner === 'us') owner = 'editor';
   };
 
   if (ts.isIdentifier(root)) {
     const local = resolveLocal(parsed, root.text, root);
-    if (local && depth < 2) merge(analyzeHandler(local, parsed, component, setterMap, actionMap, commandMap, endpointMap, depth + 1, seen), `fn:${root.text}`);
+    if (local && depth < MAX_HANDLER_CALL_DEPTH) merge(analyzeHandler(local, parsed, component, setterMap, actionMap, commandMap, endpointMap, depth + 1, seen), `fn:${root.text}`);
     else if (/^on[A-Z]/.test(root.text)) forwardedProps.add(root.text);
     return { effects, forwardedProps, owner };
   }
@@ -1250,6 +1765,29 @@ function analyzeHandler(
     if (!ts.isCallExpression(node)) return;
     const name = callLastName(node);
     const receiver = receiverName(node);
+    const boundCall = isInsideDeferredNestedFunction(node, root)
+      ? null
+      : knownCallForExpression(node.expression, parsed, component, node);
+    if (boundCall) {
+      addKnown(
+        boundCall.known,
+        `product-call:${boundCall.name}`,
+      );
+    }
+    const localCallee = ts.isIdentifier(unwrap(node.expression))
+      ? resolveLocal(parsed, unwrap(node.expression).text, node)
+      : null;
+    for (const index of localCallee ? invokedParameterIndices(localCallee) : []) {
+      const callback = unwrap(node.arguments[index]);
+      if (!callback) continue;
+      const boundCallback = knownCallForExpression(callback, parsed, component, node);
+      if (boundCallback) {
+        addKnown(
+          boundCallback.known,
+          `callback:${name}>product-call:${boundCallback.name}`,
+        );
+      }
+    }
     if (name === 'dispatchAction') {
       const id = staticString(node.arguments[0]);
       if (id) addEffect(effects, actionMap.get(id) ?? id, `action:${id}`);
@@ -1334,7 +1872,7 @@ function analyzeHandler(
       return;
     }
     const local = resolveLocal(parsed, name, node);
-    if (local && depth < 2 && !seen.has(local)) {
+    if (local && depth < MAX_HANDLER_CALL_DEPTH && !seen.has(local)) {
       merge(analyzeHandler(local, parsed, component, setterMap, actionMap, commandMap, endpointMap, depth + 1, seen), `fn:${name}`);
     }
   });
@@ -1399,8 +1937,8 @@ function validateExclusions(exclusions: Exclusions): string[] {
     if (!rule.reason.trim()) issues.push(`${label} is missing reason`);
     if (!rule.verified_applicability?.trim()) issues.push(`${label} is missing verified_applicability`);
     if (rule.calls) {
-      if (rule.event !== 'message') issues.push(`${label} uses calls outside the message branch collector`);
       if (!rule.file) issues.push(`${label} uses calls without a file scope`);
+      if (!rule.event) issues.push(`${label} uses calls without an event scope`);
       if (rule.calls.length === 0) issues.push(`${label} has an empty calls list`);
       if (new Set(rule.calls).size !== rule.calls.length) issues.push(`${label} has duplicate calls`);
     }
@@ -1794,11 +2332,26 @@ function collectListenerControls(
           }
           continue;
         }
-        const exclusion = exclusions.listener_rules.find((rule) => ruleMatches(rule, parsed.rel, event, element));
+        const exclusion = exclusions.listener_rules.find((rule) => (
+          !rule.calls && ruleMatches(rule, parsed.rel, event, element)
+        ));
         if (exclusion) {
           excluded += 1;
           excludedEvents += 1;
           auditReasons.add(exclusion.reason);
+          continue;
+        }
+        const resolvedHandler = handler && ts.isIdentifier(handler)
+          ? resolveLocal(parsed, handler.text, handler) ?? handler
+          : handler;
+        const directCalls = messageEffectBranches(resolvedHandler);
+        const callExclusions = directCalls.map((branch) => exclusions.listener_rules.find((rule) => (
+          rule.calls && ruleMatches(rule, parsed.rel, event, element, branch.callName)
+        )));
+        if (directCalls.length > 0 && callExclusions.every(Boolean)) {
+          excluded += 1;
+          excludedEvents += 1;
+          for (const matched of callExclusions) auditReasons.add(matched!.reason);
           continue;
         }
         const analysis = analyzeHandler(handler, parsed, component, setterMap, actionMap, commandMap, endpointMap);
@@ -2410,6 +2963,102 @@ function collectMenuObjects(
   return controls;
 }
 
+function collectDeclarativeMenuControls(
+  files: ParsedFile[],
+  commandMap: Map<string, string>,
+): { controls: RawControl[]; audit: DeclarativeMenuAuditRow[] } {
+  const controls: RawControl[] = [];
+  const audit: DeclarativeMenuAuditRow[] = [];
+  const identities = new Set<string>();
+  for (const parsed of files) {
+    const importsRegistrar = [...parsed.imports.values()].some((binding) => (
+      binding.imported === 'registerMenuItem' && sourceMatches(binding.source, 'lib/menu-registry')
+    ));
+    if (!importsRegistrar) continue;
+    visit(parsed.sf, (node) => {
+      if (!ts.isObjectLiteralExpression(node)) return;
+      const idProp = propertyOf(node, 'id');
+      const menuProp = propertyOf(node, 'menu');
+      if (!idProp || !menuProp || !propertyOf(node, 'labelKey')) return;
+      const itemId = structuralString(propertyValue(idProp));
+      const menu = staticString(propertyValue(menuProp));
+      if (!itemId || !menu) return;
+      const identity = `${menu}\0${itemId}`;
+      if (identities.has(identity)) throw new Error(`duplicate declarative menu identity: ${menu}/${itemId}`);
+      identities.add(identity);
+      const commandProp = propertyOf(node, 'commandId');
+      const hasChildren = propertyOf(node, 'children') !== null || propertyOf(node, 'dynamicChildren') !== null;
+      const line = lineOf(parsed.sf, node);
+      if (!commandProp) {
+        audit.push({
+          file: parsed.rel,
+          evidence_line: line,
+          menu,
+          item_id: itemId,
+          command_id: null,
+          disposition: hasChildren ? 'submenu-container' : 'placeholder',
+          effect_id: null,
+          control_id: null,
+        });
+        return;
+      }
+      const commandNode = propertyValue(commandProp);
+      const commandId = staticString(commandNode);
+      const candidate = commandId ?? commandNode?.getText?.() ?? '<dynamic-command>';
+      const effectId = commandId === null ? undefined : commandMap.get(commandId);
+      const effects = new Map<string, string[]>();
+      if (effectId !== undefined) addEffect(effects, effectId, `menu-command:${commandId}`);
+      const disposition = effectId === undefined ? 'manual-command' : 'control';
+      controls.push(makeRawControl(parsed, {
+        surface: 'menu',
+        event: 'execute',
+        component: 'menu-registry',
+        line,
+        elementType: 'menu-registry-item',
+        stableAttributes: { menu, id: itemId, commandId: candidate },
+        staticText: '',
+        handler: null,
+        collector: 'declarative-menu-registry',
+        propagation: 'direct',
+        owner: 'us',
+        notes: [`registered menu item ${menu}/${itemId}`, `command:${candidate}`],
+        forwardedProps: new Set(),
+        effects,
+        ...(effectId === undefined
+          ? {
+              manual: {
+                kind: 'menu-command' as const,
+                candidate,
+                reason: commandId === null
+                  ? 'declarative menu command identifier is not statically resolvable'
+                  : 'declarative menu command identifier has no matching command registration',
+                details: { collector: 'declarative-menu-registry', menu, item_id: itemId },
+              },
+            }
+          : {}),
+      }));
+      audit.push({
+        file: parsed.rel,
+        evidence_line: line,
+        menu,
+        item_id: itemId,
+        command_id: commandId ?? candidate,
+        disposition,
+        effect_id: effectId ?? null,
+        control_id: null,
+      });
+    });
+  }
+  return {
+    controls,
+    audit: audit.sort((left, right) => (
+      left.menu.localeCompare(right.menu)
+      || left.item_id.localeCompare(right.item_id)
+      || left.file.localeCompare(right.file)
+    )),
+  };
+}
+
 function collectUseSurfaceControls(
   files: ParsedFile[],
   setterMap: Map<string, string>,
@@ -2573,7 +3222,10 @@ function manualRow(
   reason: string,
   details: Record<string, unknown>,
 ): ManualPoolRow {
-  const stable = JSON.stringify({ kind, file, evidenceLine, component, event, controlIdValue, candidate, reason });
+  // Cross-baseline identity deliberately excludes audit coordinates and prose.
+  // The control fingerprint is the carry-forward bridge for control rows; the
+  // remaining structural fields cover non-control pool kinds.
+  const stable = JSON.stringify({ kind, file, component, event, controlIdValue, candidate });
   return {
     manual_id: `manual_${hash(stable).slice(0, 20)}`,
     kind,
@@ -2656,13 +3308,14 @@ function controlsToRows(controls: RawControl[]): { rows: ControlRow[]; edges: Ed
       notes: notes.join('; '),
     });
     if (unresolved) {
+      const manualSpec = control.manual;
       manual.push(manualRow(
-        'control', control.file, control.line, control.component, control.event, id,
-        control.elementType,
-        control.forwardedProps.size > 0
+        manualSpec?.kind ?? 'control', control.file, control.line, control.component, control.event, id,
+        manualSpec?.candidate ?? control.elementType,
+        manualSpec?.reason ?? (control.forwardedProps.size > 0
           ? 'custom callback forwarding target has no statically resolvable parent business handler'
-          : 'handler has no recognized store/action/command/navigation/server/local-state effect within two call layers',
-        { forwardedProps: [...control.forwardedProps].sort(), collector: control.collector },
+          : 'handler has no recognized store/action/command/navigation/server/local-state effect within two call layers'),
+        manualSpec?.details ?? { forwardedProps: [...control.forwardedProps].sort(), collector: control.collector },
       ));
     } else {
       for (const effectId of effectIds) {
@@ -2675,6 +3328,10 @@ function controlsToRows(controls: RawControl[]): { rows: ControlRow[]; edges: Ed
         });
       }
     }
+  }
+  const edgeKeys = edges.map((edge) => `${edge.control_id}|${edge.effect_id}`);
+  if (new Set(edgeKeys).size !== edgeKeys.length) {
+    throw new Error('duplicate control/effect edge after collector composition');
   }
   return {
     rows: rows.sort((a, b) => a.control_id.localeCompare(b.control_id)),
@@ -2721,7 +3378,7 @@ function buildEffects(
   }
   for (const endpoint of endpoints) {
     const wire = `${endpoint.method} ${endpoint.path}`;
-    const effect = endpointMap.get(normalizeEndpointKey(wire)) ?? endpointEffectId(wire);
+    const effect = endpoint.effectId ?? endpointMap.get(normalizeEndpointKey(wire)) ?? endpointEffectId(wire);
     const acc = effectAccumulator(map, effect);
     acc.endpoints.add(wire);
     acc.repos.add(endpoint.repo);
@@ -2776,6 +3433,67 @@ function buildEffects(
   return rows;
 }
 
+function promoteManualPoolEffects(
+  root: string,
+  scannedEffects: EffectRow[],
+  controls: ControlRow[],
+  manualRows: ManualPoolRow[],
+): EffectRow[] {
+  const path = join(root, 'scripts/ai-native/manual-pool-effect-promotions.json');
+  const registry = JSON.parse(readFileSync(path, 'utf8')) as ManualPoolEffectPromotionRegistry;
+  if (registry.schema_version !== 1 || !Array.isArray(registry.promotions)) {
+    throw new Error('invalid manual-pool effect promotion registry schema');
+  }
+  const existing = new Set(scannedEffects.map((effect) => effect.effect_id));
+  const controlById = new Map(controls.map((control) => [control.control_id, control]));
+  const manualControlIds = new Set(
+    manualRows.map((row) => row.control_id).filter((id): id is string => id !== null),
+  );
+  const promotedIds = new Set<string>();
+  const promotions = registry.promotions.map((promotion): EffectRow => {
+    if (!/^[a-z0-9_]+(?:\.[a-z0-9_]+)+$/.test(promotion.effect_id)) {
+      throw new Error(`invalid promoted manual-pool effect id: ${promotion.effect_id}`);
+    }
+    if (promotion.domain !== promotion.effect_id.split('.')[0]) {
+      throw new Error(`promoted manual-pool effect domain mismatch: ${promotion.effect_id}`);
+    }
+    if (existing.has(promotion.effect_id) || promotedIds.has(promotion.effect_id)) {
+      throw new Error(`duplicate promoted manual-pool effect: ${promotion.effect_id}`);
+    }
+    if (
+      promotion.source_control_ids.length === 0
+      || new Set(promotion.source_control_ids).size !== promotion.source_control_ids.length
+      || JSON.stringify([...promotion.source_control_ids].sort()) !== JSON.stringify(promotion.source_control_ids)
+    ) {
+      throw new Error(`promoted manual-pool effect source controls must be non-empty, unique, and sorted: ${promotion.effect_id}`);
+    }
+    const sourceControls = promotion.source_control_ids.map((controlId) => {
+      const control = controlById.get(controlId);
+      if (!control || !manualControlIds.has(controlId) || control.propagation !== 'manual-pool' || control.effect_id !== null) {
+        throw new Error(`promoted effect source is not a current manual-pool control: ${promotion.effect_id}/${controlId}`);
+      }
+      return control;
+    });
+    promotedIds.add(promotion.effect_id);
+    return {
+      effect_id: promotion.effect_id,
+      repo: [...new Set(sourceControls.map((control) => control.repo))].sort(),
+      vocab: { setters: [], commands: [], actions: [] },
+      agent_equiv: {
+        tool: {
+          ids: [],
+          runtime_fill: true,
+          source: 'GET /api/tools (marketplace manifests intentionally excluded; no team manifest lives under packages/orchestrator)',
+        },
+        headless: 'n-a',
+      },
+      server_endpoints: [],
+      domain: promotion.domain,
+    };
+  });
+  return [...scannedEffects, ...promotions].sort((left, right) => left.effect_id.localeCompare(right.effect_id));
+}
+
 function git(root: string, args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }
@@ -2794,15 +3512,31 @@ function liveCombo(root: string): Record<string, string> {
   return sortRecord(out);
 }
 
-function scannedProductCombo(root: string): Record<string, string> {
-  const pinnedMetaPath = join(root, 'docs/ai-native/baseline', PINNED_PRODUCT_BASELINE_ID, 'meta.json');
-  if (!existsSync(pinnedMetaPath)) throw new Error(`pinned product combo source missing: ${pinnedMetaPath}`);
-  const pinnedMeta = JSON.parse(readFileSync(pinnedMetaPath, 'utf8')) as {
+function pinnedProductCombo(root: string, pinSource: string): Record<string, string> {
+  if (pinSource === 'live') return liveCombo(root);
+  const pinPath = resolve(root, pinSource);
+  const pinRel = slash(relative(root, pinPath));
+  if (pinRel === '..' || pinRel.startsWith('../')) throw new Error(`product pin source escapes repository root: ${pinSource}`);
+  if (!existsSync(pinPath)) throw new Error(`pinned product combo source missing: ${pinPath}`);
+  const pinnedMeta = JSON.parse(readFileSync(pinPath, 'utf8')) as {
     combo?: Record<string, string>;
     scanned_product_combo?: Record<string, string>;
   };
   const pinned = pinnedMeta.scanned_product_combo ?? pinnedMeta.combo;
-  if (!pinned?.studio) throw new Error(`pinned product combo is malformed: ${pinnedMetaPath}`);
+  if (!pinned?.studio) throw new Error(`pinned product combo is malformed: ${pinPath}`);
+  for (const [name, sha] of Object.entries(pinned)) {
+    if (!name || !/^[0-9a-f]{40}$/.test(sha)) throw new Error(`pinned product combo has invalid entry ${name}: ${sha}`);
+  }
+  return sortRecord(pinned);
+}
+
+function scannedProductCombo(root: string, pinSource: string, noGit: boolean = false): Record<string, string> {
+  if (noGit && pinSource === 'live') {
+    throw new Error('noGit inventory requires an immutable product pin source');
+  }
+  const pinned = pinnedProductCombo(root, pinSource);
+  if (pinSource === 'live') return pinned;
+  if (noGit) return pinned;
 
   // Root HEAD may advance for docs/scanner/gate work. Prove that no product
   // path changed before retaining the original product SHA in the combo.
@@ -2821,6 +3555,10 @@ function scannedProductCombo(root: string): Record<string, string> {
     .map(([repo, sha]) => `${repo}: expected ${sha}, found ${live[repo] ?? '<missing>'}`);
   if (mismatches.length > 0) throw new Error(`scanned submodule combo differs from the product pin:\n${mismatches.join('\n')}`);
   return sortRecord(pinned);
+}
+
+function comboSha(combo: Record<string, string>): string {
+  return hash(JSON.stringify(sortRecord(combo)));
 }
 
 function artifactCommit(root: string): string {
@@ -2917,15 +3655,25 @@ function manualSourceCounts(rows: ManualPoolRow[]): Record<string, number> {
   return sortRecord(counts);
 }
 
-function negativeCandidates(files: ParsedFile[], hitFiles: Set<string>): Array<{ stratum: string; file: string }> {
-  const out: Array<{ stratum: string; file: string }> = [];
+function negativeCandidates(files: ParsedFile[], hitFiles: Set<string>): NegativeCandidate[] {
+  const out: NegativeCandidate[] = [];
   for (const parsed of files) {
-    if (!parsed.abs.endsWith('.tsx') || hitFiles.has(parsed.rel)) continue;
-    let hasJsx = false;
-    visit(parsed.sf, (node) => {
-      if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) hasJsx = true;
-    });
-    if (!hasJsx) continue;
+    if (hitFiles.has(parsed.rel)) continue;
+    let layer: NegativeCandidate['layer'] | null = null;
+    if (parsed.abs.endsWith('.tsx')) {
+      let hasJsx = false;
+      visit(parsed.sf, (node) => {
+        if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) hasJsx = true;
+      });
+      if (hasJsx) layer = 'tsx';
+    } else if (
+      parsed.abs.endsWith('.ts')
+      && !parsed.abs.endsWith('.d.ts')
+      && /(?:\b(?:addEventListener|removeEventListener|subscribe[A-Z]\w*|on[A-Z]\w*)\s*\(|\.\s*(?:on|once|subscribe)\s*\(|\bcreateElement\s*\()/.test(parsed.text)
+    ) {
+      layer = 'ts';
+    }
+    if (layer === null) continue;
     const within = parsed.repoRelative.replace(/^src\/?/, '');
     const seg = within.split('/');
     const localStratum = seg.length === 1
@@ -2933,38 +3681,65 @@ function negativeCandidates(files: ParsedFile[], hitFiles: Set<string>): Array<{
       : seg[0] === 'components' && seg.length >= 3
         ? `components/${seg[1]}`
         : seg[0] || 'src';
-    out.push({ stratum: `${parsed.repo}:${localStratum}`, file: parsed.rel });
+    out.push({ layer, stratum: `${parsed.repo}:${layer}:${localStratum}`, file: parsed.rel });
   }
-  return out.sort((a, b) => a.stratum.localeCompare(b.stratum) || a.file.localeCompare(b.file));
+  return out.sort((a, b) => a.layer.localeCompare(b.layer) || a.stratum.localeCompare(b.stratum) || a.file.localeCompare(b.file));
+}
+
+export function negativeSampleSeed(baselineId: string, layer: 'tsx' | 'ts'): string {
+  return hash(`${baselineId}-neg${layer}`);
 }
 
 export function stratifiedNegativeSample(
-  candidates: Array<{ stratum: string; file: string }>,
+  candidates: Array<{ layer?: 'tsx' | 'ts'; stratum: string; file: string }>,
   n: number,
   seed: string,
-): Array<{ stratum: string; file: string }> {
+): NegativeCandidate[] {
   if (!Number.isInteger(n) || n < 0) throw new Error('--sample-negatives must be a non-negative integer');
-  const buckets = new Map<string, Array<{ stratum: string; file: string }>>();
-  for (const row of candidates) {
-    const list = buckets.get(row.stratum) ?? [];
-    list.push(row);
-    buckets.set(row.stratum, list);
+  const normalized: NegativeCandidate[] = candidates.map((row) => ({
+    layer: row.layer ?? (row.file.endsWith('.tsx') ? 'tsx' : 'ts'),
+    stratum: row.stratum,
+    file: row.file,
+  }));
+  const layerQueues = new Map<'tsx' | 'ts', NegativeCandidate[]>();
+  for (const layer of ['tsx', 'ts'] as const) {
+    const layerSeed = negativeSampleSeed(seed, layer);
+    const buckets = new Map<string, NegativeCandidate[]>();
+    for (const row of normalized.filter((candidate) => candidate.layer === layer)) {
+      const list = buckets.get(row.stratum) ?? [];
+      list.push(row);
+      buckets.set(row.stratum, list);
+    }
+    for (const list of buckets.values()) {
+      list.sort((a, b) => hash(`${layerSeed}|${a.file}`).localeCompare(hash(`${layerSeed}|${b.file}`)));
+    }
+    const strata = [...buckets.keys()].sort((a, b) => hash(`${layerSeed}|${a}`).localeCompare(hash(`${layerSeed}|${b}`)));
+    const queue: NegativeCandidate[] = [];
+    let round = 0;
+    while (true) {
+      let added = false;
+      for (const stratum of strata) {
+        const row = buckets.get(stratum)?.[round];
+        if (!row) continue;
+        queue.push(row);
+        added = true;
+      }
+      if (!added) break;
+      round += 1;
+    }
+    layerQueues.set(layer, queue);
   }
-  for (const list of buckets.values()) list.sort((a, b) => hash(`${seed}|${a.file}`).localeCompare(hash(`${seed}|${b.file}`)));
-  const strata = [...buckets.keys()].sort((a, b) => hash(`${seed}|${a}`).localeCompare(hash(`${seed}|${b}`)));
-  const out: Array<{ stratum: string; file: string }> = [];
-  let round = 0;
+  const out: NegativeCandidate[] = [];
   while (out.length < n) {
     let added = false;
-    for (const stratum of strata) {
-      const row = buckets.get(stratum)?.[round];
+    for (const layer of ['tsx', 'ts'] as const) {
+      const row = layerQueues.get(layer)?.shift();
       if (!row) continue;
       out.push(row);
       added = true;
       if (out.length === n) break;
     }
     if (!added) break;
-    round += 1;
   }
   return out;
 }
@@ -2974,10 +3749,10 @@ function previousBaselineControlDiff(
   baselineId: string,
   controls: ControlRow[],
   aliasMap: AliasMap,
+  previousBaselineId: string | null,
 ): BaselineControlDiff | null {
   const parent = join(root, 'docs/ai-native/baseline');
-  if (!existsSync(parent)) return null;
-  const previousBaselineId = SCANNER_PREVIOUS_BASELINE_ID;
+  if (!existsSync(parent) || previousBaselineId === null) return null;
   if (previousBaselineId === baselineId || !existsSync(join(parent, previousBaselineId, 'controls.jsonl'))) return null;
   const previous = readFileSync(join(parent, previousBaselineId, 'controls.jsonl'), 'utf8')
     .split('\n')
@@ -3087,11 +3862,14 @@ function controlDiffMarkdown(
 
 function summaryMarkdown(
   baselineId: string,
+  scannerVersion: string,
   stats: InventoryStats,
   diff: BaselineControlDiff | null,
   constantListeners: ConstantListenerAudit[],
   otherTeamSurface: OtherTeamSurfaceRow[],
   methodSubscriptionAudit: MethodSubscriptionAudit[],
+  declarativeMenuAudit: DeclarativeMenuAuditRow[],
+  otherTeamRouteAudit: OtherTeamRouteAuditRow[],
 ): string {
   const sourceRows = Object.entries(stats.sourceCounts).map(([source, count]) => `| ${source} | ${count} |`).join('\n');
   const manualRows = Object.entries(stats.manualSourceCounts).map(([source, count]) => `| ${source} | ${count} |`).join('\n');
@@ -3105,6 +3883,12 @@ function summaryMarkdown(
       `| \`${row.file}:${row.line}\` | \`${row.expression}\` | ${row.events.length}: ${row.events.map((event) => `\`${event}\``).join(', ')} | ${row.disposition} | ${row.reasons.join('; ') || '—'} |`
     )).join('\n')
     : '| — | — | 0 | — | No statically resolved constant-form listeners. |';
+  const menuRows = declarativeMenuAudit.map((row) => (
+    `| \`${row.menu}\` | \`${row.item_id}\` | ${row.command_id ? `\`${row.command_id}\`` : '—'} | ${row.disposition} | ${row.effect_id ? `\`${row.effect_id}\`` : '—'} |`
+  )).join('\n');
+  const otherTeamRouteRows = otherTeamRouteAudit.map((row) => (
+    `| \`${row.method} ${row.full_path}\` | \`${row.factory}\` | ${row.introduced_in_anchor ? 'yes' : 'no'} | ${row.effect_id ? `\`${row.effect_id}\`` : '—'} | ${row.registration_reason ?? 'audit-only'} |`
+  )).join('\n');
   const clickDelta = stats.rawOnClick - 195;
   const fileDelta = stats.rawOnClickFiles - 40;
   const sign = (n: number) => (n >= 0 ? `+${n}` : String(n));
@@ -3120,6 +3904,8 @@ function summaryMarkdown(
     `- Effects with an existing agent equivalent: **${stats.agentEquivalentEffects}**\n` +
     `- Manual-classification pool: **${stats.manualPool}** (${stats.manualControls} controls, ${(stats.manualControlRatio * 100).toFixed(1)}% of controls)\n` +
     `- Side-effect server endpoints (POST/PUT/DELETE): **${stats.endpoints}**\n` +
+    `- Declarative menu definitions: **${stats.declarativeMenuDefinitions}** across **${stats.declarativeMenuGroups}** menus; **${stats.declarativeMenuControls}** controls, **${stats.declarativeMenuManualCommands}** unresolved commands, **${stats.declarativeMenuPlaceholders}** disabled placeholders, **${stats.declarativeMenuContainers}** submenu containers\n` +
+    `- Registered other-team route audit: **${stats.registeredOtherTeamRoutes}** routes; **${stats.registeredOtherTeamIntroducedRoutes}** introduced in this product anchor; **${stats.registeredOtherTeamEffects}** registered side effects\n` +
     `- Real \`useSurface(\` call sites (definition/comments excluded): **${stats.actualUseSurfaceCalls}** (${stats.sourceCounts['use-surface'] ?? 0} declared action controls)\n` +
     `- Provider-DI callback branches: **${stats.diProviderBranches}** detected; **${stats.diProviderAnnotations}** uniquely annotated; **${stats.diProviderManual}** manual\n` +
     `- Narrow lowercase subscription family: **${stats.narrowSubscriptionCandidates}** candidates; **${stats.narrowSubscriptionRetained}** retained; **${stats.narrowSubscriptionExcluded}** excluded by **${stats.narrowSubscriptionExclusionRules}** new rules\n` +
@@ -3133,13 +3919,19 @@ function summaryMarkdown(
     `## onClick reference anchor\n\n` +
     `The AST found **${stats.rawOnClick}** \`onClick\` JSX attributes in **${stats.rawOnClickFiles}** source files before exclusions. ` +
     `Against the planning anchor (~195 occurrences / ~40 files), the deltas are **${sign(clickDelta)} occurrences** and **${sign(fileDelta)} files**. ` +
-    `The delta is expected because the anchor covered interface only, while v${SCANNER_VERSION} includes chat and studio. This is an observation, not a pass/fail gate: the scanner collects every \`on[A-Z]\\w*\` prop.\n\n` +
+    `The delta is expected because the anchor covered interface only, while v${scannerVersion} includes chat and studio. This is an observation, not a pass/fail gate: the scanner collects every \`on[A-Z]\\w*\` prop.\n\n` +
     `## Constant-form listener audit\n\n` +
     `Resolved **${stats.constantListenerCallSites}** non-literal call sites into **${stats.constantListenerEvents}** event registrations; **${stats.unresolvedListenerExpressions}** non-literal expressions remained non-static. Internal synchronization/telemetry/transport registrations were excluded by audited rules rather than promoted into controls.\n\n` +
     `| Source | Expression | Resolved events | Disposition | Audit reason |\n|---|---|---|---|---|\n${constantRows}\n\n` +
     `## Other-team scale disclosure (excluded from denominator)\n\n` +
     `These are JSX event-prop counts only, not per-control inventories. Full top-file evidence is frozen in \`other-team-surface.md\`.\n\n` +
     `| Repo | JSX controls | Interactive files | Owner |\n|---|---:|---:|---|\n${otherTeamRows}\n\n` +
+    `## Declarative menu registry audit\n\n` +
+    `Menu identities use menu + item id + command id; translated labels and evidence lines are excluded from identity. Leaf entries without a command are disclosed but do not become controls. Submenu containers are disclosed separately from disabled placeholders.\n\n` +
+    `| Menu | Item id | Command id | Disposition | Effect |\n|---|---|---|---|---|\n${menuRows}\n\n` +
+    `## Registered other-team route audit\n\n` +
+    `These routes are explicit ownership registrations, not an expansion of endpoint enumeration roots. Effects with \`registration_reason=known-other-team-call\` remain outside the migration denominator; \`effect-host-migration\` preserves an existing canonical effect whose former owned UI host disappeared.\n\n` +
+    `| Route | Factory | Introduced in anchor | Effect | Registration |\n|---|---|---:|---|---|\n${otherTeamRouteRows}\n\n` +
     `## Scope notes\n\n` +
     `- Owned UI scan roots: \`packages/interface/src\`, \`packages/chat/src\`, and \`packages/studio/src\`. Tests, \`__tests__\`, build output, dependencies, nested git repositories, and the editor's vendored interface copy are excluded.\n` +
     `- Command-palette rows derive from all ${stats.sourceCounts['action-palette'] ?? 0} statically declared ActionRegistry entries; each row's file/line is its real \`registerAction\` call.\n` +
@@ -3154,17 +3946,24 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
   const root = resolve(options.root ?? DEFAULT_ROOT);
   const uiRoots = options.uiRoots ?? DEFAULT_UI_SCAN_ROOTS;
   const date = options.baselineDate ?? new Date().toISOString().slice(0, 10);
-  const baselineId = `b0-${date}-${SCANNER_VERSION}`;
+  const scannerConfig = options.scannerConfig
+    ?? loadScannerLifecycleConfig(root, options.scannerConfigPath ?? DEFAULT_SCANNER_CONFIG);
+  const baselineId = `${scannerConfig.series}-${date}-${scannerConfig.scannerVersion}`;
+  if (scannerConfig.currentBaselineId !== undefined && baselineId !== scannerConfig.currentBaselineId) {
+    throw new Error(`scanner baseline coordinates differ from the single source: expected ${scannerConfig.currentBaselineId}, got ${baselineId}`);
+  }
   const configDir = join(root, 'scripts/ai-native');
   const exclusions = JSON.parse(readFileSync(join(configDir, 'exclusions.json'), 'utf8')) as Exclusions;
   const exclusionIssues = validateExclusions(exclusions);
   if (exclusionIssues.length) throw new Error(`invalid exclusions.json:\n${exclusionIssues.join('\n')}`);
-  const vocabConfig = JSON.parse(readFileSync(join(configDir, 'vocab-map.json'), 'utf8')) as VocabConfig;
+  const vocabConfig = JSON.parse(readFileSync(join(configDir, 'vocab-config.json'), 'utf8')) as VocabConfig;
   const aliasMap = JSON.parse(readFileSync(join(configDir, 'alias-map.json'), 'utf8')) as AliasMap;
   const aliasIssues = validateAliasMap(aliasMap);
   if (aliasIssues.length) throw new Error(`invalid alias-map.json:\n${aliasIssues.join('\n')}`);
+  const productCombo = scannedProductCombo(root, scannerConfig.productPinSource, options.noGit);
+  const registeredOtherTeam = collectRegisteredOtherTeamRoutes(root, productCombo);
 
-  assertOwnedUiSourcesClean(root, uiRoots);
+  if (!options.noGit) assertOwnedUiSourcesClean(root, uiRoots);
   const uiFiles = configuredUiFiles(root, uiRoots);
   const extraFiles = [
     join(root, 'packages/orchestrator/src/kernel/ui-headless-actions.ts'),
@@ -3210,6 +4009,10 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     const normalized = normalizeEndpointKey(wire);
     endpointMap.set(normalized, endpointEffectId(wire));
   }
+  for (const endpoint of registeredOtherTeam.endpoints) {
+    const wire = `${endpoint.method} ${endpoint.path}`;
+    endpointMap.set(normalizeEndpointKey(wire), endpoint.effectId!);
+  }
   // Only a one-to-one action↔endpoint relationship is safe to collapse. A
   // dispatcher such as POST /api/tools/call serves many semantic actions; a
   // generic RPC call to it must remain tool.invoke/server.*, never inherit the
@@ -3222,6 +4025,7 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
   const listeners = collectListenerControls(uiFiles, allParsed, exclusions, vocab.setterMap, vocab.actionMap, vocab.commandMap, endpointMap);
   const subscriptions = collectSubscriptionControls(uiFiles, exclusions, vocab.setterMap, vocab.actionMap, vocab.commandMap, endpointMap);
   const surfaceControls = collectUseSurfaceControls(uiFiles, vocab.setterMap, vocab.actionMap, vocab.commandMap, endpointMap);
+  const declarativeMenus = collectDeclarativeMenuControls(uiFiles, vocab.commandMap);
   const rawControls = [
     ...jsx.controls,
     ...listeners.controls,
@@ -3229,12 +4033,23 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     ...collectShortcutControls(uiFiles, vocab.setterMap, vocab.actionMap, vocab.commandMap, endpointMap),
     ...collectLinks(uiFiles),
     ...collectMenuObjects(uiFiles, vocab.setterMap, vocab.actionMap, vocab.commandMap, endpointMap),
+    ...declarativeMenus.controls,
     ...surfaceControls.controls,
     ...collectRpcControls(uiFiles, vocab.setterMap, vocab.actionMap, vocab.commandMap, endpointMap),
     ...collectCommandControls(allParsed, commands, vocab.commandMap),
     ...collectPaletteControls(allParsed, actions, vocab.actionMap),
   ];
   const rows = controlsToRows(rawControls);
+  const declarativeMenuAudit = declarativeMenus.audit.map((audit) => {
+    if (audit.disposition === 'placeholder' || audit.disposition === 'submenu-container') return audit;
+    const control = rows.rows.find((row) => (
+      row.file === audit.file
+      && row.evidence_line === audit.evidence_line
+      && row.notes.includes('source=declarative-menu-registry')
+    ));
+    if (!control) throw new Error(`declarative menu audit has no control: ${audit.menu}/${audit.item_id}`);
+    return { ...audit, control_id: control.control_id, effect_id: control.effect_id };
+  });
   const methodSubscriptionAudit = reviewMethodSubscriptionCandidates(
     subscriptions.audits,
     rows.rows,
@@ -3250,11 +4065,11 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     }
   }
   const headless = extractHeadless(allParsed);
-  const effects = buildEffects(
+  const scannedEffects = buildEffects(
     setters,
     actions,
     commands,
-    routes.endpoints,
+    [...routes.endpoints, ...registeredOtherTeam.endpoints],
     rows.rows,
     rows.edges,
     vocab.setterMap,
@@ -3265,9 +4080,10 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
   );
   const manualPool = [...rows.manual, ...listeners.manual, ...providerDi.manual, ...vocab.manual, ...routes.manual]
     .sort((a, b) => a.manual_id.localeCompare(b.manual_id));
+  const effects = promoteManualPoolEffects(root, scannedEffects, rows.rows, manualPool);
   const sources = sourceCounts(rawControls);
   const otherTeamSurface = scanOtherTeamSurface(root);
-  const manualControls = rows.manual.filter((row) => row.kind === 'control').length;
+  const manualControls = rows.manual.filter((row) => row.control_id !== null).length;
   const stats: InventoryStats = {
     controls: rows.rows.length,
     effects: effects.length,
@@ -3277,7 +4093,7 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     manualControlRatio: rows.rows.length === 0 ? 0 : manualControls / rows.rows.length,
     rawOnClick: jsx.rawOnClick,
     rawOnClickFiles: jsx.rawOnClickFiles,
-    endpoints: routes.endpoints.length,
+    endpoints: routes.endpoints.length + registeredOtherTeam.endpoints.length,
     sourceCounts: sources,
     manualSourceCounts: manualSourceCounts(manualPool),
     domainCounts: domainCounts(effects),
@@ -3297,19 +4113,39 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     narrowSubscriptionExclusionRules: exclusions.subscription_rules.filter((rule) => (
       rule.method !== undefined && NARROW_SUBSCRIPTION_METHODS.has(rule.method)
     )).length,
+    declarativeMenuDefinitions: declarativeMenuAudit.length,
+    declarativeMenuControls: declarativeMenuAudit.filter((row) => row.disposition === 'control').length,
+    declarativeMenuPlaceholders: declarativeMenuAudit.filter((row) => row.disposition === 'placeholder').length,
+    declarativeMenuContainers: declarativeMenuAudit.filter((row) => row.disposition === 'submenu-container').length,
+    declarativeMenuManualCommands: declarativeMenuAudit.filter((row) => row.disposition === 'manual-command').length,
+    declarativeMenuGroups: new Set(declarativeMenuAudit.map((row) => row.menu)).size,
+    registeredOtherTeamRoutes: registeredOtherTeam.audit.length,
+    registeredOtherTeamIntroducedRoutes: registeredOtherTeam.audit.filter((row) => row.introduced_in_anchor).length,
+    registeredOtherTeamEffects: registeredOtherTeam.audit.filter((row) => row.effect_id !== null).length,
   };
+  const productComboSha = comboSha(productCombo);
   const meta = {
     baseline_id: baselineId,
-    scanner_version: SCANNER_VERSION,
-    scanned_product_combo: scannedProductCombo(root),
-    artifact_commit: artifactCommit(root),
+    scanner_version: scannerConfig.scannerVersion,
+    previous_baseline_id: scannerConfig.previousBaselineId,
+    ...(scannerConfig.baselineNote ? { baseline_note: scannerConfig.baselineNote } : {}),
+    combo_sha: productComboSha,
+    scanned_product_combo: productCombo,
+    scanner_configuration_fingerprint: computeInventoryScannerConfigurationFingerprint(root),
+    artifact_commit: options.noGit ? productCombo.studio : artifactCommit(root),
     pinned_submodule_status: 'docs/ai-native/PINNED-submodule-status.txt',
   };
-  const baselineDiff = previousBaselineControlDiff(root, baselineId, rows.rows, aliasMap);
+  const baselineDiff = previousBaselineControlDiff(
+    root,
+    baselineId,
+    rows.rows,
+    aliasMap,
+    scannerConfig.previousBaselineId,
+  );
   const hitFiles = new Set(rawControls.map((control) => control.file));
   return {
     baselineId,
-    scannerVersion: SCANNER_VERSION,
+    scannerVersion: scannerConfig.scannerVersion,
     controls: rows.rows,
     effects,
     edges: rows.edges,
@@ -3317,11 +4153,14 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     meta,
     summary: summaryMarkdown(
       baselineId,
+      scannerConfig.scannerVersion,
       stats,
       baselineDiff,
       listeners.constantAudits,
       otherTeamSurface,
       methodSubscriptionAudit,
+      declarativeMenuAudit,
+      registeredOtherTeam.audit,
     ),
     stats,
     vocabMap: vocab.config,
@@ -3329,11 +4168,19 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     constantListeners: listeners.constantAudits,
     methodSubscriptionAudit,
     negativeCandidates: negativeCandidates(uiFiles, hitFiles),
+    declarativeMenuAudit,
+    otherTeamRouteAudit: registeredOtherTeam.audit,
   };
 }
 
 export function jsonLine(value: unknown): string {
   return `${JSON.stringify(value)}\n`;
+}
+
+export function knownCallBindingSpecifications(): Record<string, KnownCallEffect['binding']> {
+  return Object.fromEntries([
+    ...Object.entries(KNOWN_CALL_EFFECTS).map(([symbol, effect]) => [symbol, effect.binding] as const),
+  ].sort(([left], [right]) => left.localeCompare(right)));
 }
 
 export function renderInventory(result: InventoryResult): Record<string, string> {
@@ -3342,6 +4189,8 @@ export function renderInventory(result: InventoryResult): Record<string, string>
     'effects.jsonl': result.effects.map((row) => jsonLine(row)).join(''),
     'edges.jsonl': result.edges.map((row) => jsonLine(row)).join(''),
     'manual-classification-pool.jsonl': result.manualPool.map((row) => jsonLine(row)).join(''),
+    'declarative-menu-audit.jsonl': result.declarativeMenuAudit.map((row) => jsonLine(row)).join(''),
+    'other-team-route-audit.jsonl': result.otherTeamRouteAudit.map((row) => jsonLine(row)).join(''),
     'vocab-map.json': renderVocabMap(result.vocabMap),
     'other-team-surface.md': otherTeamSurfaceMarkdown(result.otherTeamSurface),
     'summary.md': result.summary,
@@ -3351,6 +4200,36 @@ export function renderInventory(result: InventoryResult): Record<string, string>
 
 export function renderVocabMap(config: VocabConfig): string {
   return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+export function fixtureDeclarativeMenuScan(
+  source: string,
+  commands: Record<string, string>,
+): { controls: ControlRow[]; edges: EdgeRow[]; manual: ManualPoolRow[]; audit: DeclarativeMenuAuditRow[] } {
+  const file = 'packages/interface/src/core/extensions/fixture-menus.ts';
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const parsed: ParsedFile = {
+    abs: file,
+    rel: file,
+    repo: 'interface',
+    repoRelative: 'src/core/extensions/fixture-menus.ts',
+    text: source,
+    sf,
+    locals: new Map(),
+    symbolLocals: new Map(),
+    localStateSetters: new Set(),
+    constantDeclarations: new Map(),
+    imports: new Map(),
+  };
+  indexParsedFile(parsed);
+  const collected = collectDeclarativeMenuControls([parsed], new Map(Object.entries(commands)));
+  const rows = controlsToRows(collected.controls);
+  const audit = collected.audit.map((item) => {
+    if (item.disposition === 'placeholder' || item.disposition === 'submenu-container') return item;
+    const control = rows.rows.find((row) => row.evidence_line === item.evidence_line)!;
+    return { ...item, control_id: control.control_id, effect_id: control.effect_id };
+  });
+  return { controls: rows.rows, edges: rows.edges, manual: rows.manual, audit };
 }
 
 /** Test helper: parse JSX controls from one fixture without touching the repo baseline. */
@@ -3368,6 +4247,7 @@ export function fixtureControlIds(
     text: source,
     sf,
     locals: new Map(),
+    symbolLocals: new Map(),
     localStateSetters: new Set(),
     constantDeclarations: new Map(),
     imports: new Map(),
@@ -3417,7 +4297,7 @@ export function fixtureControlIds(
 export function fixtureScan(
   source: string,
   setters: Record<string, string> = {},
-  options: { file?: string; subscriptionRules?: ExclusionRule[] } = {},
+  options: { file?: string; listenerRules?: ExclusionRule[]; subscriptionRules?: ExclusionRule[] } = {},
 ): {
   controls: ControlRow[];
   edges: EdgeRow[];
@@ -3434,6 +4314,7 @@ export function fixtureScan(
     text: source,
     sf,
     locals: new Map(),
+    symbolLocals: new Map(),
     localStateSetters: new Set(),
     constantDeclarations: new Map(),
     imports: new Map(),
@@ -3442,7 +4323,7 @@ export function fixtureScan(
   const emptyExclusions: Exclusions = {
     version: 1,
     jsx_event_rules: [],
-    listener_rules: [],
+    listener_rules: options.listenerRules ?? [],
     subscription_rules: options.subscriptionRules ?? [],
   };
   const collected = collectJsxControls(

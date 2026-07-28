@@ -1,0 +1,17 @@
+{
+  "name": "@forgeax/ai-native-governance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "approval-manifest:verify": "bun verify-approval-manifest.ts",
+    "approval-docs:write": "bun generate-phase2-approval-docs.ts",
+    "approval-docs:check": "bun generate-phase2-approval-docs.ts --check",
+    "positive-evidence:write": "bun derive-positive-evidence-manifests.ts",
+    "positive-evidence:check": "bun derive-positive-evidence-manifests.ts --check",
+    "capability-baseline:write": "bun derive-capability-baseline.ts",
+    "capability-baseline:check": "bun derive-capability-baseline.ts --check",
+    "generated:check": "bun run positive-evidence:check && bun run capability-baseline:check && bun run approval-docs:check",
+    "approval-landing": "bun land-phase2-approval.ts",
+    "test:approval-manifest": "bun test verify-approval-manifest.spec.ts"
+  }
+}

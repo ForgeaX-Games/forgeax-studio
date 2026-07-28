@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "manifest_id": "m2-r6-role-create",
+  "baseline_id": "b1-2026-07-26-0.7.3",
+  "status": "migrated",
+  "mapping": {
+    "effect_id": "role.create",
+    "control_ids": [
+      "ctl_6121eb75db55845a85fabc07"
+    ],
+    "handler_ids": [
+      "role.create"
+    ],
+    "tests": [
+      {
+        "test_id": "packages/orchestrator/test/host-authoring.test.ts#ui_invoke creates and lists a role without a UI manifest or lease",
+        "proves_effect_ids": [
+          "role.create",
+          "role.list"
+        ]
+      }
+    ]
+  },
+  "equivalent": {
+    "kind": "action",
+    "id": "role.create"
+  },
+  "context": {
+    "agent_id": "forge",
+    "trust_tier": "own",
+    "session_id": null,
+    "game_slug": null
+  },
+  "wire_name": "ui_act_role_create",
+  "direct_call_residual": {
+    "status": "none",
+    "evidence_refs": [
+      "docs/ai-native/baseline/b1-2026-07-26-0.7.3/edges.jsonl:161 — The complete b1 effect edge set routes the only role.create control through action:role.create.",
+      "packages/interface/src/lib/builtin-actions.ts:162 — The current control entry is the role.create ActionRegistry declaration."
+    ]
+  },
+  "verification_level": "isolated-fixture-run",
+  "profile_id": "main",
+  "reproduction_key_sha256": "bf0d5bb7bf5a35a2c0554265ce9a38296a198ac96899550e73ab020ada255cb4",
+  "formal_capture": {
+    "child_stderr_sha256": [
+      {
+        "index": 1,
+        "sha256": "4ef3fb524d84e31a17f6997637374d9ea6a05319e36f0b984294fa9af6e5d191"
+      },
+      {
+        "index": 2,
+        "sha256": "4ef3fb524d84e31a17f6997637374d9ea6a05319e36f0b984294fa9af6e5d191"
+      }
+    ]
+  },
+  "tool_source": "catalog-firstclass",
+  "qualifies_for_verified_equivalence": true,
+  "evidence_refs": [
+    "packages/orchestrator/src/kernel/ui-headless-actions.ts:80 — The builtin headless registry reaches the role.create HostAuthoring handler.",
+    "packages/orchestrator/test/host-authoring.test.ts:190 — The isolated cold-start test creates and lists a role without a UI lease."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "bindings": [
+    {
+      "effect_id": "role.create",
+      "test_id": "packages/orchestrator/test/host-authoring.test.ts#ui_invoke creates and lists a role without a UI manifest or lease",
+      "binding_evidence": {
+        "test_call": "packages/orchestrator/test/host-authoring.test.ts:203 — The test invokes ui_invoke with actionId role.create and asserts the completed headless result.",
+        "handler": "packages/orchestrator/src/kernel/ui-headless-actions.ts:80 — The independent builtin handler registry binds role.create to HostAuthoring.createAgentPack."
+      }
+    },
+    {
+      "effect_id": "role.list",
+      "test_id": "packages/orchestrator/test/host-authoring.test.ts#ui_invoke creates and lists a role without a UI manifest or lease",
+      "binding_evidence": {
+        "test_call": "packages/orchestrator/test/host-authoring.test.ts:252 — The test invokes ui_invoke with actionId role.list and asserts the completed headless roster.",
+        "handler": "packages/orchestrator/src/kernel/ui-headless-actions.ts:94 — The independent builtin handler registry binds role.list to HostAuthoring.listRoles."
+      }
+    }
+  ]
+}

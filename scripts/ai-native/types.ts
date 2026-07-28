@@ -11,7 +11,7 @@ export type ControlSurface =
 
 export type ControlPropagation = 'direct' | 'forwarded' | 'manual-pool';
 
-export type ControlOwner = 'us' | 'editor' | 'marketplace';
+export type ControlOwner = 'us' | 'editor' | 'marketplace' | 'other-team';
 
 export type UiRepo = 'interface' | 'chat' | 'studio';
 
@@ -70,7 +70,7 @@ export interface EdgeRow {
 
 export interface ManualPoolRow {
   manual_id: string;
-  kind: 'control' | 'vocab' | 'route' | 'provider-di' | 'listener-event';
+  kind: 'control' | 'vocab' | 'route' | 'provider-di' | 'listener-event' | 'menu-command';
   file: string;
   evidence_line: number;
   component: string;

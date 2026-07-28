@@ -174,8 +174,12 @@ if (toolchainOnly) {
   process.exit(0);
 }
 
-bold('▶ git submodule update --init --recursive');
-run('git', ['submodule', 'update', '--init', '--recursive']);
+bold('▶ materialize recursive submodules');
+const submodulesReady = IS_WIN
+  ? run('git', ['submodule', 'sync', '--recursive']) &&
+    run('git', ['submodule', 'update', '--init', '--recursive'])
+  : run('sh', [resolve(ROOT, 'deploy/dev/scripts/materialize-submodules.sh'), ROOT]);
+if (!submodulesReady) fail('submodule materialization failed');
 
 bold('▶ node scripts/sync-harness.mjs  (.forgeax-harness floating clone)');
 spawnSync('node', [resolve(ROOT, 'scripts/sync-harness.mjs')], { stdio: 'inherit', cwd: ROOT });

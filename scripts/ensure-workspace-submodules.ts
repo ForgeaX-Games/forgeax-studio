@@ -45,15 +45,6 @@ export function missingWorkspacePackageJson(
   );
 }
 
-function runGit(args: string[], inherit = true): number {
-  const r = spawnSync('git', args, {
-    cwd: ROOT,
-    stdio: inherit ? 'inherit' : 'pipe',
-    encoding: 'utf8',
-  });
-  return r.status ?? 1;
-}
-
 export function ensureWorkspaceSubmodules(root = ROOT): {
   missingBefore: string[];
   status: number;
@@ -68,15 +59,34 @@ export function ensureWorkspaceSubmodules(root = ROOT): {
   const missingBefore = missingWorkspacePackageJson(root, workspaces);
   const paths = parseGitmodulesPaths(readFileSync(gitmodules, 'utf8'));
 
-  // Always sync URLs (repo renames like forgeax-cli → forgeax-orchestrator).
-  runGit(['submodule', 'sync', '--recursive']);
-
   if (paths.length === 0) return { missingBefore, status: 0 };
 
-  // Align every recorded pin — not only empty dirs. A stale checkout can still
-  // have package.json while declaring obsolete workspace package names.
-  console.log('[ensure-workspaces] git submodule update --init --recursive');
-  const status = runGit(['submodule', 'update', '--init', '--recursive']);
+  // Align every recorded pin through the same retry/fallback policy used by
+  // CI, git hooks, cloud-dev startup, and Docker image seeding. Native Windows
+  // has no guaranteed POSIX shell, so retain Git's direct equivalent there.
+  const materializer = join(root, 'deploy/dev/scripts/materialize-submodules.sh');
+  console.log('[ensure-workspaces] materializing recursive submodule graph');
+  let status: number;
+  if (process.platform === 'win32') {
+    const sync = spawnSync('git', ['submodule', 'sync', '--recursive'], {
+      cwd: root,
+      stdio: 'inherit',
+    });
+    const update =
+      sync.status === 0
+        ? spawnSync('git', ['submodule', 'update', '--init', '--recursive'], {
+            cwd: root,
+            stdio: 'inherit',
+          })
+        : sync;
+    status = update.status ?? 1;
+  } else {
+    const update = spawnSync('sh', [materializer, root], {
+      cwd: root,
+      stdio: 'inherit',
+    });
+    status = update.status ?? 1;
+  }
   return { missingBefore, status };
 }
 

@@ -27,6 +27,7 @@ if (process.env.FORGEAX_SKIP_PREPARE === '1') {
 }
 const force = process.env.FORGEAX_FORCE_PREPARE === '1';
 const skipPlugins = process.env.FORGEAX_SKIP_PLUGINS === '1';
+const requireCompleteSetup = process.env.FORGEAX_REQUIRE_COMPLETE_SETUP === '1';
 // The public mirror deliberately excludes the private, development-only harness
 // repositories. The marker is assembled into every public repository so this
 // remains true for a recursive clone and for an independently cloned child.
@@ -253,6 +254,9 @@ if (!publicDistribution) {
       fail('@forgeax/cli build failed — chat kernel serve entry missing (dist/cli/main.js)');
     }
     ok('@forgeax/cli built (dist/cli/main.js)');
+  }
+  if (requireCompleteSetup && !existsSync(serveDist)) {
+    fail(`required CLI artefact missing after prepare: ${serveDist}`);
   }
 }
 
@@ -565,6 +569,21 @@ if (
   }
 }
 
+const missingEngineArtifacts = [
+  wasmArtefact,
+  join(wgpuDir, 'pkg/wgpu_wasm.js'),
+  fbxWasmMjs,
+  fbxWasmBin,
+  codecTranscoderWasm,
+  codecTranscoderMjs,
+  codecEncoderWasm,
+  codecEncoderMjs,
+  ...engineEntryPkgs.map((name) => join(enginePkgDir, name, 'dist/index.mjs')),
+].filter((path) => !existsSync(path));
+if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
+  fail(`required engine artefacts missing after prepare:\n${missingEngineArtifacts.map((path) => `  - ${path}`).join('\n')}`);
+}
+
 }
 
 // ── 2e. Studio workspace dedupe symlinks ────────────────────────────────────
@@ -618,6 +637,12 @@ if (skipPlugins) {
   console.log('  (skipped — FORGEAX_SKIP_PLUGINS=1)');
 } else {
   const pluginsDir = join(ROOT, 'packages/marketplace/extensions');
+  const sharedPackagesDir = join(pluginsDir, '_shared');
+  for (const e of existsSync(sharedPackagesDir) ? readdirSync(sharedPackagesDir, { withFileTypes: true }) : []) {
+    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
+    const d = join(sharedPackagesDir, e.name);
+    if (existsSync(join(d, 'package.json'))) installDir(d);
+  }
   for (const e of existsSync(pluginsDir) ? readdirSync(pluginsDir, { withFileTypes: true }) : []) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     if (e.name === '_template') continue;
@@ -626,7 +651,10 @@ if (skipPlugins) {
 
     if (existsSync(join(d, 'pnpm-workspace.yaml'))) {
       console.log(`  → pnpm install (${e.name} pnpm workspace)`);
-      if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: d })) run('pnpm', ['install', '--no-frozen-lockfile'], { cwd: d });
+      const installArgs = existsSync(join(d, 'pnpm-lock.yaml'))
+        ? ['install', '--frozen-lockfile']
+        : ['install'];
+      if (!run('pnpm', installArgs, { cwd: d })) fail(`${e.name} dependency install failed`);
     } else {
       installDir(d);
     }
@@ -637,7 +665,7 @@ if (skipPlugins) {
       else {
         console.log(`  → bun run build (${e.name})`);
         if (run('bun', ['run', 'build'], { cwd: d })) ok(`${e.name}  built`);
-        else warnY(`${e.name}  build failed — continuing`);
+        else fail(`${e.name} build failed`);
       }
     }
   }
@@ -750,13 +778,16 @@ function anyNewerThan(dir: string, anchorMs: number): boolean {
   return false;
 }
 
-/** bun install with the known half-installed-state recovery (Windows GAP-06). */
+/** Bun install with one clean retry for a half-installed dependency tree. */
 function bunInstallWithRetry(dir: string): boolean {
-  if (run('bun', ['install', '--frozen-lockfile'], { cwd: dir })) return true;
-  if (run('bun', ['install'], { cwd: dir })) return true;
-  warnY(`bun install failed in ${dir}, clearing .bun cache and retrying with --ignore-scripts`);
-  rmSync(join(dir, 'node_modules/.bun'), { recursive: true, force: true });
-  return run('bun', ['install', '--ignore-scripts'], { cwd: dir });
+  const installArgs =
+    existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'bun.lockb'))
+      ? ['install', '--frozen-lockfile']
+      : ['install'];
+  if (run('bun', installArgs, { cwd: dir })) return true;
+  warnY(`bun install failed in ${dir}; removing the incomplete node_modules and retrying`);
+  rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
+  return run('bun', installArgs, { cwd: dir });
 }
 
 function installDir(dir: string): void {
@@ -768,7 +799,7 @@ function installDir(dir: string): void {
   // checks; always let it verify and repair standalone plugin dependencies.
   console.log(`  → bun install (${dir})`);
   if (bunInstallWithRetry(dir)) ok(`${dir}  installed`);
-  else warnY(`${dir}  install failed — continuing`);
+  else fail(`${dir} dependency install failed`);
 }
 
 function pluginBuildFresh(dir: string): boolean {

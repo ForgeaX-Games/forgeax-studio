@@ -40,6 +40,17 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).not.toMatch(/statSync\(nm\)\.mtimeMs\s*>\s*statSync\(join\(dir,\s*['"]package\.json['"]\)\)\.mtimeMs/);
     expect(src).toContain('if (bunInstallWithRetry(dir))');
+    expect(src).toContain("else fail(`${dir} dependency install failed`)");
+    expect(src).not.toContain('dependency install failed — continuing');
+    expect(src).not.toContain("['install', '--ignore-scripts']");
+  });
+  it('fails prepare when plugin dependencies, builds, or required runtime artefacts are incomplete', () => {
+    const src = prepareSource();
+    expect(src).toContain("join(pluginsDir, '_shared')");
+    expect(src).toContain('dependency install failed');
+    expect(src).toContain('build failed');
+    expect(src).toContain('required engine artefacts missing after prepare');
+    expect(src).toContain('required CLI artefact missing after prepare');
   });
   it('treats an incomplete wgpu/codec pkg/ as stale (gates on the glue, not just .wasm)', () => {
     const src = prepareSource();

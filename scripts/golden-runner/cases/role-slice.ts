@@ -101,7 +101,7 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-/** Strict L1 cleanup, exported only so runner.spec can exercise real filesystem semantics. */
+/** Strict user-extension cleanup, exported only so runner.spec can exercise real filesystem semantics. */
 export async function teardownRolePack(
   ctx: RoleTeardownContext,
   homeDir = homedir(),
@@ -113,7 +113,7 @@ export async function teardownRolePack(
     roleId,
   });
   // role.create omits scope in this case, so HostAuthoring selects global. Its
-  // agent-${id} slug and platform-io's global layer root yield this exact L1 path.
+  // agent-${id} slug and platform-io's user-extension root yield this exact path.
   const packDir = globalRolePackDir(roleId, homeDir);
   const existedBefore = await pathExists(packDir);
   await rm(packDir, { recursive: true, force: true });

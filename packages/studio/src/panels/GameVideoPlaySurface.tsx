@@ -15,7 +15,7 @@ import { RotateCcw, Maximize2, Minimize2 } from 'lucide-react';
 
 // Keep in sync with packages/marketplace/extensions/wb-game-video/forgeax-extension.json
 // → entry.standalone.port (15185).
-const GAMEVIDEO_PORT = 15185;
+const WB_GAME_VIDEO_PORT = 15185;
 
 export interface GameVideoPlaySurfaceProps {
   scenarioId: string;
@@ -40,7 +40,7 @@ export function GameVideoPlaySurface({ scenarioId, slug }: GameVideoPlaySurfaceP
     }
     const proto = window.location.protocol;
     const host = window.location.hostname;
-    return `${proto}//${host}:${GAMEVIDEO_PORT}/?${q}`;
+    return `${proto}//${host}:${WB_GAME_VIDEO_PORT}/?${q}`;
   }, [scenarioId, slug]);
 
   useEffect(() => {

@@ -23,6 +23,7 @@ import {
   setContextMenuRenderer,
   panelBridge,
   gateway,
+  hasPendingDiskSave,
 } from '@forgeax/editor/bridge';
 import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
 // ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
@@ -210,6 +211,18 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
       assetRefreshTimer.current = setTimeout(() => {
         assetRefreshTimer.current = null;
         const shouldResumePlay = gateway.mode === 'play' || gateway.playPhase === 'starting';
+        // bug-fix (导入资产刷新场景丢改动): a disk-watch asset change (an import
+        // just wrote source bytes + .meta.json) previously ALWAYS tore down the
+        // edit realm + remounted the viewport, which re-runs loadDocFromDisk()
+        // and replaces gateway.doc.world with the last-SAVED disk scene —
+        // silently destroying the user's unsaved in-memory edits. That remount
+        // is only truly needed to restart a running game so it picks up new
+        // bytes; in pure EDIT mode the imported asset is already made available
+        // by installAssetCatalogRefresh (registry.refreshCatalog on this very
+        // assetsChanged), so the reset is redundant AND destructive when there
+        // are unsaved edits. Skip it: keep the live scene, the asset still shows
+        // up via the catalog refresh + Content Browser.
+        if (!shouldResumePlay && hasPendingDiskSave()) return;
         const token = assetReloadToken.current + 1;
         assetReloadToken.current = token;
         pendingAssetReload.current = {

@@ -14,6 +14,7 @@ import {
   type GoldenCliRunResult,
   type GoldenStepResult,
 } from './_template.ts';
+import { redactGoldenEvidenceText } from '../lib/l4b-evidence.ts';
 
 const AGENT_ID = 'forge';
 const MODEL = 'claude-sonnet-5';
@@ -207,7 +208,9 @@ function summarizeEvent(event: StreamEvent): Record<string, unknown> {
     ...(typeof result?.status === 'string' ? { resultStatus: result.status } : {}),
     ...(typeof digest?.id === 'string' ? { resultId: digest.id } : {}),
     ...(typeof digest?.count === 'number' ? { resultCount: digest.count } : {}),
-    ...(typeof data.message === 'string' ? { message: data.message.slice(0, 240) } : {}),
+    ...(typeof data.message === 'string'
+      ? { message: redactGoldenEvidenceText(data.message, process.env).slice(0, 240) }
+      : {}),
   };
 }
 
@@ -259,30 +262,19 @@ const definition: GoldenCaseDefinition = {
       };
     }
 
-    // Metadata alone is not a lock: persist the model in the exact agent.json
-    // field consumed by composeTurnRequest before the forge-run-equivalent turn.
-    const pinned = await ctx.api.setAgentModels(sid, AGENT_ID, [MODEL]);
-    assertGolden(
-      pinned.ok && pinned.status === 200,
-      `set_agent_models returned HTTP ${pinned.status}, expected 200`,
-      { status: pinned.status, body: pinned.body },
-    );
-    const command = pinned.body?.result;
-    assertGolden(command?.ok === true, 'set_agent_models returned result.ok:false', pinned.body);
-    assertGolden(
-      command.data.selected === MODEL,
-      `set_agent_models selected ${String(command.data.selected)}, expected ${MODEL}`,
-      command.data,
-    );
+    // createSessionWithBootstrap has now completed the canonical scaffold.
+    // The runner owns the lock from this point: one atomic string write to the
+    // exact agent.json consumed by composeTurnRequest, followed by readback.
+    const pinned = await ctx.lockAgentModel(AGENT_ID);
     return {
       evidence: {
         sid,
         bootstrappedAgent: created.body.bootstrappedAgent,
         modelPin: {
-          status: pinned.status,
-          resultOk: command.ok,
-          selected: command.data.selected,
-          restarted: command.data.restarted,
+          agentJsonFile: pinned.agentJsonFile,
+          selected: pinned.writtenModel,
+          valueShape: typeof pinned.writtenModel,
+          configSha256: pinned.configSha256,
         },
       },
     };
@@ -460,8 +452,9 @@ const definition: GoldenCaseDefinition = {
         return {
           value: turn,
           evidence: {
+            callId: turn.callId,
             exitCode: turn.exitCode,
-            stderr: turn.stderr,
+            stderr: redactGoldenEvidenceText(turn.stderr, process.env),
             eventCount: turn.events.length,
             eventNames: turn.events.map((event) => event.event),
             events: relevant.map(summarizeEvent),
@@ -480,7 +473,7 @@ const definition: GoldenCaseDefinition = {
         const errors = turn.events.filter((event) => event.event === 'error');
         assertGolden(turn.exitCode === 0, `forge run exited with code ${turn.exitCode}`, {
           exitCode: turn.exitCode,
-          stderr: turn.stderr,
+          stderr: redactGoldenEvidenceText(turn.stderr, process.env),
         });
         assertGolden(errors.length === 0, 'model turn emitted wire error', errors.map(summarizeEvent));
         assertGolden(turn.events.some((event) => event.event === 'done'), 'model turn emitted no done event');

@@ -17,6 +17,22 @@ import {
   readEventStream,
 } from './lib/sse.ts';
 import {
+  assertLockedProviderOnWire,
+  defaultGoldenL4bEvidenceAdapter,
+  launchGoldenServer,
+  MODEL_EXECUTION_M3_CLOSURE,
+  MODEL_EXECUTION_WAIVER_NOTE,
+  redactGoldenEvidenceText,
+  waitForTurnModelEvidence,
+  type GoldenL4bEvidenceAdapter,
+  type GoldenModelLockEvidence,
+  type GoldenServerRuntime,
+  type GoldenServerStartupEvidence,
+  type GoldenServerStopEvidence,
+  type GoldenTurnModelEvidence,
+  type LaunchGoldenServerOptions,
+} from './lib/l4b-evidence.ts';
+import {
   assertAllowedPartialOrder,
   GoldenAssertionError,
   type GoldenCaseContext,
@@ -26,6 +42,7 @@ import {
   type GoldenCliRunOptions,
   type GoldenCliRunResult,
   type GoldenCliSpawner,
+  type GoldenKernel,
   type GoldenMode,
   type GoldenStepResult,
 } from './cases/_template.ts';
@@ -45,11 +62,25 @@ export interface GoldenReportStep {
 export interface GoldenReport {
   case: string;
   mode: GoldenMode;
-  pass: boolean;
+  runCompleted: boolean;
   steps: GoldenReportStep[];
   startedAt: string;
   durationMs: number;
   kernel?: { providerId: string; model: string };
+  server?: {
+    startup: GoldenServerStartupEvidence;
+    teardown?: GoldenServerStopEvidence;
+  };
+  verification?: {
+    bl2Verdict: 'PARTIAL';
+    providerVerified: 'NOT_RUN' | 'PASS' | 'FAIL';
+    requestedModelVerified: 'NOT_RUN' | 'PASS' | 'FAIL';
+    modelExecutedVerified: 'WAIVED';
+    modelExecutionWaiver: string;
+    m3Closure: string;
+    providerEvidence: Array<{ expected: string; eventCount: number; eventNames: string[] }>;
+    requestedModelEvidence: GoldenTurnModelEvidence[];
+  };
   metadata: { slug: string; sid?: string };
   failure?: { kind: 'assertion' | 'environment'; message: string };
 }
@@ -61,13 +92,21 @@ export interface RunOutcome {
 
 export interface RunGoldenCaseOptions {
   mode: GoldenMode;
-  serverPort: number;
+  serverPort?: number;
   projectRoot?: string;
   fetchImpl?: FetchLike;
   /** Tests may disable crash-state I/O while still exercising case execution. */
   manageArtifacts?: boolean;
   /** Tests inject a pipe-compatible process; production always uses Bun.spawn. */
   spawnCli?: GoldenCliSpawner;
+  /** L4b always owns a dedicated server; false is accepted only outside L4b. */
+  manageServer?: boolean;
+  /** Test seam for server lifecycle; production uses launchGoldenServer. */
+  launchServer?: (options: LaunchGoldenServerOptions) => Promise<GoldenServerRuntime>;
+  /** Test seam for filesystem/proxy evidence; production uses the fail-closed adapter. */
+  l4bEvidenceAdapter?: GoldenL4bEvidenceAdapter;
+  /** Test seam for ledger polling; production uses the real fail-closed verifier. */
+  verifyTurnModelEvidence?: typeof waitForTurnModelEvidence;
   now?: () => number;
   slugFactory?: () => string;
   runIdFactory?: () => string;
@@ -131,6 +170,7 @@ function jsonSafe(value: unknown): unknown {
   const encoded = JSON.stringify(value, (_key, item) => {
     if (item instanceof Error) return errorEvidence(item);
     if (typeof item === 'bigint') return item.toString();
+    if (typeof item === 'string') return redactGoldenEvidenceText(item, process.env);
     if (item && typeof item === 'object') {
       if (seen.has(item)) return '[Circular]';
       seen.add(item);
@@ -149,9 +189,42 @@ function normalizeStepResult(result: GoldenStepResult | undefined): GoldenStepRe
   return result && typeof result === 'object' ? result : {};
 }
 
+const CLI_ENV_ALLOWLIST = [
+  'PATH',
+  'Path',
+  'HOME',
+  'USERPROFILE',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'XDG_CONFIG_HOME',
+  'XDG_CACHE_HOME',
+  'XDG_DATA_HOME',
+  'XDG_STATE_HOME',
+  'LANG',
+  'LC_ALL',
+  'TERM',
+  'COLORTERM',
+  'FORCE_COLOR',
+  'NO_COLOR',
+] as const;
+
+export function buildGoldenCliEnvironment(
+  source: Readonly<Record<string, string | undefined>> = process.env,
+): Record<string, string> {
+  return Object.fromEntries(CLI_ENV_ALLOWLIST.flatMap((name) => {
+    const value = source[name];
+    return value === undefined ? [] : [[name, value]];
+  }));
+}
+
 function spawnCliProcess(command: readonly string[], options: { cwd: string }): GoldenCliProcess {
   const child = Bun.spawn([...command], {
     cwd: options.cwd,
+    env: buildGoldenCliEnvironment(),
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -198,7 +271,7 @@ async function collectCliProcess(
   child: GoldenCliProcess,
   command: string[],
   timeoutMs: number,
-): Promise<GoldenCliRunResult> {
+): Promise<Omit<GoldenCliRunResult, 'callId'>> {
   // Drain both pipes immediately. stdout is teed so the report retains the
   // exact JSONL while the existing tolerant parser restores StreamEvent[] for
   // partial-order assertions.
@@ -225,7 +298,7 @@ async function collectCliProcess(
     timer = setTimeout(() => resolveTimeout(timedOut), timeoutMs);
   });
 
-  let resultOrTimeout: GoldenCliRunResult | typeof timedOut;
+  let resultOrTimeout: Omit<GoldenCliRunResult, 'callId'> | typeof timedOut;
   try {
     resultOrTimeout = await Promise.race([completed, timeout]);
   } catch (error) {
@@ -271,18 +344,6 @@ async function collectCliProcess(
     );
   }
 
-  if (resultOrTimeout.exitCode !== 0) {
-    throw new GoldenAssertionError(
-      `forge run exited with code ${resultOrTimeout.exitCode}`,
-      {
-        command,
-        exitCode: resultOrTimeout.exitCode,
-        stdout: resultOrTimeout.stdout,
-        stderr: resultOrTimeout.stderr,
-        eventNames: resultOrTimeout.events.map((event) => event.event),
-      },
-    );
-  }
   return resultOrTimeout;
 }
 
@@ -481,17 +542,44 @@ export async function runGoldenCase(
   const projectRoot = resolve(options.projectRoot ?? process.cwd());
   const fetchImpl = options.fetchImpl ?? fetch;
   const spawnCli = options.spawnCli ?? spawnCliProcess;
+  const manageServer = options.manageServer ?? options.mode === 'l4b';
+  const evidenceAdapter = options.l4bEvidenceAdapter ?? defaultGoldenL4bEvidenceAdapter;
+  let serverPort = options.serverPort ?? (options.mode === 'l4b' ? 0 : DEFAULT_SERVER_PORT);
+  if (!Number.isInteger(serverPort) || serverPort < 0 || serverPort > 65_535) {
+    throw new TypeError(`invalid server port: ${serverPort}`);
+  }
+  if (options.mode === 'l4b' && !manageServer) {
+    throw new TypeError('L4b requires runner-owned server evidence');
+  }
+  if (!manageServer && serverPort === 0) {
+    throw new TypeError('serverPort=0 requires runner-owned server lifecycle');
+  }
+  if (options.mode === 'l4b' && serverPort !== 0) {
+    throw new TypeError('L4b runner-owned server must request port 0');
+  }
   const slug = (options.slugFactory ?? makeGoldenSlug)();
   if (!GOLDEN_SLUG_RE.test(slug)) throw new Error(`slugFactory returned invalid slug: ${slug}`);
-  const baseUrl = `http://127.0.0.1:${options.serverPort}`;
   const report: GoldenReport = {
     case: definition.name,
     mode: options.mode,
-    pass: false,
+    runCompleted: false,
     steps: [],
     startedAt: new Date(startedMs).toISOString(),
     durationMs: 0,
-    ...(options.mode === 'l4b' && definition.kernel ? { kernel: { ...definition.kernel } } : {}),
+    ...(options.mode === 'l4b'
+      ? {
+          verification: {
+            bl2Verdict: 'PARTIAL',
+            providerVerified: 'NOT_RUN',
+            requestedModelVerified: 'NOT_RUN',
+            modelExecutedVerified: 'WAIVED',
+            modelExecutionWaiver: MODEL_EXECUTION_WAIVER_NOTE,
+            m3Closure: MODEL_EXECUTION_M3_CLOSURE,
+            providerEvidence: [],
+            requestedModelEvidence: [],
+          },
+        }
+      : {}),
     metadata: { slug },
   };
   let exitCode: 0 | 1 | 2 = 0;
@@ -501,6 +589,74 @@ export async function runGoldenCase(
   const manageArtifacts = options.manageArtifacts !== false;
   const outputs = new Map<string, unknown>();
   const events: StreamEvent[] = [];
+  const modelLocks = new Map<string, GoldenModelLockEvidence>();
+  let serverRuntime: GoldenServerRuntime | undefined;
+  let lockedKernel: Readonly<GoldenKernel> | undefined;
+
+  const fail = (error: unknown): void => {
+    if (exitCode !== 0) return;
+    const assertion = isAssertionFailure(error);
+    exitCode = assertion ? 1 : 2;
+    report.failure = {
+      kind: assertion ? 'assertion' : 'environment',
+      message: asError(error).message,
+    };
+  };
+
+  const execute = async (
+    name: string,
+    action: () => GoldenStepResult | Promise<GoldenStepResult>,
+    outputName?: string,
+  ): Promise<boolean> => {
+    try {
+      const result = normalizeStepResult(await action());
+      if (outputName && Object.hasOwn(result, 'value')) outputs.set(outputName, result.value);
+      report.steps.push({ name, ok: true, evidence: jsonSafe(result.evidence) });
+      return true;
+    } catch (error) {
+      report.steps.push({ name, ok: false, evidence: jsonSafe(errorEvidence(error)) });
+      fail(error);
+      return false;
+    }
+  };
+
+  try {
+    validateDefinition(definition, options.mode);
+    if (options.mode === 'l4b') {
+      lockedKernel = Object.freeze(structuredClone(definition.kernel!));
+      report.kernel = { ...lockedKernel };
+    }
+  } catch (error) {
+    report.steps.push({ name: 'runner validation', ok: false, evidence: jsonSafe(errorEvidence(error)) });
+    fail(error);
+  }
+
+  if (exitCode === 0 && options.mode === 'l4b' && manageServer) {
+    try {
+      serverRuntime = await (options.launchServer ?? launchGoldenServer)({
+        projectRoot,
+        requestedPort: serverPort,
+        kernel: lockedKernel!,
+        now,
+      });
+      serverPort = serverRuntime.port;
+      report.server = { startup: serverRuntime.startup };
+      report.steps.push({
+        name: 'runner-owned server startup',
+        ok: true,
+        evidence: jsonSafe(serverRuntime.startup),
+      });
+    } catch (error) {
+      report.steps.push({
+        name: 'runner-owned server startup',
+        ok: false,
+        evidence: jsonSafe(errorEvidence(error)),
+      });
+      fail(error);
+    }
+  }
+
+  const baseUrl = serverRuntime?.baseUrl ?? `http://127.0.0.1:${serverPort}`;
 
   const state: GoldenCaseState = {
     value<T = unknown>(stepName: string): T {
@@ -531,15 +687,31 @@ export async function runGoldenCase(
   const context: GoldenCaseContext = {
     mode: options.mode,
     baseUrl,
-    serverPort: options.serverPort,
+    serverPort,
     projectRoot,
     slug,
     get sid() { return sid; },
     api,
     fetch: fetchImpl,
     recordSession,
+    async lockAgentModel(agentId: string) {
+      if (options.mode !== 'l4b' || !lockedKernel) {
+        throw new Error('ctx.lockAgentModel is available only to l4b cases with a locked kernel');
+      }
+      if (!sid) throw new Error('ctx.lockAgentModel requires a recorded session');
+      const existing = modelLocks.get(agentId);
+      if (existing) return evidenceAdapter.verifyAgentModelLock(existing);
+      const locked = await evidenceAdapter.lockAgentModel({
+        projectRoot,
+        sid,
+        agentId,
+        model: lockedKernel.model,
+      });
+      modelLocks.set(agentId, locked);
+      return locked;
+    },
     async runCli(runOptions: GoldenCliRunOptions) {
-      if (options.mode !== 'l4b' || !definition.kernel) {
+      if (options.mode !== 'l4b' || !lockedKernel) {
         throw new Error('ctx.runCli is available only to l4b cases with a locked kernel');
       }
       if (!sid) throw new Error('ctx.runCli requires a recorded session');
@@ -547,58 +719,107 @@ export async function runGoldenCase(
       if (!runOptions.agentId.trim()) throw new Error('ctx.runCli requires a non-empty agentId');
       const timeoutMs = runOptions.timeoutMs ?? DEFAULT_CLI_TIMEOUT_MS;
       validateCliTimeout(timeoutMs);
+      const modelLock = modelLocks.get(runOptions.agentId)
+        ?? await context.lockAgentModel(runOptions.agentId);
+      const ledgerBefore = await evidenceAdapter.readAgentLedger({
+        projectRoot,
+        sid,
+        agentId: runOptions.agentId,
+      });
+      const correlationNonce = randomUUID();
+      const correlatedPrompt = `${runOptions.prompt}\n\n[forgeax-golden-correlation-nonce:${correlationNonce}]`;
+      const proxy = await evidenceAdapter.createCliCaptureProxy(baseUrl);
       const command = [
         './packages/orchestrator/bin/forge',
         'run',
         '--json',
-        runOptions.prompt,
+        correlatedPrompt,
         '--agent',
         runOptions.agentId,
         '--session',
         sid,
         '--server',
-        baseUrl,
+        proxy.baseUrl,
       ];
-      const result = await collectCliProcess(
-        spawnCli(command, { cwd: projectRoot }),
-        command,
-        timeoutMs,
-      );
+      let result: GoldenCliRunResult;
+      let callId: string;
+      try {
+        const collected = await collectCliProcess(
+          spawnCli(command, { cwd: projectRoot }),
+          command,
+          timeoutMs,
+        );
+        callId = proxy.capturedCallId();
+        result = {
+          ...collected,
+          stdout: redactGoldenEvidenceText(collected.stdout, process.env),
+          stderr: redactGoldenEvidenceText(collected.stderr, process.env),
+          callId,
+        };
+      } catch (error) {
+        if (report.verification) {
+          report.verification.providerVerified = 'FAIL';
+          report.verification.requestedModelVerified = 'FAIL';
+        }
+        throw error;
+      } finally {
+        proxy.close();
+      }
       events.push(...result.events);
+
+      try {
+        const providerEvidence = assertLockedProviderOnWire(
+          result.events,
+          lockedKernel.providerId,
+        );
+        report.verification!.providerEvidence.push(providerEvidence);
+        report.verification!.providerVerified = 'PASS';
+      } catch (error) {
+        report.verification!.providerVerified = 'FAIL';
+        throw error;
+      }
+
+      try {
+        const requestedModelEvidence = await (options.verifyTurnModelEvidence ?? waitForTurnModelEvidence)({
+          read: () => evidenceAdapter.readAgentLedger({
+            projectRoot,
+            sid,
+            agentId: runOptions.agentId,
+          }),
+          before: ledgerBefore,
+          prompt: correlatedPrompt,
+          expectedModel: lockedKernel.model,
+          callId,
+          correlationNonce,
+        });
+        await evidenceAdapter.verifyAgentModelLock(modelLock);
+        report.verification!.requestedModelEvidence.push(requestedModelEvidence);
+        report.verification!.requestedModelVerified = 'PASS';
+      } catch (error) {
+        report.verification!.requestedModelVerified = 'FAIL';
+        throw error;
+      }
+
+      if (result.exitCode !== 0) {
+        throw new GoldenAssertionError(
+          `forge run exited with code ${result.exitCode}`,
+          {
+            callId,
+            command,
+            exitCode: result.exitCode,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            eventNames: result.events.map((event) => event.event),
+          },
+        );
+      }
       return result;
     },
   };
 
-  const fail = (error: unknown): void => {
-    if (exitCode !== 0) return;
-    const assertion = isAssertionFailure(error);
-    exitCode = assertion ? 1 : 2;
-    report.failure = {
-      kind: assertion ? 'assertion' : 'environment',
-      message: asError(error).message,
-    };
-  };
-
-  const execute = async (
-    name: string,
-    action: () => GoldenStepResult | Promise<GoldenStepResult>,
-    outputName?: string,
-  ): Promise<boolean> => {
-    try {
-      const result = normalizeStepResult(await action());
-      if (outputName && Object.hasOwn(result, 'value')) outputs.set(outputName, result.value);
-      report.steps.push({ name, ok: true, evidence: jsonSafe(result.evidence) });
-      return true;
-    } catch (error) {
-      report.steps.push({ name, ok: false, evidence: jsonSafe(errorEvidence(error)) });
-      fail(error);
-      return false;
-    }
-  };
-
   try {
     try {
-      validateDefinition(definition, options.mode);
+      if (exitCode !== 0) throw new Error('runner validation or server startup failed');
       let stale: Awaited<ReturnType<typeof cleanupStaleGoldenRuns>> | undefined;
       if (manageArtifacts) {
         stale = await cleanupStaleGoldenRuns({ projectRoot, api });
@@ -610,7 +831,8 @@ export async function runGoldenCase(
         ok: true,
         evidence: jsonSafe({
           slug,
-          serverPort: options.serverPort,
+          serverPort,
+          serverOwned: Boolean(serverRuntime),
           staleRunsCleaned: stale?.cleaned.length ?? 0,
           activeRunsSkipped: stale?.skippedActive.length ?? 0,
           warnings: stale?.warnings ?? [],
@@ -631,6 +853,38 @@ export async function runGoldenCase(
       await execute(step.name, () => step.run(context, state), step.name);
     }
 
+    if (exitCode === 0 && options.mode === 'l4b') {
+      await execute('assert: l4b verification completeness', () => {
+        const verification = report.verification!;
+        if (
+          !report.server
+          ||
+          verification.providerVerified !== 'PASS'
+          || verification.requestedModelVerified !== 'PASS'
+          || verification.providerEvidence.length === 0
+          || verification.requestedModelEvidence.length === 0
+        ) {
+          throw new GoldenAssertionError('L4b provider/requested-model evidence is incomplete', {
+            providerVerified: verification.providerVerified,
+            requestedModelVerified: verification.requestedModelVerified,
+            providerEvidenceCount: verification.providerEvidence.length,
+            requestedModelEvidenceCount: verification.requestedModelEvidence.length,
+            serverEvidencePresent: Boolean(report.server),
+          });
+        }
+        return {
+          evidence: {
+            bl2Verdict: verification.bl2Verdict,
+            providerVerified: verification.providerVerified,
+            requestedModelVerified: verification.requestedModelVerified,
+            modelExecutedVerified: verification.modelExecutedVerified,
+            modelExecutionWaiver: verification.modelExecutionWaiver,
+            m3Closure: verification.m3Closure,
+          },
+        };
+      });
+    }
+
     for (const assertion of definition.asserts ?? []) {
       if (exitCode !== 0) break;
       await execute(`assert: ${assertion.name}`, async () => ({
@@ -641,6 +895,7 @@ export async function runGoldenCase(
     if (exitCode === 0 && options.mode === 'l4b' && definition.partialOrder?.length) {
       await execute('assert: allowed partial order', () => {
         assertAllowedPartialOrder(events, definition.partialOrder!);
+        return {};
       });
     }
   } finally {
@@ -668,8 +923,36 @@ export async function runGoldenCase(
       ok: true,
       evidence: jsonSafe(cleanup ?? { skipped: true }),
     });
+    if (serverRuntime) {
+      try {
+        const stopped = await serverRuntime.stop();
+        report.server = { startup: serverRuntime.startup, teardown: stopped };
+        if (stopped.forced || stopped.exitCode !== 0) {
+          throw new Error(
+            `runner-owned server teardown was not clean (exit=${String(stopped.exitCode)}, forced=${String(stopped.forced)})`,
+          );
+        }
+        report.steps.push({
+          name: 'runner-owned server teardown',
+          ok: true,
+          evidence: jsonSafe({
+            exitCode: stopped.exitCode,
+            forced: stopped.forced,
+            stdoutTruncated: stopped.stdoutTruncated,
+            stderrTruncated: stopped.stderrTruncated,
+          }),
+        });
+      } catch (error) {
+        report.steps.push({
+          name: 'runner-owned server teardown',
+          ok: false,
+          evidence: jsonSafe(errorEvidence(error)),
+        });
+        fail(error);
+      }
+    }
     report.metadata = { slug, ...(sid ? { sid } : {}) };
-    report.pass = exitCode === 0;
+    report.runCompleted = exitCode === 0;
     report.durationMs = Math.max(0, now() - startedMs);
   }
 
@@ -679,7 +962,7 @@ export async function runGoldenCase(
 export function parseRunnerArgs(argv: string[], env = process.env): CliOptions {
   let caseName = '';
   let mode: GoldenMode = 'l4a';
-  let portRaw = env.FORGEAX_SERVER_PORT ?? String(DEFAULT_SERVER_PORT);
+  let portRaw: string | undefined;
   let reportPath: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -706,9 +989,19 @@ export function parseRunnerArgs(argv: string[], env = process.env): CliOptions {
   }
 
   if (!CASE_NAME_RE.test(caseName)) throw new Error('--case must be a lowercase kebab-case name');
-  const serverPort = Number(portRaw);
-  if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65_535) {
-    throw new Error(`invalid server port: ${portRaw}`);
+  const resolvedPortRaw = portRaw ?? (mode === 'l4b'
+    ? '0'
+    : env.FORGEAX_SERVER_PORT ?? String(DEFAULT_SERVER_PORT));
+  const serverPort = Number(resolvedPortRaw);
+  if (
+    !Number.isInteger(serverPort)
+    || serverPort < (mode === 'l4b' ? 0 : 1)
+    || serverPort > 65_535
+  ) {
+    throw new Error(`invalid server port: ${resolvedPortRaw}`);
+  }
+  if (mode === 'l4b' && serverPort !== 0) {
+    throw new Error('L4b runner-owned server must request port 0');
   }
   return { caseName, mode, serverPort, ...(reportPath ? { reportPath } : {}) };
 }

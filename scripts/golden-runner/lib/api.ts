@@ -75,15 +75,6 @@ export interface ExecuteCommandOptions {
   requestingAgentId?: string;
 }
 
-export interface SetAgentModelsResult {
-  sid: string;
-  agentPath: string;
-  models: { model: string[] };
-  selected: string;
-  restarted: boolean;
-  agentJsonFile: string;
-}
-
 export interface KernelToolAuditEntry {
   sid: string;
   agent: string;
@@ -193,21 +184,6 @@ export class GoldenApi {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ args, ...options }),
       },
-    );
-  }
-
-  setAgentModels(
-    sid: string,
-    agentPath: string,
-    models: readonly string[],
-  ): Promise<ApiResponse<CommandExecutionEnvelope<SetAgentModelsResult>>> {
-    if (!models.length || models.some((model) => !model.trim())) {
-      throw new GoldenApiError('setAgentModels requires at least one non-empty model');
-    }
-    return this.executeCommand<SetAgentModelsResult>(
-      'set_agent_models',
-      [sid, agentPath, ...models],
-      { sessionId: sid, requestingAgentId: agentPath },
     );
   }
 

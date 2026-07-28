@@ -1,0 +1,1194 @@
+{
+  "baseline_id": "b1-2026-07-26-0.7.3",
+  "baseline_approval": "approved",
+  "baseline_bytes_sha256": "1e4e36af07f8fffed489ae29751c26f11ff76e564c38c950101d77fe40dfe41d",
+  "baseline_governance_verification": {
+    "status": "verified",
+    "path": "docs/ai-native/pins/m2-2026-07-23.json,docs/ai-native/baseline/approvals.json,docs/ai-native/baseline/runtime-profile-terminals.json",
+    "reasons": [],
+    "committed_sha": "HEAD"
+  },
+  "governance_reason_codes": [],
+  "result_status": "final",
+  "coverage_tier": "formal-with-waiver",
+  "exclusion_disclosure": {
+    "included_dispositions": [
+      "tool",
+      "read"
+    ],
+    "excluded_effects_by_disposition": {
+      "exempt:editor-injected": 26,
+      "exempt:human-input": 45,
+      "exempt:inbound-sink": 21,
+      "exempt:other-team": 34,
+      "view-opt": 170
+    }
+  },
+  "control_entry_rescan": {
+    "provenance": "current source rescan under immutable pin (no git)",
+    "controls": 629,
+    "edges": 832
+  },
+  "numerator": 2,
+  "denominator": 87,
+  "coverage_percent": 2.3,
+  "domains": [
+    {
+      "domain": "app",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 1,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "boot_splash",
+      "migrated": 0,
+      "denominator": 4,
+      "tool": 4,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "bus_admin_panel",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 0,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "chat",
+      "migrated": 0,
+      "denominator": 3,
+      "tool": 3,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "clipboard",
+      "migrated": 0,
+      "denominator": 2,
+      "tool": 1,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "composer",
+      "migrated": 0,
+      "denominator": 3,
+      "tool": 3,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "console",
+      "migrated": 0,
+      "denominator": 2,
+      "tool": 1,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "files",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 0,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "game",
+      "migrated": 0,
+      "denominator": 3,
+      "tool": 2,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "health",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 1,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "language",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 1,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "model_picker",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 0,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "network",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 1,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "onboarding_controller",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 1,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "role",
+      "migrated": 2,
+      "denominator": 3,
+      "tool": 2,
+      "read": 1,
+      "coverage_percent": 66.67
+    },
+    {
+      "domain": "server",
+      "migrated": 0,
+      "denominator": 42,
+      "tool": 38,
+      "read": 4,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "session",
+      "migrated": 0,
+      "denominator": 4,
+      "tool": 4,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "sessions",
+      "migrated": 0,
+      "denominator": 2,
+      "tool": 0,
+      "read": 2,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "store",
+      "migrated": 0,
+      "denominator": 7,
+      "tool": 6,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "telemetry",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 1,
+      "read": 0,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "trajectory",
+      "migrated": 0,
+      "denominator": 2,
+      "tool": 1,
+      "read": 1,
+      "coverage_percent": 0
+    },
+    {
+      "domain": "workbench",
+      "migrated": 0,
+      "denominator": 1,
+      "tool": 0,
+      "read": 1,
+      "coverage_percent": 0
+    }
+  ],
+  "equivalence": {
+    "verified": 2,
+    "declared": 15,
+    "none": 70
+  },
+  "equivalence_all_effects": {
+    "verified": 2,
+    "declared": 23,
+    "none": 358
+  },
+  "migrated_effect_ids": [
+    "role.create",
+    "role.list"
+  ],
+  "migrated_control_ids": [
+    "ctl_24c8ca19a22faec60dd04eb2",
+    "ctl_6121eb75db55845a85fabc07"
+  ],
+  "evaluations": [
+    {
+      "effect_id": "app.chat.insert_pill",
+      "domain": "app",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "boot_splash.reset",
+      "domain": "boot_splash",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "boot_splash.set_show_bus_inventory",
+      "domain": "boot_splash",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "boot_splash.set_show_progress",
+      "domain": "boot_splash",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "boot_splash.set_theme",
+      "domain": "boot_splash",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "bus_admin_panel.set_refresh_ts",
+      "domain": "bus_admin_panel",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "chat.cancel_stream",
+      "domain": "chat",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "chat.insert_reference",
+      "domain": "chat",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "chat.post_message",
+      "domain": "chat",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "clipboard.read",
+      "domain": "clipboard",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "clipboard.write",
+      "domain": "clipboard",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "composer.clear_queue",
+      "domain": "composer",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "composer.dequeue_message",
+      "domain": "composer",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "composer.set_agent_model",
+      "domain": "composer",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "console.clear",
+      "domain": "console",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "console.read",
+      "domain": "console",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "files.open",
+      "domain": "files",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "game.create",
+      "domain": "game",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "game.list",
+      "domain": "game",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "game.switch",
+      "domain": "game",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "health.clear_fatal",
+      "domain": "health",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "language.change",
+      "domain": "language",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "model_picker.refresh",
+      "domain": "model_picker",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "network.clear",
+      "domain": "network",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "onboarding_controller.choose_project_action",
+      "domain": "onboarding_controller",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "role.create",
+      "domain": "role",
+      "agent_equiv": "verified",
+      "status": "migrated",
+      "manifest_id": "m2-r6-role-create",
+      "reasons": [],
+      "warnings": []
+    },
+    {
+      "effect_id": "role.list",
+      "domain": "role",
+      "agent_equiv": "verified",
+      "status": "migrated",
+      "manifest_id": "m2-r6-role-list",
+      "reasons": [],
+      "warnings": []
+    },
+    {
+      "effect_id": "role.open",
+      "domain": "role",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.delete_api_workbench_games_slug",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.delete_api_workbench_package_history_id",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_bus_ui_surfaces_id_dispatch",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_cli_cancel",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_cli_chat",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_commands_name_execute",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_commands_name_query",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_commands_upload_execute",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_events_emit",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_extensions_fork",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_extensions_record_skill",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_extensions_reload",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_extensions_trust",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_llm_test",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_llm_test_stream",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_packs_export",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_packs_inspect",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_packs_install",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_projects",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_runtime_pause",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_abort",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_close",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_messages",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_open",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_rewind",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_rewind_cancel",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_rewind_overwrite_dirty",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_rewind_preview",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_sessions_sid_rewind_undo_overwrite",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_settings_reset_sessions",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_skills_run",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_skills_run_stream",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_tools_call",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_workbench_games_link",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_workbench_games_slug_package",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_workbench_games_slug_verify",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_workbench_package_clean",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.post_api_workspaces_activate",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.put_api_extensions_files",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.put_api_memory_settings",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.put_api_settings_env",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "server.put_api_workbench_agents_id_persona",
+      "domain": "server",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "session.close",
+      "domain": "session",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "session.create",
+      "domain": "session",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "session.rename",
+      "domain": "session",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "session.switch",
+      "domain": "session",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "sessions.list",
+      "domain": "sessions",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "sessions.refresh",
+      "domain": "sessions",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "store.get_cached_agent_for_sid",
+      "domain": "store",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "store.pin_reply_language",
+      "domain": "store",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "store.set_active_emitter",
+      "domain": "store",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "store.set_follow_input",
+      "domain": "store",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "store.set_pinned_slug",
+      "domain": "store",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "store.set_provider_override",
+      "domain": "store",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "store.set_reply_language",
+      "domain": "store",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "telemetry.clear",
+      "domain": "telemetry",
+      "agent_equiv": "none",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "trajectory.clear",
+      "domain": "trajectory",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "trajectory.read",
+      "domain": "trajectory",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    },
+    {
+      "effect_id": "workbench.list_plugins",
+      "domain": "workbench",
+      "agent_equiv": "declared",
+      "status": "unmigrated",
+      "manifest_id": null,
+      "reasons": [
+        "missing-evidence-manifest"
+      ],
+      "warnings": []
+    }
+  ],
+  "test_runs": [
+    {
+      "test_id": "packages/orchestrator/test/host-authoring.test.ts#ui_invoke creates and lists a role without a UI manifest or lease",
+      "ok": true,
+      "output": "test_id=packages/orchestrator/test/host-authoring.test.ts#ui_invoke creates and lists a role without a UI manifest or lease\ncommand=/data/forgeax/toolchain/bun-home/bin/bun test packages/orchestrator/test/host-authoring.test.ts --test-name-pattern \"ui_invoke creates and lists a role without a UI manifest or lease\"\nexit_status=0\nsignal=none\nspawn_error=none\nbun test v1.3.14 (0d9b296a)\n\npackages/orchestrator/test/host-authoring.test.ts:\n[extensions/scanner] normalized legacy id @forgeax-plugin/wb-scene-generator -> @forgeax-extension/wb-scene-generator (/data/forgeax/fx-m2/.worktrees/m2-p6-a/packages/marketplace/extensions/wb-scene-generator/forgeax-extension.json)\n[extensions/scanner] normalized legacy id @forgeax-plugin/wb-2d-scene-asset-generator -> @forgeax-extension/wb-2d-scene-asset-generator (/data/forgeax/fx-m2/.worktrees/m2-p6-a/packages/marketplace/extensions/wb-2d-scene-asset-generator/forgeax-extension.json)\n[extensions/scanner] normalized legacy id @forgeax-plugin/wb-3d-lowpoly -> @forgeax-extension/wb-3d-lowpoly (/data/forgeax/fx-m2/.worktrees/m2-p6-a/packages/marketplace/extensions/wb-3d-lowpoly/forgeax-extension.json)\n(pass) role actions in a true cold start > ui_invoke creates and lists a role without a UI manifest or lease [56.09ms]\n\n 1 pass\n 5 filtered out\n 0 fail\n 11 expect() calls\nRan 1 test across 1 file. [317.00ms]\n"
+    }
+  ],
+  "runtime_snapshot_diagnostics": []
+}

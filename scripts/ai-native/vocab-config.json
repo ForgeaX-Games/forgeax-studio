@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "overrides": {
+    "setters": {
+      "clearConsole": "console.clear",
+      "clearNetwork": "network.clear",
+      "closeOverlay": "overlay.close",
+      "closeSession": "session.close",
+      "createNewSession": "session.create",
+      "openOverlay": "overlay.open",
+      "openWorkbench": "workbench.open",
+      "refreshSessions": "sessions.refresh",
+      "renameTab": "session.rename",
+      "setFullscreen": "app.set_fullscreen",
+      "setMode": "app.set_mode",
+      "setTabAgent": "role.open",
+      "switchGame": "game.switch",
+      "switchToSession": "session.switch",
+      "toggleChatpanel": "panel.toggle_chatpanel",
+      "toggleFullscreen": "app.set_fullscreen",
+      "toggleSidebar": "panel.toggle_sidebar"
+    },
+    "commands": {
+      "app.dock.layoutToggle": "dock.toggle_layout",
+      "app.dock.reset": "dock.reset",
+      "app.panel.focus": "panel.focus",
+      "app.panel.open": "panel.open"
+    },
+    "actions": {}
+  },
+  "server_endpoint_overrides": {
+    "game.switch": [
+      "POST /api/workbench/games/:slug/activate"
+    ],
+    "session.close": [
+      "DELETE /api/sessions/:sid"
+    ],
+    "session.create": [
+      "POST /api/sessions/"
+    ]
+  }
+}

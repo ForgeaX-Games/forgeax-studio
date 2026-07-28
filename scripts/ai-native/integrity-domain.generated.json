@@ -1,0 +1,594 @@
+{
+  "schema_version": 1,
+  "derivation": "enforcement-domain-and-scanner-inputs-content-v5",
+  "roots": {
+    "package_scripts": [
+      "baseline:diff:build",
+      "baseline:diff:verify",
+      "integrity-domain:check",
+      "r6:calculate",
+      "r6:ci",
+      "runtime-pin:verify",
+      "test:ai-native",
+      "test:runtime-snapshot",
+      "typecheck:ai-native"
+    ],
+    "workflows": [],
+    "entrypoints": [
+      "scripts/ai-native/approval-landing.spec.ts",
+      "scripts/ai-native/baseline-diff.spec.ts",
+      "scripts/ai-native/baseline-literal.spec.ts",
+      "scripts/ai-native/build-baseline-diff.ts",
+      "scripts/ai-native/calculate-r6-coverage.ts",
+      "scripts/ai-native/capability-gates.spec.ts",
+      "scripts/ai-native/control-id.spec.ts",
+      "scripts/ai-native/evidence-manifest.schema.spec.ts",
+      "scripts/ai-native/governance-git.spec.ts",
+      "scripts/ai-native/integrity-domain.spec.ts",
+      "scripts/ai-native/integrity-domain.ts",
+      "scripts/ai-native/ledger-v1.schema.spec.ts",
+      "scripts/ai-native/r6-coverage.spec.ts",
+      "scripts/ai-native/r8-docs.spec.ts",
+      "scripts/ai-native/runtime-snapshot.spec.ts",
+      "scripts/ai-native/scanner.spec.ts",
+      "scripts/ai-native/schema-version-contract.spec.ts",
+      "scripts/ai-native/typecheck-ai-native.ts",
+      "scripts/ai-native/verify-approval-manifest.spec.ts",
+      "scripts/ai-native/verify-baseline-diff.ts",
+      "scripts/ai-native/verify-r6-ci.ts",
+      "scripts/ai-native/verify-runtime-pin.ts"
+    ]
+  },
+  "domain_files": [
+    "docs/ai-native/other-team-gap-ownership.md",
+    "package.json",
+    "scripts/ai-native/alias-map.json",
+    "scripts/ai-native/approval-landing.spec.ts",
+    "scripts/ai-native/baseline-approval.ts",
+    "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-23-0.6.1--b1-2026-07-24-0.6.2.jsonl",
+    "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-24-0.6.2--b1-2026-07-25-0.7.1.jsonl",
+    "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-25-0.7.2--b1-2026-07-26-0.7.3.jsonl",
+    "scripts/ai-native/baseline-diff-classifier.ts",
+    "scripts/ai-native/baseline-diff.spec.ts",
+    "scripts/ai-native/baseline-literal.spec.ts",
+    "scripts/ai-native/baseline-state.ts",
+    "scripts/ai-native/build-baseline-diff.ts",
+    "scripts/ai-native/build-runtime-pin.ts",
+    "scripts/ai-native/calculate-r6-coverage.ts",
+    "scripts/ai-native/capability-baseline-history/b1-2026-07-23-0.6.1-r1.json",
+    "scripts/ai-native/capability-baseline.json",
+    "scripts/ai-native/capability-gates.spec.ts",
+    "scripts/ai-native/capability-ratchet.ts",
+    "scripts/ai-native/control-id.spec.ts",
+    "scripts/ai-native/control-id.ts",
+    "scripts/ai-native/effect-adjudication.schema.ts",
+    "scripts/ai-native/effect-adjudications-v1.jsonl",
+    "scripts/ai-native/evidence-file.ts",
+    "scripts/ai-native/evidence-manifest.schema.spec.ts",
+    "scripts/ai-native/evidence-manifest.schema.ts",
+    "scripts/ai-native/evidence-manifests-v1/role.create.json",
+    "scripts/ai-native/evidence-manifests-v1/role.list.json",
+    "scripts/ai-native/exclusions.json",
+    "scripts/ai-native/generate-phase2-approval-docs.ts",
+    "scripts/ai-native/governance-git.spec.ts",
+    "scripts/ai-native/governance-git.ts",
+    "scripts/ai-native/integrity-domain.spec.ts",
+    "scripts/ai-native/integrity-domain.ts",
+    "scripts/ai-native/land-phase2-approval.ts",
+    "scripts/ai-native/ledger-v1.jsonl",
+    "scripts/ai-native/ledger-v1.schema.spec.ts",
+    "scripts/ai-native/ledger-v1.schema.ts",
+    "scripts/ai-native/manual-pool-adjudications-v1.jsonl",
+    "scripts/ai-native/manual-pool-carry-forward.json",
+    "scripts/ai-native/manual-pool-effect-promotions.json",
+    "scripts/ai-native/other-team-route-registry.json",
+    "scripts/ai-native/product-tree-fingerprint.ts",
+    "scripts/ai-native/profiles/main.json",
+    "scripts/ai-native/r4r5-balance.json",
+    "scripts/ai-native/r6-coverage.spec.ts",
+    "scripts/ai-native/r6-coverage.ts",
+    "scripts/ai-native/r8-docs.spec.ts",
+    "scripts/ai-native/render-exemption-list.ts",
+    "scripts/ai-native/runtime-artifact-integrity.ts",
+    "scripts/ai-native/runtime-profile-terminal-registry.ts",
+    "scripts/ai-native/runtime-snapshot-core.ts",
+    "scripts/ai-native/runtime-snapshot-history.ts",
+    "scripts/ai-native/runtime-snapshot-reports/main.development.json",
+    "scripts/ai-native/runtime-snapshot-reports/main.formal.json",
+    "scripts/ai-native/runtime-snapshot-runner.ts",
+    "scripts/ai-native/runtime-snapshot-worker.ts",
+    "scripts/ai-native/runtime-snapshot.spec.ts",
+    "scripts/ai-native/runtime-snapshots/main.development.json",
+    "scripts/ai-native/runtime-snapshots/main.formal.json",
+    "scripts/ai-native/scan.ts",
+    "scripts/ai-native/scanner-config.json",
+    "scripts/ai-native/scanner.spec.ts",
+    "scripts/ai-native/scanner.ts",
+    "scripts/ai-native/schema-version-contract.spec.ts",
+    "scripts/ai-native/schema-version-contract.ts",
+    "scripts/ai-native/test-binding-registry.json",
+    "scripts/ai-native/tsconfig.json",
+    "scripts/ai-native/typecheck-ai-native.ts",
+    "scripts/ai-native/verify-approval-manifest.spec.ts",
+    "scripts/ai-native/verify-approval-manifest.ts",
+    "scripts/ai-native/verify-baseline-diff.ts",
+    "scripts/ai-native/verify-r6-ci.ts",
+    "scripts/ai-native/verify-runtime-pin.ts",
+    "scripts/ai-native/vocab-config.json"
+  ],
+  "configuration_files": [
+    "docs/ai-native/other-team-gap-ownership.md",
+    "package.json",
+    "scripts/ai-native/alias-map.json",
+    "scripts/ai-native/approval-landing.spec.ts",
+    "scripts/ai-native/baseline-approval.ts",
+    "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-23-0.6.1--b1-2026-07-24-0.6.2.jsonl",
+    "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-24-0.6.2--b1-2026-07-25-0.7.1.jsonl",
+    "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-25-0.7.2--b1-2026-07-26-0.7.3.jsonl",
+    "scripts/ai-native/baseline-diff-classifier.ts",
+    "scripts/ai-native/baseline-diff.spec.ts",
+    "scripts/ai-native/baseline-literal.spec.ts",
+    "scripts/ai-native/baseline-state.ts",
+    "scripts/ai-native/build-baseline-diff.ts",
+    "scripts/ai-native/build-runtime-pin.ts",
+    "scripts/ai-native/calculate-r6-coverage.ts",
+    "scripts/ai-native/capability-baseline-history/b1-2026-07-23-0.6.1-r1.json",
+    "scripts/ai-native/capability-baseline.json",
+    "scripts/ai-native/capability-gates.spec.ts",
+    "scripts/ai-native/capability-ratchet.ts",
+    "scripts/ai-native/control-id.spec.ts",
+    "scripts/ai-native/control-id.ts",
+    "scripts/ai-native/effect-adjudication.schema.ts",
+    "scripts/ai-native/effect-adjudications-v1.jsonl",
+    "scripts/ai-native/evidence-file.ts",
+    "scripts/ai-native/evidence-manifest.schema.spec.ts",
+    "scripts/ai-native/evidence-manifest.schema.ts",
+    "scripts/ai-native/exclusions.json",
+    "scripts/ai-native/generate-phase2-approval-docs.ts",
+    "scripts/ai-native/governance-git.spec.ts",
+    "scripts/ai-native/governance-git.ts",
+    "scripts/ai-native/integrity-domain.spec.ts",
+    "scripts/ai-native/integrity-domain.ts",
+    "scripts/ai-native/land-phase2-approval.ts",
+    "scripts/ai-native/ledger-v1.jsonl",
+    "scripts/ai-native/ledger-v1.schema.spec.ts",
+    "scripts/ai-native/ledger-v1.schema.ts",
+    "scripts/ai-native/manual-pool-adjudications-v1.jsonl",
+    "scripts/ai-native/manual-pool-carry-forward.json",
+    "scripts/ai-native/manual-pool-effect-promotions.json",
+    "scripts/ai-native/other-team-route-registry.json",
+    "scripts/ai-native/product-tree-fingerprint.ts",
+    "scripts/ai-native/profiles/main.json",
+    "scripts/ai-native/r4r5-balance.json",
+    "scripts/ai-native/r6-coverage.spec.ts",
+    "scripts/ai-native/r6-coverage.ts",
+    "scripts/ai-native/r8-docs.spec.ts",
+    "scripts/ai-native/render-exemption-list.ts",
+    "scripts/ai-native/runtime-artifact-integrity.ts",
+    "scripts/ai-native/runtime-profile-terminal-registry.ts",
+    "scripts/ai-native/runtime-snapshot-core.ts",
+    "scripts/ai-native/runtime-snapshot-history.ts",
+    "scripts/ai-native/runtime-snapshot-runner.ts",
+    "scripts/ai-native/runtime-snapshot-worker.ts",
+    "scripts/ai-native/runtime-snapshot.spec.ts",
+    "scripts/ai-native/scan.ts",
+    "scripts/ai-native/scanner-config.json",
+    "scripts/ai-native/scanner.spec.ts",
+    "scripts/ai-native/scanner.ts",
+    "scripts/ai-native/schema-version-contract.spec.ts",
+    "scripts/ai-native/schema-version-contract.ts",
+    "scripts/ai-native/test-binding-registry.json",
+    "scripts/ai-native/tsconfig.json",
+    "scripts/ai-native/typecheck-ai-native.ts",
+    "scripts/ai-native/verify-approval-manifest.spec.ts",
+    "scripts/ai-native/verify-approval-manifest.ts",
+    "scripts/ai-native/verify-baseline-diff.ts",
+    "scripts/ai-native/verify-r6-ci.ts",
+    "scripts/ai-native/verify-runtime-pin.ts",
+    "scripts/ai-native/vocab-config.json"
+  ],
+  "configuration_file_hashes": [
+    {
+      "path": "docs/ai-native/other-team-gap-ownership.md",
+      "sha256": "06be229a2bf6180f9acaddaad7ccb203f6f6278ea761ce0a85e4e66eaca5db36"
+    },
+    {
+      "path": "package.json",
+      "sha256": "650d380f3c0c41e972b5e0079da7cbaa6a705dd0a721800bed6ac78c1ee04309"
+    },
+    {
+      "path": "scripts/ai-native/alias-map.json",
+      "sha256": "f596f1ecc88e4d673015091adda84a535f7e6b7385ae4dd200038fcf5535eca3"
+    },
+    {
+      "path": "scripts/ai-native/approval-landing.spec.ts",
+      "sha256": "b0fe937ae4c70f3d268286293eb0c1c86065bd58cd985701503be21f78324db1"
+    },
+    {
+      "path": "scripts/ai-native/baseline-approval.ts",
+      "sha256": "860816a03e61f5be32937b1b0697ee23272cea99c074d7ab40425173ae4ce140"
+    },
+    {
+      "path": "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-23-0.6.1--b1-2026-07-24-0.6.2.jsonl",
+      "sha256": "589516772cab718e04c986f5254442c471937f6de1dc1ae5a9d1beedcca3b2dc"
+    },
+    {
+      "path": "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-24-0.6.2--b1-2026-07-25-0.7.1.jsonl",
+      "sha256": "9aaa97f40a015adb7d91239d73da6e372faeb75d8027e289ff2a9ae0a17abe4c"
+    },
+    {
+      "path": "scripts/ai-native/baseline-diff-adjudications/b1-2026-07-25-0.7.2--b1-2026-07-26-0.7.3.jsonl",
+      "sha256": "5542083b6414531febd91c45adc69f1c1580d9b6ff1cd4c9c6b1f6d12b8873f3"
+    },
+    {
+      "path": "scripts/ai-native/baseline-diff-classifier.ts",
+      "sha256": "2c16437f21fd4172fa22921065eafb28ca8628b683b2db86a3bf13e7f55c4779"
+    },
+    {
+      "path": "scripts/ai-native/baseline-diff.spec.ts",
+      "sha256": "c10904d876e4976fb4430987d642628393a95da79554bae00014028a3924cb98"
+    },
+    {
+      "path": "scripts/ai-native/baseline-literal.spec.ts",
+      "sha256": "90a658764ee212cc0164006ffa5e1c63fc8effdac529ad0921723a1d10fa9417"
+    },
+    {
+      "path": "scripts/ai-native/baseline-state.ts",
+      "sha256": "ea0683c7797a2824d53cd7967f874c5f0052c912cb28910eb194028743ea65e9"
+    },
+    {
+      "path": "scripts/ai-native/build-baseline-diff.ts",
+      "sha256": "864fc3e7f37b44429cbec6691869d6e16c321b8429c5a44af2f5e7ca1546ab37"
+    },
+    {
+      "path": "scripts/ai-native/build-runtime-pin.ts",
+      "sha256": "f54c6936a301b0893eec0c7319ab1580b0c33ac9ac16f04ac225aa46bd5ab8f5"
+    },
+    {
+      "path": "scripts/ai-native/calculate-r6-coverage.ts",
+      "sha256": "09f5e5d5b8e4cae24f4e53c8b1451bf0e5b3feb550aa374977a984fa45c30684"
+    },
+    {
+      "path": "scripts/ai-native/capability-baseline-history/b1-2026-07-23-0.6.1-r1.json",
+      "sha256": "ce6895e0d5678c26bc3d01511b7f1fb6edee09a775caad2dcac35df3115dfbea"
+    },
+    {
+      "path": "scripts/ai-native/capability-baseline.json",
+      "sha256": "25237f7305dc2bc67991925f17a3d3b7544cfb3a86898ac905f8c9d5dcf9543d"
+    },
+    {
+      "path": "scripts/ai-native/capability-gates.spec.ts",
+      "sha256": "f665e025a82945120c55caa91ca56df068bd7ba41a38175ffe5f2b302d0fb93e"
+    },
+    {
+      "path": "scripts/ai-native/capability-ratchet.ts",
+      "sha256": "87c5a5ab1c91a0cc527f9e75e4068a1aaf8901086203cb47f97f9d1196d8cad9"
+    },
+    {
+      "path": "scripts/ai-native/control-id.spec.ts",
+      "sha256": "2ce0422108ba4ad69af6f3405b09ce08da9cfac306af8becf24d8c69e0563365"
+    },
+    {
+      "path": "scripts/ai-native/control-id.ts",
+      "sha256": "b31d742994eba32ea25a854a59b902566bed094131667cd1a93f857d8723f04f"
+    },
+    {
+      "path": "scripts/ai-native/effect-adjudication.schema.ts",
+      "sha256": "e83bfb33589ef4590d94d15470ac4ddc976a12d858c487824e6fc65d3f52d689"
+    },
+    {
+      "path": "scripts/ai-native/effect-adjudications-v1.jsonl",
+      "sha256": "9e2230a3eb696ffe5bc3a70a3170d9483941ec15ccb81c65cf6a27a7d9a15bb7"
+    },
+    {
+      "path": "scripts/ai-native/evidence-file.ts",
+      "sha256": "8a063f086b7e5e5b627fee8f97c6d47ce6498d7525861d72728099fa031ecd0c"
+    },
+    {
+      "path": "scripts/ai-native/evidence-manifest.schema.spec.ts",
+      "sha256": "756e5dacdb70d8157e71a0120c15621d50d95d5c011f6fb9c16ab96b1c2fac7d"
+    },
+    {
+      "path": "scripts/ai-native/evidence-manifest.schema.ts",
+      "sha256": "c843d130622ed0e899d28b778ef6f8e96297ba140b9427c8896e1a12c434ed9f"
+    },
+    {
+      "path": "scripts/ai-native/exclusions.json",
+      "sha256": "cfa112f2cb760a6d1d6dec0dd68c46b853f7159c3311f25626c8a2181becc7d2"
+    },
+    {
+      "path": "scripts/ai-native/generate-phase2-approval-docs.ts",
+      "sha256": "4053cc1c9c3a80d44065aa4a099399cf64dfe3fd0e9499d8a758950203b82c67"
+    },
+    {
+      "path": "scripts/ai-native/governance-git.spec.ts",
+      "sha256": "45a61f7e181e9549744f386764498e8cf13aabcd74a1f8c5981b5883af23d323"
+    },
+    {
+      "path": "scripts/ai-native/governance-git.ts",
+      "sha256": "1992e48fde1d43cc3d1d01d4ce8a04ef305d4960a6501dcd0c9324d61eacd9e7"
+    },
+    {
+      "path": "scripts/ai-native/integrity-domain.spec.ts",
+      "sha256": "1caaf972edc5a028f884fdc13acdfaa746acbf44903ab9b62e856e56938a0533"
+    },
+    {
+      "path": "scripts/ai-native/integrity-domain.ts",
+      "sha256": "d4483afcf07ffafb3fffc15862ddfca371fc94486f66ba6232d0a7f7da469dab"
+    },
+    {
+      "path": "scripts/ai-native/land-phase2-approval.ts",
+      "sha256": "cc26f32f45da8928616490e8876f3844a97c334f10200f8d1dd678fe8242cd68"
+    },
+    {
+      "path": "scripts/ai-native/ledger-v1.jsonl",
+      "sha256": "933c72f99c08643079e47151b6a131a48b3a41f9096980175d0b4ef4c455130e"
+    },
+    {
+      "path": "scripts/ai-native/ledger-v1.schema.spec.ts",
+      "sha256": "8d1fe17e1db7968f11355c0df7d4dc84b4616d2cb71bf6c3d2ca7a05606a0002"
+    },
+    {
+      "path": "scripts/ai-native/ledger-v1.schema.ts",
+      "sha256": "b1c7ccc43bea73bee04ab365ad5fd9957b4060f1fab94b61947b3338e5f8dd6a"
+    },
+    {
+      "path": "scripts/ai-native/manual-pool-adjudications-v1.jsonl",
+      "sha256": "6b99851c541e2915426f311b1568676a78f392ee114f556da1413f46b6eb6ad1"
+    },
+    {
+      "path": "scripts/ai-native/manual-pool-carry-forward.json",
+      "sha256": "33295348c1dab9d07a111bc4b4f23a59ef0bf99f1e479da2e3411dccf432d8b2"
+    },
+    {
+      "path": "scripts/ai-native/manual-pool-effect-promotions.json",
+      "sha256": "ba2be5cade90177d279aa14982a689ce8d0783c0d833ed437d8f5d35a58a4df8"
+    },
+    {
+      "path": "scripts/ai-native/other-team-route-registry.json",
+      "sha256": "ac49b0a6b2f151d98819bc3e4f54da7fddcf593c94ad7e8da27630dd075d183e"
+    },
+    {
+      "path": "scripts/ai-native/product-tree-fingerprint.ts",
+      "sha256": "fe9ee8011a6433d80145cb252f75a38ad537261994037c9d6d16a06cf5fdfb1a"
+    },
+    {
+      "path": "scripts/ai-native/profiles/main.json",
+      "sha256": "bd738159b264f69799a5d916c8df854144630b92790a04f559b116c9cd7caa44"
+    },
+    {
+      "path": "scripts/ai-native/r4r5-balance.json",
+      "sha256": "d4f70a49db62340911fdce783b339e637b46da4c02a0a85f7fb356c52db2c493"
+    },
+    {
+      "path": "scripts/ai-native/r6-coverage.spec.ts",
+      "sha256": "4ffbffa4f9d7d5429b0a0b6e67ca344540b1b37b503ffbf2f59f340e281da481"
+    },
+    {
+      "path": "scripts/ai-native/r6-coverage.ts",
+      "sha256": "6cb0b686ca29ca813f7a9bec6c996be11b773492fb452b80442f7cbaa50fcd84"
+    },
+    {
+      "path": "scripts/ai-native/r8-docs.spec.ts",
+      "sha256": "0935d4facaff0de99173f6cf3eb174f5440b9ec1321b7ea855101561cbc2ed6e"
+    },
+    {
+      "path": "scripts/ai-native/render-exemption-list.ts",
+      "sha256": "c8bbd6997ab261516e9b61f4acc03cae4925e89258a400fcf7bf3c3a78793bd5"
+    },
+    {
+      "path": "scripts/ai-native/runtime-artifact-integrity.ts",
+      "sha256": "00593c0b7c208d355823b0bb9e566f11eed26fcc75c72b69e098f22023a6f02c"
+    },
+    {
+      "path": "scripts/ai-native/runtime-profile-terminal-registry.ts",
+      "sha256": "3fc8c94fbdc365e3d3f732f84f0987e04dd5cb450d714279b3a8af75d08910de"
+    },
+    {
+      "path": "scripts/ai-native/runtime-snapshot-core.ts",
+      "sha256": "9b04beb2e240b11eebdb1ba0bf9dcca4000bb3d78be9c3dae1de4ade84c96744"
+    },
+    {
+      "path": "scripts/ai-native/runtime-snapshot-history.ts",
+      "sha256": "2e19bc7445cb91731e8203a77e21e67ed084b9369d7eab4987386147b55bafcf"
+    },
+    {
+      "path": "scripts/ai-native/runtime-snapshot-runner.ts",
+      "sha256": "44545244de3ce4540a1e5c99dcb7106da0b8450d277a7ef303f7eaf62382afc9"
+    },
+    {
+      "path": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "sha256": "e41338ffc91274476100ae478c08e5d1adce1c42c1d7ab4a224f12f0d17a3388"
+    },
+    {
+      "path": "scripts/ai-native/runtime-snapshot.spec.ts",
+      "sha256": "d025bc0ce93035231ef471ddef6b138d0329cea9aaddea97bf5503889aef76d8"
+    },
+    {
+      "path": "scripts/ai-native/scan.ts",
+      "sha256": "d6faf542571f615791222016363dc88d3fa2b71bdbe010d0e4351a0c00cb4809"
+    },
+    {
+      "path": "scripts/ai-native/scanner-config.json",
+      "sha256": "425c4ff3e4e1320582e68827f1584fafa7bf652a44183f61a90877e86694e1b6"
+    },
+    {
+      "path": "scripts/ai-native/scanner.spec.ts",
+      "sha256": "35206c06249b66f3a164550c1ddf87d369e1dc6f8d36b1a22b4a8ea660ee89e8"
+    },
+    {
+      "path": "scripts/ai-native/scanner.ts",
+      "sha256": "3366f715a6b7370e2132ea627a8a690bd778824952ef627e47b704c3f462ba67"
+    },
+    {
+      "path": "scripts/ai-native/schema-version-contract.spec.ts",
+      "sha256": "60ca70cf653af1dbbf0fd4f1851d70bcd2758a65da5f8c5caa32ea670a763f78"
+    },
+    {
+      "path": "scripts/ai-native/schema-version-contract.ts",
+      "sha256": "e34e030481ab672cb26fdd7f91ee161a2e9d063e1aaa6845107cd33b2d684d7f"
+    },
+    {
+      "path": "scripts/ai-native/test-binding-registry.json",
+      "sha256": "bb020285603378abd3ffeb0e6cd609302e45b4c6270362dab59b6e27398c68fa"
+    },
+    {
+      "path": "scripts/ai-native/tsconfig.json",
+      "sha256": "d75b0dc7b14af465daedc58b259e800c5e84a570b7c2cf4071bfde7c314e8af4"
+    },
+    {
+      "path": "scripts/ai-native/typecheck-ai-native.ts",
+      "sha256": "8442cb372c53328bcf602593c75802bbc3824bf0e545518b0828e02ea929a0ca"
+    },
+    {
+      "path": "scripts/ai-native/verify-approval-manifest.spec.ts",
+      "sha256": "d42e24e611223868cbe84daeaec1adee659b49db80769d5c6bf2e253c847b7b3"
+    },
+    {
+      "path": "scripts/ai-native/verify-approval-manifest.ts",
+      "sha256": "e82728f0d5275ad19fde3dd25026b93c95f5d92e0c3a2ba3c3105ee03bd90ac2"
+    },
+    {
+      "path": "scripts/ai-native/verify-baseline-diff.ts",
+      "sha256": "3be289b5189bb68ae286c741f8769ee0ea73d839078c580d44a6dfbd887cf541"
+    },
+    {
+      "path": "scripts/ai-native/verify-r6-ci.ts",
+      "sha256": "5080ba4c70c8f44d5a57eca9bf90321ac0c776749ada0c815d9fb39237cfddd9"
+    },
+    {
+      "path": "scripts/ai-native/verify-runtime-pin.ts",
+      "sha256": "fcc68e6ff5fcaeb907d766c14e765a9bd241f5d43c4296a6a02a3b3969948a40"
+    },
+    {
+      "path": "scripts/ai-native/vocab-config.json",
+      "sha256": "c1fc5b65b365598f5b6fec3c1b02ebf1ff8ebf153dd696e74260b19005571764"
+    }
+  ],
+  "scanner_configuration_files": [
+    "docs/ai-native/other-team-gap-ownership.md",
+    "scripts/ai-native/alias-map.json",
+    "scripts/ai-native/exclusions.json",
+    "scripts/ai-native/manual-pool-effect-promotions.json",
+    "scripts/ai-native/other-team-route-registry.json",
+    "scripts/ai-native/scanner-config.json",
+    "scripts/ai-native/vocab-config.json"
+  ],
+  "snapshot_boundary_inputs": [
+    "bun.lock",
+    "docs/ai-native/other-team-gap-ownership.md",
+    "scripts/ai-native/alias-map.json",
+    "scripts/ai-native/exclusions.json",
+    "scripts/ai-native/manual-pool-effect-promotions.json",
+    "scripts/ai-native/other-team-route-registry.json",
+    "scripts/ai-native/scanner-config.json",
+    "scripts/ai-native/vocab-config.json"
+  ],
+  "cross_package_value_imports": [
+    {
+      "importer": "scripts/ai-native/calculate-r6-coverage.ts",
+      "target": "packages/orchestrator/src/kernel/action-catalog.ts",
+      "reason": "The production R6 calculator executes the live action catalog as its runtime observation boundary."
+    },
+    {
+      "importer": "scripts/ai-native/calculate-r6-coverage.ts",
+      "target": "packages/orchestrator/src/kernel/ui-headless-actions.ts",
+      "reason": "The production R6 calculator executes the live headless-action registry as its runtime observation boundary."
+    },
+    {
+      "importer": "scripts/ai-native/capability-gates.spec.ts",
+      "target": "packages/orchestrator/src/index.ts",
+      "reason": "The executable capability gate compares its contract against the live orchestrator export."
+    },
+    {
+      "importer": "scripts/ai-native/capability-gates.spec.ts",
+      "target": "packages/orchestrator/src/kernel/action-catalog.ts",
+      "reason": "The executable capability gate exercises the live action catalog."
+    },
+    {
+      "importer": "scripts/ai-native/capability-gates.spec.ts",
+      "target": "packages/orchestrator/src/kernel/ui-headless-actions.ts",
+      "reason": "The executable capability gate exercises the live headless-action registry."
+    },
+    {
+      "importer": "scripts/ai-native/r6-coverage.spec.ts",
+      "target": "packages/orchestrator/src/kernel/action-catalog.ts",
+      "reason": "The R6 integration spec exercises the live action catalog."
+    },
+    {
+      "importer": "scripts/ai-native/r6-coverage.spec.ts",
+      "target": "packages/orchestrator/src/kernel/ui-headless-actions.ts",
+      "reason": "The R6 integration spec exercises the live headless-action registry."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/api/lib/host-tools-for-agent.ts",
+      "reason": "The formal snapshot worker observes live host-tool composition."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/app.ts",
+      "reason": "The formal snapshot worker constructs the live orchestrator application."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/core/session-manager.ts",
+      "reason": "The formal snapshot worker creates its isolated live session."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/extensions/registry.ts",
+      "reason": "The formal snapshot worker observes the live extension registry."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/fs/path-manager.ts",
+      "reason": "The formal snapshot worker configures isolated runtime paths."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/kernel/action-catalog.ts",
+      "reason": "The formal snapshot worker observes the live action catalog."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/kernel/compose-turn-request.ts",
+      "reason": "The formal snapshot worker exercises live turn-request composition."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/kernel/resolve-kernel.ts",
+      "reason": "The formal snapshot worker resolves the live kernel without invoking a model."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/orchestrator/src/soul/index.ts",
+      "reason": "The formal snapshot worker loads the live agent record."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/server/src/game/active-game.ts",
+      "reason": "The formal snapshot worker installs the isolated active-game fixture."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/server/src/game/host-tools.ts",
+      "reason": "The formal snapshot worker observes the product-shell host-tool boundary."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/server/src/game/system-prompt-composer.ts",
+      "reason": "The formal snapshot worker composes the live product system prompt."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/server/src/kernel/forgeax-core-adapter.ts",
+      "reason": "The formal snapshot worker registers the live kernel adapter."
+    },
+    {
+      "importer": "scripts/ai-native/runtime-snapshot-worker.ts",
+      "target": "packages/server/src/studio-session-layout.ts",
+      "reason": "The formal snapshot worker constructs the isolated session layout."
+    }
+  ]
+}

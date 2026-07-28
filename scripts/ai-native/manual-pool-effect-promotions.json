@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "promotions": [
+    {
+      "effect_id": "boot_splash.reset",
+      "disposition": "tool",
+      "domain": "boot_splash",
+      "source_control_ids": ["ctl_5f1071491fc670423e6642df"]
+    },
+    {
+      "effect_id": "boot_splash.set_show_bus_inventory",
+      "disposition": "tool",
+      "domain": "boot_splash",
+      "source_control_ids": ["ctl_f97f6ea00b91a2f4c65430eb"]
+    },
+    {
+      "effect_id": "boot_splash.set_show_progress",
+      "disposition": "tool",
+      "domain": "boot_splash",
+      "source_control_ids": ["ctl_c4445aa30baab37d826eb56a"]
+    },
+    {
+      "effect_id": "boot_splash.set_theme",
+      "disposition": "tool",
+      "domain": "boot_splash",
+      "source_control_ids": ["ctl_06ef6ed696437bba7c893fe9"]
+    },
+    {
+      "effect_id": "chat.cancel_stream",
+      "disposition": "tool",
+      "domain": "chat",
+      "source_control_ids": ["ctl_2a1e0df68aaa37a9a83fd477"]
+    },
+    {
+      "effect_id": "composer.clear_queue",
+      "disposition": "tool",
+      "domain": "composer",
+      "source_control_ids": ["ctl_95adc6e5432117d8d5c8db76"]
+    },
+    {
+      "effect_id": "composer.dequeue_message",
+      "disposition": "tool",
+      "domain": "composer",
+      "source_control_ids": ["ctl_d1a3ca939195cc233f014e1d"]
+    },
+    {
+      "effect_id": "files.open",
+      "disposition": "read",
+      "domain": "files",
+      "source_control_ids": [
+        "ctl_2855598302503ae38e4158db",
+        "ctl_7e1519dfd9db127ecb3568af",
+        "ctl_b427208480c5abb208451e26"
+      ]
+    },
+    {
+      "effect_id": "game.list",
+      "disposition": "read",
+      "domain": "game",
+      "source_control_ids": ["ctl_a2408ee6fe4a022cb6a008db"]
+    },
+    {
+      "effect_id": "health.clear_fatal",
+      "disposition": "tool",
+      "domain": "health",
+      "source_control_ids": ["ctl_ad7dcd65208fe802efb917c8"]
+    },
+    {
+      "effect_id": "language.change",
+      "disposition": "tool",
+      "domain": "language",
+      "source_control_ids": ["ctl_6dca422820add5aeb0b54d49"]
+    },
+    {
+      "effect_id": "model_picker.refresh",
+      "disposition": "read",
+      "domain": "model_picker",
+      "source_control_ids": ["ctl_731d98efdea6e529ea5fed59"]
+    },
+    {
+      "effect_id": "onboarding_controller.choose_project_action",
+      "disposition": "tool",
+      "domain": "onboarding_controller",
+      "source_control_ids": ["ctl_ae3672118bce07d3acaa9803"]
+    },
+    {
+      "effect_id": "telemetry.clear",
+      "disposition": "tool",
+      "domain": "telemetry",
+      "source_control_ids": [
+        "ctl_6d45d8eac37da1838893da9b",
+        "ctl_a4dcd32040dbe7d07065c643"
+      ]
+    }
+  ]
+}

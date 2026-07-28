@@ -44,6 +44,12 @@
       "element": "DropdownMenuItem",
       "event": "onSelect",
       "reason": "concrete native/context menu entries are derived from menuRegistry and editor menu data; the generic renderer would double-count them"
+    },
+    {
+      "file": "packages/interface/src/components/MenuBar/MenuBar.tsx",
+      "element": "DropdownMenuItem",
+      "event": "onSelect",
+      "reason": "declarative top-menu controls are derived from registerMenuItem data; the generic web renderer and native bridge are mirrors of the same entries"
     }
   ],
   "listener_rules": [
@@ -157,6 +163,16 @@
       "verified_applicability": "Verified 2026-07-17: the interface and chat listeners only re-read onboarding milestones after an already-inventoried originating control changes them."
     },
     {
+      "file": "packages/interface/src/i18n/index.ts",
+      "event": "forgeax:locale-changed",
+      "element": "window",
+      "calls": [
+        "setLocale"
+      ],
+      "reason": "same-frame locale state synchronization downstream of an already-inventoried language selection",
+      "verified_applicability": "Verified 2026-07-23: i18n/index.ts:127 only calls setLocale(readPersisted(), { persist: false }) so the shell follows an editor-core locale change; the originating language control is inventoried separately."
+    },
+    {
       "event": "forgeax:open-connect-prompt",
       "reason": "internal continuation from an already-inventoried composer send attempt",
       "verified_applicability": "Verified 2026-07-17: ConnectModelPrompt opens after the composer detects a missing model path; the user's send control is the command entry."
@@ -217,6 +233,13 @@
       "verified_applicability": "Verified 2026-07-17: store replay wrappers forward msg/merged/turn payloads into previously built callback implementations."
     },
     {
+      "file": "packages/chat/src/event-engine/ledger-blob-hydration.ts",
+      "receiver": "options",
+      "method": "onError",
+      "reason": "Optional error callback sink invoked after ledger-blob hydration fails, not a user-operated subscription entry",
+      "verified_applicability": "Verified 2026-07-22: ledger-blob-hydration.ts:46 forwards the failed blob and error to the caller-supplied diagnostics callback; the originating replay/load operation is inventoried elsewhere."
+    },
+    {
       "receiver": "this",
       "method": "onListenerError",
       "reason": "EventBus error callback-sink invocation, not a subscription registration",
@@ -252,30 +275,7 @@
       "method": "on",
       "event": "forgeax:game-code-change",
       "reason": "Vite HMR development transport hook, not a human-operated control",
-      "verified_applicability": "Verified 2026-07-17: this exact import.meta.hot.on topic receives Vite game-code-change notifications and restarts an already-running preview during development; the file/receiver/method/topic scope matches only editorRenderers.tsx:188."
-    },
-    {
-      "file": "packages/interface/src/core/extension-foundation/loader.ts",
-      "receiver": "capabilities",
-      "method": "on",
-      "event": "added",
-      "reason": "Extension capability-availability lifecycle plumbing, not a human-operated entry",
-      "verified_applicability": "Verified 2026-07-17: loader.ts:137 only enqueues scanAndActivate after an internal capability registration; the exact topic scope leaves other capability subscriptions visible."
-    },
-    {
-      "file": "packages/interface/src/core/extension-foundation/loader.ts",
-      "receiver": "capabilities",
-      "method": "on",
-      "event": "removed",
-      "reason": "Extension capability-removal lifecycle plumbing, not a human-operated entry",
-      "verified_applicability": "Verified 2026-07-17: loader.ts:138 only tears down or re-pends extensions after an internal capability removal; the exact topic scope leaves other capability subscriptions visible."
-    },
-    {
-      "file": "packages/interface/src/core/extension-foundation/capabilities.ts",
-      "receiver": "bus",
-      "method": "on",
-      "reason": "CapabilityRegistry facade forwarding to EventBus, not an independent subscription consumer",
-      "verified_applicability": "Verified 2026-07-17: capabilities.ts:40 implements CapabilityRegistry.on by forwarding its event and listener arguments unchanged to bus.on; concrete consumers are audited at their own call sites."
+      "verified_applicability": "Verified 2026-07-22: this exact import.meta.hot.on topic receives Vite game-code-change notifications and restarts an already-running preview during development; the file/receiver/method/topic scope matches only editorRenderers.tsx:194."
     },
     {
       "file": "packages/interface/src/components/ExtensionHost/ExtensionIframeHost.tsx",
@@ -307,6 +307,14 @@
       "event": "panel:focus",
       "reason": "Downstream handler for the already-inventoried app.panel.focus command",
       "verified_applicability": "Verified 2026-07-17: DockRegion.tsx:591 focuses an existing panel after builtinCommandsExtension emits panel:focus; the command is the semantic entry."
+    },
+    {
+      "file": "packages/interface/src/components/DockShell/DockRegion.tsx",
+      "receiver": "host.bus",
+      "method": "on",
+      "event": "panel:close",
+      "reason": "Downstream handler for the already-inventoried app.panel.close and app.panel.toggle commands",
+      "verified_applicability": "Verified 2026-07-25: the panel:close handler closes an existing DockRegion panel after a command-bus emission; the command/menu entry is the semantic origin."
     },
     {
       "file": "packages/interface/src/components/DockShell/DockRegion.tsx",
@@ -351,7 +359,7 @@
       "receiver": "useShellStore",
       "method": "subscribe",
       "reason": "Chat registry garbage collection after session removal",
-      "verified_applicability": "Verified 2026-07-17: store.ts:1328 observes removed session tabs to abort streams and delete chat buckets/queues; it is cleanup downstream of an inventoried session-close control."
+      "verified_applicability": "Verified 2026-07-22: store.ts:1511 observes removed session tabs to abort streams and delete chat buckets/queues; it is cleanup downstream of an inventoried session-close control."
     }
   ]
 }

@@ -69,7 +69,7 @@ packages/marketplace
 packages/server
 
 # parallel-track floating clones (own .git, may hold unpushed work — NOT regenerated, do not delete)
-# engine = forgeax-engine checkout; kernel = backend-L1 container (platform-io). Neither is a
+# engine = forgeax-engine checkout; kernel = backend-foundation container (platform-io). Neither is a
 # workspace or submodule of this repo; see plan "Reconciliation results (2026-07-02)".
 packages/engine/
 packages/kernel/

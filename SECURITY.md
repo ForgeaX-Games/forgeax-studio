@@ -10,9 +10,9 @@ Please do **not** open a public GitHub issue for security-sensitive findings.
 
 ## Threat model (in scope)
 
-- **Plugin supply-chain.** A plugin authored by a third party is installed via `.fxpack` import or by dropping into `~/.forgeax/plugins/`. The plugin can declare permissions in its manifest; the host renders these to the user before install.
+- **Extension supply-chain.** A third-party extension is installed via `.fxpack` import or by dropping it into `~/.forgeax/extensions/`. The extension can declare permissions in its manifest; the host renders these to the user before install.
 - **Credential leakage at export.** A plugin author exports their plugin without realizing a config file contains an API key. The exporter lints for common secret patterns and rejects.
-- **Cross-tenant isolation on a single host.** Multiple game projects share the same daemon process; project-private (L2) plugins must not bleed into other projects' L2 namespace.
+- **Cross-tenant isolation on a single host.** Multiple game projects share the same daemon process; project-specific extensions must not bleed into another project's extension namespace.
 
 ## Out of scope (v1)
 
@@ -36,7 +36,7 @@ Please do **not** open a public GitHub issue for security-sensitive findings.
 2. **Declare the permissions you actually use.** Even though v1 doesn't enforce, the trust panel UI uses these to inform receivers. Lying degrades trust in the marketplace.
 3. **Pin your `compatibleWith.forgeax-bus`.** Manifest validation may tighten between versions; pinning gives users a clear error rather than a silent misload.
 4. **Validate AI inputs in your handler.** Even though `argsSchema` is declared, treat it as documentation, not as a fully strict gate (future work). Validate again inside the handler when correctness matters.
-5. **Test locally with a clean workspace.** Drop your plugin into `<projectRoot>/.forgeax/plugins/` (L2) and verify it still works after `POST /api/plugins/reload`.
+5. **Test locally with a clean workspace.** Drop your extension into `<projectRoot>/.forgeax/extensions/` and verify it still works after `POST /api/extensions/reload`.
 
 ## Coordinated disclosure
 

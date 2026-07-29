@@ -61,6 +61,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const has = (flag: string) => argv.includes(flag);
 const rhiDebug = has('--rhi-debug');
+const coreOnly = process.env.FORGEAX_CORE_ONLY === '1';
 const parsePort = (value: string | undefined, fallback: number): number => {
   const port = Number.parseInt(value ?? '', 10);
   return Number.isFinite(port) && port > 0 && port < 65536 ? port : fallback;
@@ -403,7 +404,7 @@ interface ExtensionEntry {
 }
 const extensions: ExtensionEntry[] = [];
 const standaloneProxyEnabled = process.env.FORGEAX_STANDALONE_PROXY === '1';
-for (const d of discoverStandaloneExtensions(join(ROOT, 'packages/marketplace/extensions'))) {
+for (const d of coreOnly ? [] : discoverStandaloneExtensions(join(ROOT, 'packages/marketplace/extensions'))) {
   const seed = d.port + extensionPortOffset;
   const frontendPort = allocPort(seed);
   const backendPort = allocPort(seed + 2);
@@ -831,6 +832,7 @@ function syncWbNarrativeEnv(): void {
 }
 
 function narrativeWillStart(): boolean {
+  if (coreOnly) return false;
   const narrEnv = join(wbNarrDir, '.env');
   if (!existsSync(narrEnv)) return false;
   return /^(GEMINI_API_KEY|LLM_PROXY_URL)=.+/m.test(readFileSync(narrEnv, 'utf8'));

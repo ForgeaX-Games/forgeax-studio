@@ -38,6 +38,12 @@ interface WorkerArgs {
   mode: 'discover' | 'verify';
 }
 
+export function runtimeSnapshotLayerForOrigin(
+  origin: 'builtin' | 'user' | 'project',
+): 'L0' | null {
+  return origin === 'builtin' ? 'L0' : null;
+}
+
 function parseArgs(argv: string[]): WorkerArgs {
   let profilePath = '';
   let outputPath = '';
@@ -260,7 +266,7 @@ async function main(): Promise<void> {
     const manifests = await Promise.all(extensions.manifests.map(async (item) => ({
       id: item.manifest.id,
       version: item.manifest.version ?? null,
-      layer: item.layer,
+      layer: runtimeSnapshotLayerForOrigin(item.origin),
       origin: relative(repoRoot, item.originPath),
       content_sha256: sha256(await readFile(item.originPath, 'utf8')),
     })));

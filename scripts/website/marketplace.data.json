@@ -27,8 +27,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/admin"
   },
   "agent-ai-asset": {
@@ -59,8 +59,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-30",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-ai-asset"
   },
   "agent-animator-2d": {
@@ -91,8 +91,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-12",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-animator-2d"
   },
   "agent-arin": {
@@ -123,8 +123,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-arin"
   },
   "agent-cc-coder": {
@@ -155,8 +155,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-cc-coder"
   },
   "agent-character-designer-2d": {
@@ -187,8 +187,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-12",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-character-designer-2d"
   },
   "agent-claude-code-default": {
@@ -219,8 +219,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-claude-code-default"
   },
   "agent-codex-default": {
@@ -251,8 +251,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-codex-default"
   },
   "agent-cursor-default": {
@@ -283,8 +283,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-cursor-default"
   },
   "agent-director": {
@@ -315,8 +315,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-director"
   },
   "agent-forgeax-default": {
@@ -347,8 +347,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-forgeax-default"
   },
   "agent-gen3d": {
@@ -379,8 +379,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-27",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-gen3d"
   },
   "agent-iori": {
@@ -411,8 +411,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-iori"
   },
   "agent-iro": {
@@ -443,8 +443,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-iro"
   },
   "agent-kaede": {
@@ -475,8 +475,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-kaede"
   },
   "agent-kotone": {
@@ -507,8 +507,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-kotone"
   },
   "agent-kumo": {
@@ -539,8 +539,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-kumo"
   },
   "agent-lock": {
@@ -571,8 +571,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-lock"
   },
   "agent-lowpoly": {
@@ -603,8 +603,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-01",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-lowpoly"
   },
   "agent-mira": {
@@ -635,8 +635,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-09",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-mira"
   },
   "agent-mochi": {
@@ -667,8 +667,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-mochi"
   },
   "agent-nodia": {
@@ -686,8 +686,8 @@
       "en": "Nodia · Video-Game Director"
     },
     "desc": {
-      "zh": "视频游戏 (玩法优先) 导演 — 做「视频/真人画面 + Boss 战 / 血条 / QTE 闯关 / 限时·暂停选择 / 可点画面热点」这类玩法驱动游戏的不二人选。走「蓝图优先」流程：先把玩法结构骨架(状态机 / 实体 / Boss / 热点)搭出来，媒体先占位，再逐步填血肉。专门驱动 wb-game-video「视频游戏工坊」插件。用户说「做个视频游戏 / 带 Boss 的互动游戏 / QTE 闯关 / 有血条的视频游戏」时就派给她。(纯叙事向互动影片 / FMV 归 Reia，引擎实时渲染的 3D/2D 玩法游戏归常规做游戏流水线，都不归她。)",
-      "en": "Video-game (gameplay-first) director — the go-to agent for gameplay-on-video games: video/keyframe visuals + boss battles, HP bars, QTE, timed/pause choices, clickable hotspots. Works blueprint-first: lay down the gameplay skeleton (state machine / entities / bosses / hotspots) with placeholder media, then fill in. Drives the wb-game-video workbench end-to-end. Route here whenever the user wants a video game / boss-battle interactive game / QTE gauntlet / HP-bar video game. (Pure interactive films / FMV belong to Reia; real-time engine-rendered 3D/2D games belong to the regular game pipeline.)"
+      "zh": "视频游戏（玩法优先）导演：用 @forgeax/wb-game-video 的 11 个工具先搭 GameGraph 蓝图，再导入参考图并生成镜头脚本、关键帧与视频，绑定素材后完成试玩验证。适合视频画面上的 Boss 战、血条、QTE、限时选择和热点交互；纯叙事互动影片归 Reia，实时渲染的 2D/3D 游戏归常规流水线。",
+      "en": "Gameplay-first video-game director. Uses all 11 @forgeax/wb-game-video tools to build a GameGraph blueprint, import references, generate shot scripts, keyframes, and videos, bind assets, and verify the playable result. Best for boss battles, HP bars, QTEs, timed choices, and hotspots over video; pure interactive films belong to Reia and real-time 2D/3D games use the regular pipeline."
     },
     "author": "ForgeaX",
     "keywords": [],
@@ -699,8 +699,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-30",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-29",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-nodia"
   },
   "agent-rin": {
@@ -731,8 +731,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-rin"
   },
   "agent-sakura": {
@@ -763,8 +763,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-sakura"
   },
   "agent-sino": {
@@ -795,8 +795,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-sino"
   },
   "agent-suzu": {
@@ -827,8 +827,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-suzu"
   },
   "agent-tsumugi": {
@@ -859,8 +859,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-tsumugi"
   },
   "agent-ui-designer": {
@@ -891,8 +891,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-07-06",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-ui-designer"
   },
   "agent-vfx-artist-3d": {
@@ -923,8 +923,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-06-12",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-vfx-artist-3d"
   },
   "agent-yevi": {
@@ -955,8 +955,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-yevi"
   },
   "cli-claude-code": {
@@ -987,8 +987,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/cli-claude-code"
   },
   "cli-codex": {
@@ -1019,8 +1019,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-16",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/cli-codex"
   },
   "cli-cursor-agent": {
@@ -1051,8 +1051,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-16",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/cli-cursor-agent"
   },
   "cli-forgeax": {
@@ -1083,8 +1083,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-21",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/cli-forgeax"
   },
   "model-anthropic-text": {
@@ -1115,8 +1115,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/model-anthropic-text"
   },
   "skill-author-plugin": {
@@ -1155,8 +1155,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/skill-author-plugin"
   },
   "skill-make-game-design": {
@@ -1189,8 +1189,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/skill-make-game-design"
   },
   "tool-balance-resim": {
@@ -1223,8 +1223,8 @@
         "balance:resim"
       ]
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/tool-balance-resim"
   },
   "wb-2d-scene-asset-generator": {
@@ -1265,9 +1265,9 @@
         "asset2d:batteries.list"
       ]
     },
-    "created": "2026-06-08",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-2d-scene-asset-generator"
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-node-editor"
   },
   "wb-3d-lowpoly": {
     "slug": "wb-3d-lowpoly",
@@ -1307,9 +1307,9 @@
         "lowpoly:batteries.list"
       ]
     },
-    "created": "2026-06-02",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-3d-lowpoly"
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-node-editor"
   },
   "wb-agent-persona": {
     "slug": "wb-agent-persona",
@@ -1344,8 +1344,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-24",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-agent-persona"
   },
   "wb-ai-asset": {
@@ -1392,8 +1392,8 @@
         "aiasset:retexture"
       ]
     },
-    "created": "2026-06-30",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-28",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-ai-asset"
   },
   "wb-anim": {
@@ -1431,8 +1431,8 @@
         "anim:generate-video"
       ]
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-27",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-anim"
   },
   "wb-balance": {
@@ -1463,8 +1463,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-balance"
   },
   "wb-bgm": {
@@ -1507,8 +1507,8 @@
         "bgm:backend"
       ]
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-27",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-bgm"
   },
   "wb-character": {
@@ -1554,8 +1554,8 @@
         "character:save-render-config"
       ]
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-28",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-character"
   },
   "wb-code": {
@@ -1586,8 +1586,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-code"
   },
   "wb-diffusion-renderer": {
@@ -1624,14 +1624,14 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-07-07",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-17",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-diffusion-renderer"
   },
   "wb-game-video": {
     "slug": "wb-game-video",
     "id": "@forgeax/wb-game-video",
-    "version": "0.1.2",
+    "version": "0.1.4",
     "kind": "workbench",
     "kindLabel": {
       "zh": "工作台",
@@ -1673,9 +1673,9 @@
         "wb-game-video:generate-video"
       ]
     },
-    "created": "2026-06-30",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-game-video"
+    "created": "2026-07-14",
+    "updated": "2026-07-29",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-game-video"
   },
   "wb-gen3d": {
     "slug": "wb-gen3d",
@@ -1719,8 +1719,8 @@
         "gen3d:image-to-3d"
       ]
     },
-    "created": "2026-06-10",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-27",
     "repoUrl": null
   },
   "wb-items": {
@@ -1767,8 +1767,8 @@
         "items:generate-style-plan"
       ]
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-27",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-items"
   },
   "wb-look": {
@@ -1799,8 +1799,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-look"
   },
   "wb-lowpoly-obj": {
@@ -1848,8 +1848,8 @@
         "lowpoly:vibe-edit"
       ]
     },
-    "created": "2026-05-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-28",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-lowpoly-obj"
   },
   "wb-narrative": {
@@ -1889,8 +1889,8 @@
         "narrative:regenerate-step"
       ]
     },
-    "created": "2026-05-22",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-28",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-narrative"
   },
   "wb-observatory": {
@@ -1930,8 +1930,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-25",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-28",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-observatory"
   },
   "wb-plugin-author": {
@@ -1962,8 +1962,8 @@
       "tools": 0,
       "toolSample": []
     },
-    "created": "2026-05-23",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-plugin-author"
   },
   "wb-reel": {
@@ -2012,8 +2012,8 @@
         "reel:edit-dialogue"
       ]
     },
-    "created": "2026-05-29",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-21",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-reel"
   },
   "wb-scene-generator": {
@@ -2056,9 +2056,9 @@
         "scene:batteries.list"
       ]
     },
-    "created": "2026-06-02",
-    "updated": "2026-07-14",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-scene-generator"
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
+    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-node-editor"
   },
   "wb-skill": {
     "slug": "wb-skill",
@@ -2090,8 +2090,8 @@
         "skill:generate-vfx"
       ]
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-27",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-skill"
   },
   "wb-team-forge": {
@@ -2125,8 +2125,8 @@
         "team:list_roles"
       ]
     },
-    "created": "2026-07-09",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-15",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-team-forge"
   },
   "wb-ui": {
@@ -2168,8 +2168,8 @@
         "ui-design:generate-assets"
       ]
     },
-    "created": "2026-05-15",
-    "updated": "2026-07-14",
+    "created": "2026-07-14",
+    "updated": "2026-07-27",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-ui"
   }
 }

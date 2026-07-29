@@ -249,7 +249,6 @@ export function loadBaselineDiffReasonAdjudications(
 }
 
 const KNOWN_EFFECT_ROOT_SYMBOLS: Readonly<Record<string, string>> = {
-  'server.post_api_workspaces_activate': 'activateWorkspace',
   'server.post_api_workbench_package_clean': 'cleanPackage',
   'server.delete_api_workbench_games_slug': 'deleteGame',
   'server.delete_api_workbench_package_history_id': 'deletePackageHistory',

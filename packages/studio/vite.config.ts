@@ -125,22 +125,19 @@ function gameCodeHmrIsland(): PluginOption {
   };
 }
 
-// Registered external workspaces (~/.forgeax/known-projects.json). After a
-// workspace hot-switch (POST /api/workspaces/activate) the Scene viewport's
-// ▶ Play imports the game entry via `/@fs/<workspaceRoot>/.forgeax/games/…`
+// Registered external games (~/.forgeax/known-games.json). After a game is
+// opened from outside the runtime host, the Scene viewport's Play path may
+// import the entry through the runtime mount's `/@fs` URL.
 // (edit-runtime host-session resolveGameFsBase); any root outside fs.allow
 // 403s → game entry never runs → world has no camera → per-frame RhiError.
 // Read once at config load — a workspace registered for the FIRST time
 // mid-session still 403s until the dev server restarts (registry re-read then).
-function knownWorkspaceRoots(): string[] {
+function knownGameRoots(): string[] {
   try {
-    // homedir() (node:os) — matches the canonical writer
-    // (@forgeax/platform-io lib/known-projects.ts); process.env.HOME is unset on
-    // Windows, which would resolve cwd-relative and never match.
-    const file = resolve(homedir(), '.forgeax/known-projects.json');
+    const file = resolve(homedir(), '.forgeax/known-games.json');
     if (!existsSync(file)) return [];
-    const j = JSON.parse(readFileSync(file, 'utf-8')) as { projects?: { path?: string }[] };
-    return (j.projects ?? []).map((p) => p.path).filter((p): p is string => typeof p === 'string');
+    const j = JSON.parse(readFileSync(file, 'utf-8')) as { games?: { path?: string }[] };
+    return (j.games ?? []).map((g) => g.path).filter((p): p is string => typeof p === 'string');
   } catch {
     return [];
   }
@@ -343,7 +340,7 @@ export default defineConfig(() => ({
     // are statically imported via Sidebar.tsx's LazyPluginPanels map; allow the
     // monorepo root so those imports resolve.  See:
     //   packages/marketplace/extensions/wb-character-forge/DESIGN.md (template).
-    fs: { allow: ['..', '../..', ...knownWorkspaceRoots()] },
+    fs: { allow: ['..', '../..', ...knownGameRoots()] },
     proxy: {
       '/api': { target: SERVER, changeOrigin: true },
       '/ws': { target: SERVER_WS, ws: true, changeOrigin: true },

@@ -190,11 +190,11 @@
   "configuration_file_hashes": [
     {
       "path": "docs/ai-native/other-team-gap-ownership.md",
-      "sha256": "06be229a2bf6180f9acaddaad7ccb203f6f6278ea761ce0a85e4e66eaca5db36"
+      "sha256": "0557a76d0b9d7b5b408df3a628806b85c90ddcaf342c2f0ab6ae088ad0aa72ef"
     },
     {
       "path": "package.json",
-      "sha256": "c605da321852af920da2ffeddec9ecc8a7bc0b12af2a90992008e2e0b2102b8e"
+      "sha256": "04e4c59615ff015af56f52feefc7c31464998b29fccaf6e3b9e9346e79217170"
     },
     {
       "path": "scripts/ai-native/alias-map.json",
@@ -238,7 +238,7 @@
     },
     {
       "path": "scripts/ai-native/build-baseline-diff.ts",
-      "sha256": "864fc3e7f37b44429cbec6691869d6e16c321b8429c5a44af2f5e7ca1546ab37"
+      "sha256": "72a1fa4a8d2b0afdc1538614d578fd7ea1e751be3960062ba74fb28df3d2fc47"
     },
     {
       "path": "scripts/ai-native/build-runtime-pin.ts",
@@ -346,7 +346,7 @@
     },
     {
       "path": "scripts/ai-native/other-team-route-registry.json",
-      "sha256": "ac49b0a6b2f151d98819bc3e4f54da7fddcf593c94ad7e8da27630dd075d183e"
+      "sha256": "516b9a65d1049c0a34deecc802760950b6dc0560601ff8b602a7655c1b978a8a"
     },
     {
       "path": "scripts/ai-native/product-tree-fingerprint.ts",
@@ -398,7 +398,7 @@
     },
     {
       "path": "scripts/ai-native/runtime-snapshot-worker.ts",
-      "sha256": "94b189ba7c0ba222b2df899035e27e9be882c8d0fdc693ec6fbdeb9b9c748e1c"
+      "sha256": "27a04d00379ad4b82b577ba74468f9a5e14992096005f7c0a40ad3f57ae640f1"
     },
     {
       "path": "scripts/ai-native/runtime-snapshot.spec.ts",
@@ -414,11 +414,11 @@
     },
     {
       "path": "scripts/ai-native/scanner.spec.ts",
-      "sha256": "35206c06249b66f3a164550c1ddf87d369e1dc6f8d36b1a22b4a8ea660ee89e8"
+      "sha256": "008949d265e01f3e54022717878b6b3c36730492d590f1f28fa8baf0c30bd457"
     },
     {
       "path": "scripts/ai-native/scanner.ts",
-      "sha256": "3366f715a6b7370e2132ea627a8a690bd778824952ef627e47b704c3f462ba67"
+      "sha256": "2b37c053e0b67c1d8689f7c2f6a640c75b90e062fcd4f58eee8e7efe1176b0ea"
     },
     {
       "path": "scripts/ai-native/schema-version-contract.spec.ts",
@@ -450,7 +450,7 @@
     },
     {
       "path": "scripts/ai-native/verify-baseline-diff.ts",
-      "sha256": "3be289b5189bb68ae286c741f8769ee0ea73d839078c580d44a6dfbd887cf541"
+      "sha256": "a912d399524b1693233fed4304d45a36710adc34f1813a8b239e70ff00e6e7f7"
     },
     {
       "path": "scripts/ai-native/verify-r6-ci.ts",

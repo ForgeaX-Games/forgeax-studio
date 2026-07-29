@@ -105,9 +105,9 @@ describe('AI-native scanner', () => {
     const root = resolve(import.meta.dir, '../..');
     const pin = 'a939f6abe1b2e86bc8d3798c277c1ac1026381d9';
     const current = collectRegisteredOtherTeamRoutes(root, { 'platform-io': pin });
-    expect(current.audit.filter((row) => row.introduced_in_anchor)).toHaveLength(9);
+    expect(current.audit.filter((row) => row.introduced_in_anchor)).toHaveLength(12);
     expect(current.audit.filter((row) => row.registration_reason === 'known-other-team-call')).toHaveLength(4);
-    expect(current.audit.filter((row) => row.registration_reason === 'effect-host-migration')).toHaveLength(1);
+    expect(current.audit.filter((row) => row.registration_reason === 'effect-host-migration')).toHaveLength(0);
     expect(() => collectRegisteredOtherTeamRoutes(root, { 'platform-io': '0'.repeat(40) })).toThrow(/re-compare routes/);
   });
 
@@ -438,19 +438,19 @@ describe('AI-native scanner', () => {
     expect(result.edges.some((edge) => edge.effect_id === 'server.post_api_sessions_sid_rewind')).toBe(false);
   });
 
-  it('keeps a trusted receiver call and a different branch endpoint as separate effects', () => {
+  it('keeps a trusted receiver call as a distinct effect', () => {
     const result = fixtureScan(`
       import { getWorkbenchClient } from '../../store';
       export function Host({ hardDelete }) {
         return <button onClick={async () => {
           if (hardDelete) await getWorkbenchClient().deleteGame('demo');
-          else await fetch('/api/projects/registered', { method: 'DELETE' });
+          else await fetch('/api/workbench/games/demo', { method: 'DELETE' });
         }}>Delete</button>;
       }
     `);
 
-    expect(result.edges.map((edge) => edge.effect_id).sort()).toEqual([
-      'server.delete_api_projects_registered',
+    expect(result.edges.map((edge) => edge.effect_id)).toEqual([
+      'server.delete_api_workbench_games_demo',
       'server.delete_api_workbench_games_slug',
     ]);
   });
@@ -528,10 +528,7 @@ describe('AI-native scanner', () => {
     expect(result.stats.manualControlRatio).toBeLessThanOrEqual(0.25);
     expect(result.stats.agentEquivalentEffects).toBeGreaterThan(0);
 
-    const projectDelete = result.effects.find((effect) => effect.effect_id === 'platform_io.project.delete');
-    expect(projectDelete?.repo).toEqual(['platform-io']);
-    expect(projectDelete?.server_endpoints).toContain('DELETE /api/projects/:id');
-    expect(result.controls.some((control) => control.effect_id === 'platform_io.project.delete')).toBe(false);
+    expect(result.effects.some((effect) => effect.effect_id === 'platform_io.project.delete')).toBe(false);
   });
 
   it('renders two complete scans byte-for-byte identically', async () => {

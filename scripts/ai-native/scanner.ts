@@ -293,10 +293,6 @@ const MAX_HANDLER_CALL_DEPTH = 8;
  * endpoint scanning root.
  */
 const KNOWN_CALL_EFFECTS: Readonly<Record<string, KnownCallEffect>> = {
-  activateWorkspace: {
-    effectId: 'server.post_api_workspaces_activate',
-    binding: { kind: 'import', sourceSuffix: 'lib/workspace-activate' },
-  },
   cleanPackage: {
     effectId: 'server.post_api_workbench_package_clean',
     binding: { kind: 'receiver-factory', factory: 'getWorkbenchClient', sourceSuffix: 'store' },

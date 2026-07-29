@@ -8,29 +8,14 @@
       "mount_file": "packages/orchestrator/src/app.ts",
       "mounts": [
         {
-          "prefix": "/api/projects",
-          "factory": "createProjectsRouter",
-          "source": "packages/platform-io/src/api/projects.ts",
-          "routes": [
-            { "method": "GET", "path": "/", "introduced_in_anchor": false },
-            { "method": "POST", "path": "/", "introduced_in_anchor": false },
-            { "method": "POST", "path": "/open", "introduced_in_anchor": false },
-            { "method": "DELETE", "path": "/registered", "introduced_in_anchor": false },
-            {
-              "method": "DELETE",
-              "path": "/:id",
-              "introduced_in_anchor": false,
-              "effect_id": "platform_io.project.delete",
-              "registration_reason": "effect-host-migration"
-            }
-          ]
-        },
-        {
           "prefix": "/api/game-host",
           "factory": "createGameHostRouter",
           "source": "packages/platform-io/src/api/game-host.ts",
           "routes": [
             { "method": "GET", "path": "/games/:slug/package", "introduced_in_anchor": true },
+            { "method": "GET", "path": "/games/:slug/package/status", "introduced_in_anchor": true },
+            { "method": "POST", "path": "/games/:slug/package/initialize", "introduced_in_anchor": true },
+            { "method": "POST", "path": "/games/:slug/initialize", "introduced_in_anchor": true },
             {
               "method": "PUT",
               "path": "/games/:slug/package",

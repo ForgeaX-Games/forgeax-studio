@@ -151,7 +151,7 @@ function bootStore() {
   installHealthBridge();
   initAgentPrefs();         // ① agent 安装偏好 owner（settings）—— 发首帧 bus 快照 + 挂 seed 监听
   initFilePreview();        // ③ 文件预览 owner（workbench）—— 发首帧快照 + 挂 open-file 命令监听
-  bootBroadcast();          // R5/P1 唯一公共广播 socket + telemetry/workspace-changed
+  bootBroadcast();          // R5/P1 唯一公共广播 socket + telemetry
   subscribeDaemonTick();    // daemon-tick-* 帧接到该广播流（chat 域）
   subscribeSessionStream();
   // 叙事工坊「完成即重唤醒」闭环：监听 Kotone 调 narrative:start-pipeline → 轮询后端

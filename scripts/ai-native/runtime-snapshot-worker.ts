@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   registerForgeaxCoreKernel();
   const productHostTools = studioHostTools();
   const { app } = await createForgeaxApp({
-    projectRoot,
+    instanceRoot: projectRoot,
     systemPromptComposer: new GameSystemPromptComposer({ serverPort: 'snapshot', interfacePort: 'snapshot' }),
     hostTools: productHostTools,
     sessionLayoutFactory: (root) => new GameSessionLayout(root, (candidate) => getActiveGame(candidate ?? root)),

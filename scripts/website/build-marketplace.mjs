@@ -10,13 +10,13 @@
 // Run:  node scripts/website/build-marketplace.mjs
 // Out:  scripts/website/marketplace.data.json
 //
-// NOTE: the public OSS repo for plugins is ForgeaX-Games/forgeax-marketplace; each
-// plugin's source lives at /tree/main/extensions/<dir>. wb-gen3d is excluded from the
+// NOTE: bundled extensions fall back to ForgeaX-Games/forgeax-marketplace;
+// independently published extensions use their child package repository. wb-gen3d is excluded from the
 // OSS release, so it gets repoUrl=null (the modal shows a "not open-sourced" note).
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -29,14 +29,14 @@ const OSS_EXCLUDED = new Set(['wb-gen3d']);                // not in the public 
 const createdDate = (dir) => {
   // oldest commit that added files under this dir
   try {
-    const out = execFileSync('git', ['-C', MKT, 'log', '--diff-filter=A', '--format=%cs', '--', `plugins/${dir}`], { encoding: 'utf8' }).trim();
+    const out = execFileSync('git', ['-C', MKT, 'log', '--diff-filter=A', '--format=%cs', '--', `extensions/${dir}`], { encoding: 'utf8' }).trim();
     const lines = out.split('\n').filter(Boolean);
     return lines.length ? lines[lines.length - 1] : '';
   } catch { return ''; }
 };
 const updatedDate = (dir) => {
   try {
-    return execFileSync('git', ['-C', MKT, 'log', '-1', '--format=%cs', '--', `plugins/${dir}`], { encoding: 'utf8' }).trim();
+    return execFileSync('git', ['-C', MKT, 'log', '-1', '--format=%cs', '--', `extensions/${dir}`], { encoding: 'utf8' }).trim();
   } catch { return ''; }
 };
 
@@ -49,6 +49,24 @@ const KIND_LABEL = {
   'model-binding': { zh: '模型绑定', en: 'Model binding' },
 };
 
+const packageRepositoryUrl = (extensionDir) => {
+  const packageFile = join(extensionDir, 'package.json');
+  if (!existsSync(packageFile)) return null;
+  try {
+    const pkg = JSON.parse(readFileSync(packageFile, 'utf8'));
+    const raw = typeof pkg.repository === 'string'
+      ? pkg.repository
+      : pkg.repository && pkg.repository.url;
+    if (typeof raw !== 'string' || !raw.trim()) return null;
+    const parsed = new URL(raw.trim().replace(/^git\+(?=https?:\/\/)/iu, ''));
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    parsed.pathname = parsed.pathname.replace(/\.git\/?$/u, '').replace(/\/$/u, '');
+    return parsed.toString().replace(/\/$/u, '');
+  } catch {
+    return null;
+  }
+};
+
 const out = {};
 const dirs = readdirSync(PLUGINS, { withFileTypes: true })
   // include symlinked plugin dirs too (some plugins are symlinks/submodules → type symlink)
@@ -58,7 +76,8 @@ const dirs = readdirSync(PLUGINS, { withFileTypes: true })
   .sort();
 
 for (const dir of dirs) {
-  const mf = join(PLUGINS, dir, 'forgeax-extension.json');
+  const extensionDir = join(PLUGINS, dir);
+  const mf = join(extensionDir, 'forgeax-extension.json');
   if (!existsSync(mf)) continue;
   let j;
   try { j = JSON.parse(readFileSync(mf, 'utf8')); } catch { continue; }
@@ -96,11 +115,15 @@ for (const dir of dirs) {
     },
     created: createdDate(dir),
     updated: updatedDate(dir),
-    repoUrl: OSS_EXCLUDED.has(dir) ? null : `${OSS_BASE}/${dir}`,
+    repoUrl: OSS_EXCLUDED.has(dir)
+      ? null
+      : packageRepositoryUrl(extensionDir) || `${OSS_BASE}/${dir}`,
   };
 }
 
-const dest = join(HERE, 'marketplace.data.json');
+const dest = process.env.MARKETPLACE_DATA_OUT
+  ? resolve(process.env.MARKETPLACE_DATA_OUT)
+  : join(HERE, 'marketplace.data.json');
 writeFileSync(dest, JSON.stringify(out, null, 2) + '\n', 'utf8');
 console.log(`wrote ${dest} — ${Object.keys(out).length} plugins`);
 // quick sanity: list the dirs the website page references

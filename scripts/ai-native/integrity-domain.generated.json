@@ -194,7 +194,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "650d380f3c0c41e972b5e0079da7cbaa6a705dd0a721800bed6ac78c1ee04309"
+      "sha256": "c605da321852af920da2ffeddec9ecc8a7bc0b12af2a90992008e2e0b2102b8e"
     },
     {
       "path": "scripts/ai-native/alias-map.json",
@@ -398,11 +398,11 @@
     },
     {
       "path": "scripts/ai-native/runtime-snapshot-worker.ts",
-      "sha256": "e41338ffc91274476100ae478c08e5d1adce1c42c1d7ab4a224f12f0d17a3388"
+      "sha256": "94b189ba7c0ba222b2df899035e27e9be882c8d0fdc693ec6fbdeb9b9c748e1c"
     },
     {
       "path": "scripts/ai-native/runtime-snapshot.spec.ts",
-      "sha256": "d025bc0ce93035231ef471ddef6b138d0329cea9aaddea97bf5503889aef76d8"
+      "sha256": "2635f174b8c2ec480b25b63bf59e040d66495bb69f594f761a0771c55bf75f3f"
     },
     {
       "path": "scripts/ai-native/scan.ts",

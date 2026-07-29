@@ -28,6 +28,7 @@ import {
   runRuntimeSnapshot,
   sealRuntimeSnapshot,
 } from './runtime-snapshot-runner.ts';
+import { runtimeSnapshotLayerForOrigin } from './runtime-snapshot-worker.ts';
 import {
   assertAncestorPrefixPolicy,
   loadValidatedRuntimeProfile,
@@ -106,6 +107,22 @@ const sources: RuntimeToolSources = {
   soulPack: new Set(['soul_tool']),
   skill: new Set(['skill_design']),
 };
+
+const WB_GAME_VIDEO_MANIFEST_ORIGIN =
+  'packages/marketplace/extensions/wb-game-video/forgeax-extension.json';
+const WB_GAME_VIDEO_LEGACY_TOOL_IDS = [
+  'gvid:get-graph',
+  'gvid:list-videos',
+  'gvid:save-graph',
+  'gen:generate-keyframe',
+  'gen:generate-node-video',
+  'gen:generate-shot-script',
+  'gen:generate-video',
+  'gen:get-asset',
+  'gen:import-character-refs',
+  'gen:import-scene-refs',
+  'gen:list-assets',
+] as const;
 
 describe('runtime snapshot profile', () => {
   test('runtime-pin evidence failure never leaves a half-written anchor', () => {
@@ -454,6 +471,61 @@ describe('runtime tool accounting', () => {
       },
     })).toThrow('ambiguous final tool source');
   });
+});
+
+describe('checked-in runtime snapshot identity', () => {
+  test('classifies the current merged-manifest origin contract for safe boot', () => {
+    expect(runtimeSnapshotLayerForOrigin('builtin')).toBe('L0');
+    expect(runtimeSnapshotLayerForOrigin('user')).toBeNull();
+    expect(runtimeSnapshotLayerForOrigin('project')).toBeNull();
+  });
+
+  test.each(['development', 'formal'] as const)(
+    '%s snapshot mirrors the wb-game-video manifest without legacy aliases',
+    (mode) => {
+      const repoRoot = resolve(import.meta.dir, '../..');
+      const manifest = JSON.parse(readFileSync(
+        resolve(repoRoot, WB_GAME_VIDEO_MANIFEST_ORIGIN),
+        'utf8',
+      )) as {
+        id: string;
+        version: string;
+        provides: { tools: Array<{ id: string }> };
+      };
+      const snapshotPath = resolve(
+        import.meta.dir,
+        `runtime-snapshots/main.${mode}.json`,
+      );
+      const snapshotText = readFileSync(snapshotPath, 'utf8');
+      const snapshot = JSON.parse(snapshotText) as {
+        raw_tool_catalog: Array<{ extensionId: string; id: string }>;
+        reproduction_key: {
+          plugin_combination: {
+            manifests: Array<{ id: string; origin: string; version: string }>;
+          };
+        };
+      };
+      const snapshotManifest = snapshot.reproduction_key.plugin_combination.manifests.find(
+        (item) => item.origin === WB_GAME_VIDEO_MANIFEST_ORIGIN,
+      );
+      const expectedToolIds = manifest.provides.tools.map((tool) => tool.id).sort();
+      const actualToolIds = snapshot.raw_tool_catalog
+        .filter((tool) => tool.extensionId === manifest.id)
+        .map((tool) => tool.id)
+        .sort();
+
+      expect(manifest.id).toBe('@forgeax/wb-game-video');
+      expect(snapshotManifest).toMatchObject({
+        id: manifest.id,
+        version: manifest.version,
+      });
+      expect(actualToolIds).toEqual(expectedToolIds);
+      expect(snapshotText).not.toContain('@forgeax-extension/wb-game-video');
+      for (const legacyToolId of WB_GAME_VIDEO_LEGACY_TOOL_IDS) {
+        expect(snapshotText).not.toContain(`"${legacyToolId}"`);
+      }
+    },
+  );
 });
 
 describe('runtime snapshot determinism and formal gates', () => {

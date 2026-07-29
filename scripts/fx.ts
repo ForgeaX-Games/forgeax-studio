@@ -128,9 +128,8 @@ Common commands:
   update                Pull latest root code and sync all submodules
   sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
   clean [--deep|-x]     Restore a fully-clean git status across root + all
-                        submodules. Discards uncommitted edits, scrubs submodule
-                        interiors to bare pin state (incl. gitignored runtime
-                        products), syncs pins. Root keeps node_modules/dist/.env
+                        submodules. Discards uncommitted edits and untracked
+                        files, then syncs pins. Gitignored products are kept
                         unless --deep. --dry-run/-n previews. Keeps .forgeax-harness.
   start [web|app|local] Start Studio and open the selected client (default: web)
                         local = 127.0.0.1-only on a third port band (:38920) — use
@@ -749,37 +748,30 @@ function ci(args: string[]): never {
 // Restore the working tree to a fully-clean `git status`, recursively across the
 // root repo AND every submodule (incl. the editor→engine nesting).
 //
-// Root vs submodule asymmetry (deliberate):
-//   • ROOT stays conservative by default — keeps gitignored artefacts
-//     (node_modules / dist / .env / wgpu-wasm pkg) so no re-setup is needed.
-//   • SUBMODULES are always deep-cleaned (`-fdx`). A submodule reports itself
-//     "modified" to the superproject whenever its tree has ANY untracked content
-//     — and the only untracked content left after a normal clean is gitignored
-//     runtime products (engine packages/*/build, games <slug>/workbench + reel/,
-//     sessions/). Those are always regenerable, and leaving them keeps the
-//     superproject stuck at `M packages/<sub>`. So to actually reach a clean
-//     `git status`, submodule interiors must be scrubbed to bare pin state.
-//
-// `--deep`/-x extends the deep clean to the ROOT too (wipe node_modules/dist/.env;
-// re-run bun install after). `--dry-run`/-n previews without deleting.
+// Standard clean respects .gitignore everywhere, including submodules, so local
+// dependencies and build products survive. `--deep`/-x opts the entire workspace
+// into deleting ignored content too (wipe node_modules/dist/.env; re-run bun
+// install after). `--dry-run`/-n previews without deleting.
 // `.forgeax-harness` (floating loop-state clone, gitignored, own .git) is ALWAYS
 // preserved — it holds unpushed closed-loop state and must never be wiped here.
 //
 // NOTE: this function discards ALL uncommitted work (git reset --hard). Commit
 // anything worth keeping — including edits to this very file — before running it.
+export function cleanTreeFlags(deep: boolean, dryRun: boolean): string {
+  return `-ff${dryRun ? 'n' : ''}d${deep ? 'x' : ''}`;
+}
+
 function clean(args: string[]): never {
   const dryRun = args.includes('--dry-run') || args.includes('-n');
-  const deepRoot = args.includes('--deep') || args.includes('-x');
+  const deep = args.includes('--deep') || args.includes('-x');
   // Double -f (-ff): a plain `git clean -fd` SKIPS nested git directories
   // ("Skipping repository packages/core"). After submodule renames/removals
   // (e.g. packages/core → packages/cli), the old path often remains as an
   // orphaned checkout with its own .git — -ff is required to delete it.
-  const rootCleanFlags = deepRoot ? '-ffdx' : '-ffd';
-  // Submodule interiors are always deep-cleaned; -ff to descend into any nested
-  // git dirs (e.g. an uninitialised nested submodule) rather than skip them.
-  const subForeachCmd = dryRun
-    ? 'git reset --hard -q && git clean -ffndx'
-    : 'git reset --hard -q && git clean -ffdx';
+  const cleanFlags = cleanTreeFlags(deep, dryRun);
+  // Use the same ignore policy recursively. -ff descends into nested git dirs
+  // (e.g. an uninitialised nested submodule) rather than skipping them.
+  const subForeachCmd = `git reset --hard -q && git clean ${cleanFlags}`;
 
   const results: UpdateResult[] = [];
   const step = (repo: string, gitArgs: string[], okDetail: string): void => {
@@ -799,7 +791,7 @@ function clean(args: string[]): never {
     });
   };
 
-  console.log(`[clean] root mode: ${deepRoot ? 'deep (removes gitignored artefacts — re-run bun install after)' : 'standard (keeps node_modules/dist/.env)'} · submodules: always deep${dryRun ? ' · DRY RUN' : ''}`);
+  console.log(`[clean] workspace mode: ${deep ? 'deep (removes gitignored artefacts — re-run bun install after)' : 'standard (keeps gitignored artefacts)'}${dryRun ? ' · DRY RUN' : ''}`);
 
   // 1. discard tracked edits + reset submodule pointers to recorded pins.
   step('.', ['reset', '--hard'], 'reset tracked changes');
@@ -807,12 +799,12 @@ function clean(args: string[]): never {
   //    materialises empty dirs left by a plain `git pull` of a new submodule.
   step('submodules', ['submodule', 'sync', '--recursive'], 'submodule URLs synced');
   step('submodules', ['submodule', 'update', '--init', '--recursive', '--force'], 'checkouts synced to pins');
-  // 3. scrub every submodule working tree to bare pin state (tracked + untracked
-  //    + gitignored, recursively) so none reports "modified content" upward.
+  // 3. scrub every submodule working tree (tracked + untracked, recursively).
+  //    Ignored content is included only when deep mode was explicitly requested.
   step('submodules', ['submodule', 'foreach', '--recursive', subForeachCmd], 'submodule trees scrubbed');
   // 4. remove root untracked files (incl. orphaned former-submodule dirs like
   //    packages/core after rename), always preserving the harness floating clone.
-  step('.', ['clean', rootCleanFlags, '-e', '.forgeax-harness', ...(dryRun ? ['-n'] : [])], 'root untracked removed');
+  step('.', ['clean', cleanFlags, '-e', '.forgeax-harness'], 'root untracked removed');
 
   // 5. Drop stale submodule.*.path config entries that no longer exist in
   //    .gitmodules (rename leftovers keep local config otherwise).

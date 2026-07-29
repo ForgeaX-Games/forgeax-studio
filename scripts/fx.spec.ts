@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  cleanTreeFlags,
   didCreateStash,
   formatUpdateReport,
   parseSubmodulePaths,
@@ -120,6 +121,13 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['status'])).toEqual({ type: 'internal', command: 'status', args: [] });
     expect(resolveCommand(['doctor', '--fix'])).toEqual({ type: 'internal', command: 'doctor', args: ['--fix'] });
     expect(resolveCommand(['restart'])).toEqual({ type: 'internal', command: 'restart', args: [] });
+  });
+
+  it('respects gitignore during standard clean and only removes ignored files in deep mode', () => {
+    expect(cleanTreeFlags(false, false)).toBe('-ffd');
+    expect(cleanTreeFlags(false, true)).toBe('-ffnd');
+    expect(cleanTreeFlags(true, false)).toBe('-ffdx');
+    expect(cleanTreeFlags(true, true)).toBe('-ffndx');
   });
 
   it('keeps update separate from setup and build work', () => {

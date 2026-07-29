@@ -20,6 +20,7 @@
     "test:action-catalog-drift": "bun test scripts/check-action-catalog-drift.spec.ts",
     "test:golden-runner": "bun test scripts/golden-runner/runner.spec.ts",
     "test:runtime-snapshot": "bun test scripts/ai-native/runtime-snapshot.spec.ts",
+    "selfcheck:wave1-compatibility": "bun scripts/wave1/studio-compatibility-smoke.ts",
     "runtime-pin:verify": "bun scripts/ai-native/verify-runtime-pin.ts --verify",
     "integrity-domain:check": "bun scripts/ai-native/integrity-domain.ts --check",
     "typecheck:ai-native": "bun scripts/ai-native/typecheck-ai-native.ts",

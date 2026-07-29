@@ -80,6 +80,7 @@ import { createPanelsWorkbenchInlineExtension } from '@forgeax/interface/core/ex
 // available game, or null → the "Loading..." placeholder — never a dead mount.
 function useActiveSlug(): string | null {
   const pinnedSlug = useShellStore((s) => s.pinnedSlug);
+  const carrierSlug = new URLSearchParams(window.location.search).get('gameId');
   const [autoSlug, setAutoSlug] = useState<string | null>(null);
   const [liveSlugs, setLiveSlugs] = useState<string[] | null>(null);
   useEffect(() => {
@@ -101,7 +102,7 @@ function useActiveSlug(): string | null {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  const resolved = pinnedSlug ?? autoSlug;
+  const resolved = carrierSlug ?? pinnedSlug ?? autoSlug;
   // Until the first game-list fetch lands, trust the resolved slug (avoids a
   // spurious null flash on boot). Once we know the list, gate on membership.
   if (liveSlugs === null) return resolved;

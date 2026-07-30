@@ -33,7 +33,7 @@ type RunGitOptions = {
 };
 
 type UpdateResult = {
-  repoType: 'root' | 'submodule';
+  repoType: 'root' | 'submodule' | 'floating-repo';
   repo: string;
   result: string;
   detail?: string;
@@ -125,7 +125,7 @@ Usage:
 
 Common commands:
   setup                 Equivalent to bun install → prepare (build deps, engine, plugins, .env)
-  update                Pull latest root code and sync all submodules
+  update                Pull latest root code, sync submodules, and refresh harness if present
   sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
   clean [--deep|-x]     Restore a fully-clean git status across root + all
                         submodules. Discards uncommitted edits and untracked
@@ -310,6 +310,29 @@ function updateSubmodules(dryRun: boolean): UpdateResult[] {
     else rows.push({ repoType: 'submodule', repo: path, result: 'failed', detail: `git submodule update exited ${status}` });
   }
   return rows;
+}
+
+function updateFloatingHarness(dryRun: boolean): UpdateResult {
+  const repo = 'packages/harness';
+  const syncScript = script('sync-package-harness.mjs');
+  if (!existsSync(join(ROOT, repo))) {
+    return { repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' };
+  }
+  const args = [syncScript, '--update'];
+  if (dryRun) args.push('--dry-run');
+  if (dryRun) console.log(`[dry-run] ${BUN} ${args.join(' ')}`);
+  else console.log(`[update] floating repo ${repo}`);
+  const r = dryRun
+    ? { status: 0 }
+    : spawnSync(BUN, args, { cwd: ROOT, stdio: 'inherit', env: process.env });
+  return {
+    repoType: 'floating-repo',
+    repo,
+    result: (r.status ?? 1) === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
+    detail: (r.status ?? 1) === 0
+      ? (dryRun ? `would run ${BUN} ${args.join(' ')}` : 'synced to forgeax-harness/main')
+      : `harness update exited ${r.status ?? 1}`,
+  };
 }
 
 function currentBranch(): string {
@@ -684,6 +707,8 @@ function update(args: string[]): void {
 
   const rootOk = !results.some((row) => row.repoType === 'root' && row.result === 'failed');
   if (rootOk) {
+    if (!dryRun) dropStaleSubmoduleConfig();
+    results.push(updateFloatingHarness(dryRun));
     console.log('[update] Updating submodules');
     results.push(...updateSubmodules(dryRun));
   } else {
@@ -803,8 +828,8 @@ function clean(args: string[]): never {
   //    Ignored content is included only when deep mode was explicitly requested.
   step('submodules', ['submodule', 'foreach', '--recursive', subForeachCmd], 'submodule trees scrubbed');
   // 4. remove root untracked files (incl. orphaned former-submodule dirs like
-  //    packages/core after rename), always preserving the harness floating clone.
-  step('.', ['clean', cleanFlags, '-e', '.forgeax-harness'], 'root untracked removed');
+  //    packages/core after rename), preserving both floating harness checkouts.
+  step('.', ['clean', cleanFlags, '-e', '.forgeax-harness', '-e', 'packages/harness'], 'root untracked removed');
 
   // 5. Drop stale submodule.*.path config entries that no longer exist in
   //    .gitmodules (rename leftovers keep local config otherwise).

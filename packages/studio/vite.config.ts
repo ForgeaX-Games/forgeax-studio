@@ -105,6 +105,19 @@ function frontendPrebundleIncludes(): string[] {
   });
 }
 
+// These dependencies enter through excluded native-ESM engine packages, so
+// Vite's initial HTML crawl cannot see them. Without explicit nested includes,
+// the first browser load discovers them after the optimizer has committed its
+// cache, forces a reload, and leaves in-flight requests pointing at deleted
+// rolldown chunks. The `parent > dependency` form resolves each dependency from
+// its owning package instead of duplicating engine dependencies in studio.
+const engineLazyPrebundleIncludes = [
+  '@forgeax/engine-codec > fzstd',
+  '@forgeax/engine-image > jpeg-js',
+  '@forgeax/engine-image > upng-js',
+  '@forgeax/engine-pack > uuidv7',
+] as const;
+
 const HTTPS_ENABLED = process.env.FORGEAX_INTERFACE_HTTPS === '1';
 const GAME_CODE_EXT_RE = /\.(?:[cm]?[jt]sx?)$/;
 
@@ -397,7 +410,7 @@ export default defineConfig(() => ({
     // declared deps (SSOT), NOT a hand list — see frontendPrebundleIncludes.
     // Pre-declaring these prevents the cold-load re-optimize + full-page reload
     // that trapped the viewport boot overlay on "正在加载游戏…" until the 90s cap.
-    include: frontendPrebundleIncludes(),
+    include: [...frontendPrebundleIncludes(), ...engineLazyPrebundleIncludes],
   },
   build: {
     // esnext: the in-process engine boot entry uses top-level await.

@@ -205,10 +205,10 @@
         <span id="fgx-boot-bar-pct">0%</span>
       </div>
       <p class="fgx-boot-inventory" id="fgx-boot-inv" style="display:none;">
-        Bus inventory: <em id="fgx-boot-count">…</em> plugins on <code>/api/bus/plugins</code>
+        Bus inventory: <em id="fgx-boot-count">…</em> plugins on <code>/api/extensions/list</code>
       </p>
       <div class="fgx-boot-fault">
-        React shell 启动失败 · 打开 DevTools 控制台查看错误,或直接访问 <code>/api/health</code> / <code>/api/bus/plugins</code> 验证后端。
+        React shell 启动失败 · 打开 DevTools 控制台查看错误,或直接访问 <code>/api/health</code> / <code>/api/extensions/list</code> 验证后端。
       </div>
     </div>
   </div>
@@ -334,7 +334,7 @@
 
       if (cfg.showBusInventory) {
         try {
-          fetch('/api/bus/plugins').then(function (r) {
+          fetch('/api/extensions/list').then(function (r) {
             return r.ok ? r.json() : null;
           }).then(function (d) {
             var el = document.getElementById('fgx-boot-count');

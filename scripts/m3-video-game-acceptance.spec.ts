@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { initializeGamePackage } from '../packages/platform-io/src/api/lib/game-package'
+import {
+  classifyGamePackage,
+  initializeGamePackage,
+} from '../packages/platform-io/src/api/lib/game-package'
 
 const root = resolve(import.meta.dir, '..')
 const manifestPath = join(root, 'packages/games/game-nodia-fighting/assets/manifest.json')
@@ -30,6 +33,29 @@ const collectVideoRefs = (value: unknown, refs = new Set<string>()): Set<string>
 }
 
 describe('M3 canonical video-game acceptance', () => {
+  test('ships the Nodia seed as a complete game package', () => {
+    const gameDir = join(root, 'packages/games/game-nodia-fighting')
+    const project = JSON.parse(readFileSync(join(gameDir, 'project.json'), 'utf8'))
+    const blueprint = JSON.parse(readFileSync(join(gameDir, 'blueprint.json'), 'utf8'))
+
+    expect(classifyGamePackage(gameDir)).toEqual({ state: 'initialized', missing: [] })
+    expect(project).toEqual({
+      id: 'game-nodia-fighting',
+      title: 'Nodia Fighting',
+      platform: 'wb-game-video',
+      platformVersion: '1',
+      entry: {
+        blueprint: 'blueprint.json',
+        components: 'dist/components',
+      },
+    })
+    expect(blueprint.graph).toEqual({ nodes: [], edges: [] })
+    expect(blueprint.entities).toEqual({})
+    expect(blueprint.variables).toEqual({})
+    expect(blueprint.manifest.mainPackId).toBe('bp-main')
+    expect(blueprint.manifest.packs['bp-main'].graph).toEqual({ nodes: [], edges: [] })
+  })
+
   test('keeps the canonical v2 manifest at 31 assets with qinggongjizhisi', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
       version: number
@@ -70,14 +96,8 @@ describe('M3 canonical video-game acceptance', () => {
       expect(outputManifest.assets.some((asset) => asset.id === 'qinggongjizhisi')).toBe(true)
 
       const outputRefs = collectVideoRefs(outputBlueprint)
-      expect(outputRefs).toHaveLength(30)
-      expect(new Set(outputRefs).size).toBe(30)
-      for (const ref of outputRefs) {
-        const asset = outputManifest.assets.find((candidate) => candidate.id === ref)
-        expect(asset?.provider?.ref).toBeString()
-        const sourceName = asset?.name ?? `${asset?.id}.mp4`
-        expect(existsSync(join(root, 'packages/marketplace/extensions/wb-game-video/src/editor/assets/zhandou', sourceName))).toBe(true)
-      }
+      expect(outputRefs).toHaveLength(0)
+      expect(outputBlueprint.graph).toEqual({ nodes: [], edges: [] })
       expect(existsSync(join(gameDir, 'project.json'))).toBe(true)
       expect(existsSync(join(gameDir, 'blueprint.json'))).toBe(true)
     } finally {
@@ -90,8 +110,11 @@ describe('M3 canonical video-game acceptance', () => {
     const gameDir = join(tempRoot, 'game-nodia-fighting')
     try {
       const seed = readCanonicalSeed()
-      seed.assetsManifest.assets = seed.assetsManifest.assets.slice(0, 30)
-      expect(() => initializeGamePackage(gameDir, 'game-nodia-fighting', seed)).toThrow(/exactly 31 assets/)
+      const missingAsset = seed.assetsManifest.assets.at(-1)
+      seed.assetsManifest.assets = seed.assetsManifest.assets.slice(0, -1)
+      seed.blueprint = { media: { kind: 'VIDEO', ref: missingAsset.id } }
+      expect(() => initializeGamePackage(gameDir, 'game-nodia-fighting', seed))
+        .toThrow(/blueprint references missing assets/)
       expect(existsSync(gameDir)).toBe(false)
     } finally {
       rmSync(tempRoot, { recursive: true, force: true })

@@ -74,6 +74,11 @@ packages/server
 packages/engine/
 packages/kernel/
 
+# forgeax-harness is a floating runtime-tool checkout, not a Studio gitlink.
+# `bun install`/`bun fx setup` materialises it when missing; `bun fx update`
+# refreshes it only when the checkout already exists.
+/packages/harness/
+
 # brainstorming visual companion mockups
 .superpowers/
 

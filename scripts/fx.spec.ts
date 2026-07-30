@@ -140,6 +140,14 @@ describe('scripts/fx.ts command routing', () => {
     expect(updateBody).not.toContain('--skip-bootstrap');
   });
 
+  it('refreshes the floating runtime harness only from update', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const updateBody = source.slice(source.indexOf('function update('), source.indexOf('function restartStack('));
+    expect(source).toContain('function updateFloatingHarness');
+    expect(updateBody).toContain('updateFloatingHarness(dryRun)');
+    expect(readFileSync(script('prepare.ts'), 'utf8')).toContain('syncPackageHarness();');
+  });
+
   it('updates submodules explicitly after updating the root repo', () => {
     expect(parseSubmodulePaths([
       'submodule.packages/engine.path packages/engine',

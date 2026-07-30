@@ -1238,7 +1238,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "2D场景资产",
+      "zh": "2D 场景资产生成器",
       "en": "2D Scene Asset Generator"
     },
     "desc": {
@@ -1280,7 +1280,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "3D低多边形",
+      "zh": "3D 低多边形生成器",
       "en": "3D Lowpoly Generator"
     },
     "desc": {
@@ -1297,7 +1297,7 @@
         "/wb-3d-lowpoly",
         "/compose-lowpoly"
       ],
-      "tools": 20,
+      "tools": 22,
       "toolSample": [
         "lowpoly:projects.list",
         "lowpoly:projects.create",
@@ -2027,7 +2027,7 @@
     },
     "experimental": true,
     "name": {
-      "zh": "场景生成",
+      "zh": "场景生成器",
       "en": "Scene Generator"
     },
     "desc": {
@@ -2046,14 +2046,14 @@
         "/compose-sino-scene",
         "/design-scene-brief"
       ],
-      "tools": 29,
+      "tools": 32,
       "toolSample": [
         "scene:projects.list",
         "scene:projects.create",
         "scene:projects.open",
         "scene:projects.close",
-        "scene:projects.remove",
-        "scene:batteries.list"
+        "scene:projects.heartbeat",
+        "scene:projects.queue.status"
       ]
     },
     "created": "2026-07-14",

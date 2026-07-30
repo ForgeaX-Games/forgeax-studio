@@ -234,10 +234,10 @@ test("canonical generation is deterministic and full-history output matches chec
         : {}),
     },
     {
-      version: "0.1.4",
+      version: "0.1.5",
       repoUrl: "https://github.com/ForgeaX-Games/forgeax-wb-game-video",
       ...(hasFullHistory
-        ? { created: "2026-07-14", updated: "2026-07-29" }
+        ? { created: "2026-07-14", updated: "2026-07-30" }
         : {}),
     },
   );

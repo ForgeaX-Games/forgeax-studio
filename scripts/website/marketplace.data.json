@@ -1631,7 +1631,7 @@
   "wb-game-video": {
     "slug": "wb-game-video",
     "id": "@forgeax/wb-game-video",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "kind": "workbench",
     "kindLabel": {
       "zh": "工作台",
@@ -1674,7 +1674,7 @@
       ]
     },
     "created": "2026-07-14",
-    "updated": "2026-07-29",
+    "updated": "2026-07-30",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-game-video"
   },
   "wb-gen3d": {

@@ -4,7 +4,7 @@
 // package.json "prepare" lifecycle after `bun install`).
 // Idempotent — re-running picks up where it left off.
 //
-// Steps: [0] prereq gate · [1] submodule init+harness sync · [2] engine pnpm
+// Steps: [0] prereq gate · [1] submodule init+floating harness sync · [2] engine pnpm
 // build · [2a] wgpu wasm · [2c] fbx wasm · [2d] codec wasm · [3] marketplace
 // plugin install+build · [4] .env scaffold · [5] seed sample games.
 //
@@ -13,11 +13,12 @@
 // FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_BOOTSTRAP · FORGEAX_BOOTSTRAP_YES
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { has, resolvePython, run } from './lib/sh.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
+import { ensureWorkspacePackageLink } from './lib/workspace-package-link.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -145,7 +146,7 @@ const nodeMajor = Number.parseInt(
 if (nodeMajor < 22) fail(`Node ${nodeMajor} found; forgeax-server needs ≥22.`);
 ok(`git + bun + pnpm + node v${nodeMajor} present`);
 
-// ── 2. submodule init + harness sync ─────────────────────────────────────────
+// ── 2. submodule init + floating harness sync ────────────────────────────────
 bold('[1/5] Initialising submodules');
 
 // Never let git block on a TTY prompt (username/password) or shell out to a
@@ -268,6 +269,7 @@ if (process.env.FORGEAX_SKIP_HARNESS === '1' || publicDistribution) {
   console.log(`  → harness sync + skill-install skipped (${publicDistribution ? 'public distribution' : 'FORGEAX_SKIP_HARNESS=1'})`);
 } else {
   syncHarness(ROOT, '.forgeax-harness floating clone');
+  syncPackageHarness();
   installHarnessSkills();
   // engine harness sync now flows through the editor submodule (it carries the
   // nested engine at packages/editor/packages/engine).
@@ -602,6 +604,7 @@ if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
     mkdirSync(studioNm, { recursive: true });
     const isWin = process.platform === 'win32';
     let linked = 0;
+    let relinked = 0;
 
     const scanDir = (parent: string): void => {
       if (!existsSync(parent)) return;
@@ -613,10 +616,13 @@ if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
         if (!pkg?.name?.startsWith('@forgeax/')) continue;
         const shortName = pkg.name.slice('@forgeax/'.length);
         const linkPath = join(studioNm, shortName);
-        if (existsSync(linkPath)) continue;
         try {
-          symlinkSync(join(parent, e.name), linkPath, isWin ? 'junction' : 'dir');
-          linked++;
+          const result = ensureWorkspacePackageLink(linkPath, join(parent, e.name), ROOT, isWin);
+          if (result === 'linked') linked++;
+          else if (result === 'relinked') relinked++;
+          else if (result === 'occupied') {
+            warnY(`dedupe package ${shortName}: existing path is not a symlink; leaving it unchanged`);
+          }
         } catch (err) {
           warnY(`dedupe symlink ${shortName}: ${err}`);
         }
@@ -626,8 +632,9 @@ if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
     scanDir(join(ROOT, 'packages/editor/packages/engine/packages'));
     scanDir(join(ROOT, 'packages/editor/packages'));
 
-    if (linked > 0) ok(`linked ${linked} transitive @forgeax package(s) into Studio node_modules (dedupe)`);
-    else ok('Studio @forgeax dedupe symlinks already complete');
+    if (linked > 0 || relinked > 0) {
+      ok(`Studio @forgeax dedupe symlinks ready (${linked} linked, ${relinked} repaired)`);
+    } else ok('Studio @forgeax dedupe symlinks already complete');
   }
 }
 
@@ -742,6 +749,17 @@ function syncHarness(cwd: string, label: string): void {
   const r = spawnSync('node', [join(cwd, 'scripts/sync-harness.mjs')], { stdio: 'inherit', cwd, env: gitEnv });
   if (r.status === 0) ok(`${label} synced`);
   else warnY(`${label} sync failed — continuing`);
+}
+
+function syncPackageHarness(): void {
+  console.log('  → node scripts/sync-package-harness.mjs --ensure');
+  const r = spawnSync('node', [join(ROOT, 'scripts/sync-package-harness.mjs'), '--ensure'], {
+    stdio: 'inherit',
+    cwd: ROOT,
+    env: gitEnv,
+  });
+  if ((r.status ?? 1) !== 0) fail('packages/harness floating checkout is unavailable');
+  ok('packages/harness floating checkout ready');
 }
 
 function installHarnessSkills(): void {

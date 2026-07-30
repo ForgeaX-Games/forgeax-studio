@@ -52,6 +52,11 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain('required engine artefacts missing after prepare');
     expect(src).toContain('required CLI artefact missing after prepare');
   });
+  it('skips the private asset-canvas plugin when its local-only core is absent', () => {
+    const src = prepareSource();
+    expect(src).toContain("['wb-asset-canvas', join(ROOT, 'packages/asset-canvas-core/package.json')]");
+    expect(src).toContain('local-only source dependency absent (skipped)');
+  });
   it('treats an incomplete wgpu/codec pkg/ as stale (gates on the glue, not just .wasm)', () => {
     const src = prepareSource();
     // wgpuWasmStale must re-provision when the JS glue engine-app imports is

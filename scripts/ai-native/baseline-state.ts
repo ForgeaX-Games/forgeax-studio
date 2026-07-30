@@ -3,7 +3,8 @@ import { join, resolve } from 'node:path';
 
 export interface CurrentBaselineState {
   currentBaselineId: string;
-  previousBaselineId: string;
+  /** null once the previous frozen baseline is no longer in the tree. */
+  previousBaselineId: string | null;
   baselineDate: string;
   scannerVersion: string;
 }
@@ -16,8 +17,16 @@ export function loadCurrentBaselineState(repoRoot: string): CurrentBaselineState
     scanner_version?: unknown;
     previous_baseline_id?: unknown;
   };
-  if (typeof config.baseline_id !== 'string' || typeof config.previous_baseline_id !== 'string') {
-    throw new Error('scanner-config baseline_id and previous_baseline_id must be strings');
+  if (typeof config.baseline_id !== 'string') {
+    throw new Error('scanner-config baseline_id must be a string');
+  }
+  if (config.previous_baseline_id !== null && typeof config.previous_baseline_id !== 'string') {
+    throw new Error('scanner-config previous_baseline_id must be a string or null');
+  }
+  // Repeating the current id reads as "configured" while the diff generator
+  // silently produces nothing; say null instead of pretending to a lineage.
+  if (config.previous_baseline_id === config.baseline_id) {
+    throw new Error('scanner-config previous_baseline_id must differ from baseline_id (use null)');
   }
   if (typeof config.series !== 'string' || typeof config.scanner_version !== 'string') {
     throw new Error('scanner-config series and scanner_version must be strings');

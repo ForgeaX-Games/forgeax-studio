@@ -645,6 +645,9 @@ if (skipPlugins) {
 } else {
   const pluginsDir = join(ROOT, 'packages/marketplace/extensions');
   const sharedPackagesDir = join(pluginsDir, '_shared');
+  const localOnlyPluginRequirements = new Map<string, string>([
+    ['wb-asset-canvas', join(ROOT, 'packages/asset-canvas-core/package.json')],
+  ]);
   for (const e of existsSync(sharedPackagesDir) ? readdirSync(sharedPackagesDir, { withFileTypes: true }) : []) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     const d = join(sharedPackagesDir, e.name);
@@ -655,6 +658,11 @@ if (skipPlugins) {
     if (e.name === '_template') continue;
     const d = join(pluginsDir, e.name);
     if (!existsSync(join(d, 'package.json'))) continue;
+    const localRequirement = localOnlyPluginRequirements.get(e.name);
+    if (localRequirement && !existsSync(localRequirement)) {
+      console.log(`  → ${e.name} local-only source dependency absent (skipped)`);
+      continue;
+    }
 
     if (existsSync(join(d, 'pnpm-workspace.yaml'))) {
       console.log(`  → pnpm install (${e.name} pnpm workspace)`);

@@ -42,40 +42,10 @@ const STATIC_RESOURCE_REGISTRATIONS: ReadonlyArray<{
   consumer: string;
   resources: readonly string[];
 }> = [
-  { consumer: 'scripts/ai-native/build-baseline-diff.ts', resources: [
-    'scripts/ai-native/baseline-diff-adjudications',
-    'scripts/ai-native/scanner-config.json',
-  ] },
-  { consumer: 'scripts/ai-native/capability-gates.spec.ts', resources: [
-    'scripts/ai-native/capability-baseline-history/b1-2026-07-23-0.6.1-r1.json',
-    'scripts/ai-native/capability-baseline.json',
-    'scripts/ai-native/r4r5-balance.json',
-  ] },
-  { consumer: 'scripts/ai-native/generate-phase2-approval-docs.ts', resources: [
-    'scripts/ai-native/manual-pool-carry-forward.json',
-  ] },
-  { consumer: 'scripts/ai-native/land-phase2-approval.ts', resources: [
-    'scripts/ai-native/generate-phase2-approval-docs.ts',
-  ] },
-  { consumer: 'scripts/ai-native/r6-coverage.ts', resources: [
+  { consumer: 'scripts/ai-native/pr-gates.ts', resources: [
     'scripts/ai-native/effect-adjudications-v1.jsonl',
     'scripts/ai-native/evidence-manifests-v1',
-    'scripts/ai-native/ledger-v1.jsonl',
     'scripts/ai-native/manual-pool-adjudications-v1.jsonl',
-    'scripts/ai-native/profiles/main.json',
-    'scripts/ai-native/runtime-snapshot-reports',
-    'scripts/ai-native/runtime-snapshots',
-    'scripts/ai-native/test-binding-registry.json',
-  ] },
-  { consumer: 'scripts/ai-native/r8-docs.spec.ts', resources: [
-    'docs/ai-native/other-team-gap-ownership.md',
-    'scripts/ai-native/ledger-v1.jsonl',
-  ] },
-  { consumer: 'scripts/ai-native/runtime-snapshot-runner.ts', resources: [
-    'scripts/ai-native/runtime-snapshot-worker.ts',
-  ] },
-  { consumer: 'scripts/ai-native/render-exemption-list.ts', resources: [
-    'scripts/ai-native/ledger-v1.jsonl',
   ] },
   { consumer: 'scripts/ai-native/scanner.ts', resources: [
     'docs/ai-native/other-team-gap-ownership.md',
@@ -89,47 +59,13 @@ const STATIC_RESOURCE_REGISTRATIONS: ReadonlyArray<{
   { consumer: 'scripts/ai-native/typecheck-ai-native.ts', resources: [
     'scripts/ai-native/tsconfig.json',
   ] },
-  { consumer: 'scripts/ai-native/verify-baseline-diff.ts', resources: [
-    'scripts/ai-native/baseline-diff-adjudications',
-  ] },
-  { consumer: 'scripts/ai-native/verify-runtime-pin.ts', resources: [
-    'scripts/ai-native/build-runtime-pin.ts',
-  ] },
-  { consumer: 'scripts/ai-native/verify-r6-ci.ts', resources: [
-    'scripts/ai-native/capability-baseline-history/b1-2026-07-23-0.6.1-r1.json',
-    'scripts/ai-native/capability-baseline.json',
-    'scripts/ai-native/r4r5-balance.json',
-  ] },
 ] as const;
 
 const GENERATED_CONFIGURATION_OUTPUT_PREFIXES = [
   'scripts/ai-native/evidence-manifests-v1/',
-  'scripts/ai-native/runtime-snapshot-reports/',
-  'scripts/ai-native/runtime-snapshots/',
 ] as const;
 
 const CROSS_PACKAGE_RUNTIME_IMPORT_REASONS: Readonly<Record<string, string>> = {
-  'scripts/ai-native/calculate-r6-coverage.ts -> packages/orchestrator/src/kernel/action-catalog.ts': 'The production R6 calculator executes the live action catalog as its runtime observation boundary.',
-  'scripts/ai-native/calculate-r6-coverage.ts -> packages/orchestrator/src/kernel/ui-headless-actions.ts': 'The production R6 calculator executes the live headless-action registry as its runtime observation boundary.',
-  'scripts/ai-native/capability-gates.spec.ts -> packages/orchestrator/src/index.ts': 'The executable capability gate compares its contract against the live orchestrator export.',
-  'scripts/ai-native/capability-gates.spec.ts -> packages/orchestrator/src/kernel/action-catalog.ts': 'The executable capability gate exercises the live action catalog.',
-  'scripts/ai-native/capability-gates.spec.ts -> packages/orchestrator/src/kernel/ui-headless-actions.ts': 'The executable capability gate exercises the live headless-action registry.',
-  'scripts/ai-native/r6-coverage.spec.ts -> packages/orchestrator/src/kernel/action-catalog.ts': 'The R6 integration spec exercises the live action catalog.',
-  'scripts/ai-native/r6-coverage.spec.ts -> packages/orchestrator/src/kernel/ui-headless-actions.ts': 'The R6 integration spec exercises the live headless-action registry.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/api/lib/host-tools-for-agent.ts': 'The formal snapshot worker observes live host-tool composition.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/app.ts': 'The formal snapshot worker constructs the live orchestrator application.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/core/session-manager.ts': 'The formal snapshot worker creates its isolated live session.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/extensions/registry.ts': 'The formal snapshot worker observes the live extension registry.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/fs/path-manager.ts': 'The formal snapshot worker configures isolated runtime paths.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/kernel/action-catalog.ts': 'The formal snapshot worker observes the live action catalog.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/kernel/compose-turn-request.ts': 'The formal snapshot worker exercises live turn-request composition.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/kernel/resolve-kernel.ts': 'The formal snapshot worker resolves the live kernel without invoking a model.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/orchestrator/src/soul/index.ts': 'The formal snapshot worker loads the live agent record.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/server/src/game/active-game.ts': 'The formal snapshot worker installs the isolated active-game fixture.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/server/src/game/host-tools.ts': 'The formal snapshot worker observes the product-shell host-tool boundary.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/server/src/game/system-prompt-composer.ts': 'The formal snapshot worker composes the live product system prompt.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/server/src/kernel/forgeax-core-adapter.ts': 'The formal snapshot worker registers the live kernel adapter.',
-  'scripts/ai-native/runtime-snapshot-worker.ts -> packages/server/src/studio-session-layout.ts': 'The formal snapshot worker constructs the isolated session layout.',
 } as const;
 
 function slash(value: string): string {

@@ -10,7 +10,7 @@ import {
 import { dirname, join, relative, resolve } from 'node:path';
 import { controlId, resolveAlias, validateAliasMap } from './control-id';
 import {
-  computeInventoryScannerConfigurationFingerprint,
+  computeScannerConfigurationFingerprint,
   RUNTIME_PIN_PATH,
 } from './runtime-artifact-integrity.ts';
 import type {
@@ -521,6 +521,9 @@ export interface InventoryResult {
   stats: InventoryStats;
   vocabMap: VocabConfig;
   otherTeamSurface: OtherTeamSurfaceRow[];
+  /** Notices that `humanReviewDrift: 'record'` collected instead of throwing;
+   * empty under the default strict behaviour. */
+  pendingHumanReview: string[];
   constantListeners: ConstantListenerAudit[];
   methodSubscriptionAudit: MethodSubscriptionAudit[];
   negativeCandidates: NegativeCandidate[];
@@ -553,6 +556,13 @@ export interface BuildOptions {
   scannerConfigPath?: string;
   /** Audit-only path: trust the immutable pin file and execute no git process. */
   noGit?: boolean;
+  /** 'record' collects every "a human still has to look at this" notice instead
+   * of throwing: an unrecorded other-team route change, a lowercase
+   * subscription nobody has reviewed. Product teams ship into the submodules
+   * daily, so a caller that only needs today's surface -- the adjudication
+   * queue, the migrated-capability gate -- must not inherit a failure from work
+   * that is merely pending review. Defaults to 'throw'. */
+  humanReviewDrift?: 'throw' | 'record';
 }
 
 function hash(value: string): string {
@@ -1493,10 +1503,18 @@ function extractEndpoints(root: string): { endpoints: EndpointDef[]; manual: Man
   return { endpoints: [...byKey.values()], manual };
 }
 
+/** `onDrift: 'record'` keeps the two re-verification checks -- the recorded pin
+ * and the recorded route set -- from throwing. Both exist to make a human
+ * re-compare another team's routes, not to make the extraction correct: the
+ * routes below are read out of the live mount file either way. Callers that
+ * only need today's surface (the adjudication queue, the migrated-capability
+ * gate) therefore ask for the drift as data instead of inheriting a failure
+ * every time another team ships. */
 export function collectRegisteredOtherTeamRoutes(
   root: string,
   productCombo: Readonly<Record<string, string>>,
-): { endpoints: EndpointDef[]; audit: OtherTeamRouteAuditRow[] } {
+  onDrift: 'throw' | 'record' = 'throw',
+): { endpoints: EndpointDef[]; audit: OtherTeamRouteAuditRow[]; drift: string[] } {
   const registryPath = join(root, 'scripts/ai-native/other-team-route-registry.json');
   const registry = JSON.parse(readFileSync(registryPath, 'utf8')) as OtherTeamRouteRegistry;
   if (registry.schema_version !== 1 || !Array.isArray(registry.registrations)) {
@@ -1504,6 +1522,7 @@ export function collectRegisteredOtherTeamRoutes(
   }
   const endpoints: EndpointDef[] = [];
   const audit: OtherTeamRouteAuditRow[] = [];
+  const drift: string[] = [];
   const effectIds = new Set<string>();
   for (const registration of registry.registrations) {
     if (!/^[0-9a-f]{40}$/.test(registration.verified_pin)) {
@@ -1511,10 +1530,10 @@ export function collectRegisteredOtherTeamRoutes(
     }
     const livePin = productCombo[registration.repo];
     if (livePin !== registration.verified_pin) {
-      throw new Error(
-        `registered other-team route probe is stale for ${registration.repo}: `
-        + `verified ${registration.verified_pin}, current ${livePin ?? '<missing>'}; re-compare routes and record the new pin`,
-      );
+      const message = `registered other-team route probe is stale for ${registration.repo}: `
+        + `verified ${registration.verified_pin}, current ${livePin ?? '<missing>'}; re-compare routes and record the new pin`;
+      if (onDrift === 'throw') throw new Error(message);
+      drift.push(message);
     }
     const mountFile = parseFile(root, join(root, registration.mount_file));
     for (const mount of registration.mounts) {
@@ -1544,12 +1563,25 @@ export function collectRegisteredOtherTeamRoutes(
       const expectedKeys = mount.routes.map((route) => `${route.method} ${route.path}`).sort();
       const observedKeys = observed.map((route) => `${route.method} ${route.path}`).sort();
       if (JSON.stringify(expectedKeys) !== JSON.stringify(observedKeys)) {
-        throw new Error(
-          `registered other-team route comparison changed for ${mount.factory}: `
-          + `expected=${JSON.stringify(expectedKeys)} observed=${JSON.stringify(observedKeys)}`,
-        );
+        const message = `registered other-team route comparison changed for ${mount.factory}: `
+          + `expected=${JSON.stringify(expectedKeys)} observed=${JSON.stringify(observedKeys)}`;
+        if (onDrift === 'throw') throw new Error(message);
+        drift.push(message);
       }
-      for (const route of mount.routes) {
+      if (onDrift === 'record') {
+        for (const route of observed.filter((candidate) => !mount.routes.some(
+          (registered) => candidate.method === registered.method && candidate.path === registered.path,
+        ))) {
+          drift.push(
+            `unregistered other-team route observed for ${registration.repo}: `
+            + `factory=${mount.factory} method=${route.method} path=${route.path}`,
+          );
+        }
+      }
+      const stillMounted = mount.routes.filter((route) => observed.some(
+        (candidate) => candidate.method === route.method && candidate.path === route.path,
+      ));
+      for (const route of stillMounted) {
         if ((route.effect_id === undefined) !== (route.registration_reason === undefined)) {
           throw new Error(`registered route ${mount.factory} ${route.method} ${route.path} must pair effect_id and registration_reason`);
         }
@@ -1597,6 +1629,7 @@ export function collectRegisteredOtherTeamRoutes(
       || left.method.localeCompare(right.method)
       || left.path.localeCompare(right.path)
     )),
+    drift,
   };
 }
 
@@ -2553,7 +2586,8 @@ function reviewMethodSubscriptionCandidates(
   candidates: SubscriptionCandidateAudit[],
   controls: ControlRow[],
   rules: ExclusionRule[],
-): MethodSubscriptionAudit[] {
+  onDrift: 'throw' | 'record' = 'throw',
+): { rows: MethodSubscriptionAudit[]; pending: string[] } {
   const narrow = candidates.filter((row): row is SubscriptionCandidateAudit & { family: 'lowercase-method' } => (
     row.family === 'lowercase-method'
   ));
@@ -2644,8 +2678,13 @@ function reviewMethodSubscriptionCandidates(
   for (const review of reviewsByKey.values()) {
     issues.push(`retained lowercase subscription review has no collected candidate: ${review.file}:${review.line}`);
   }
-  if (issues.length > 0) throw new Error(`lowercase subscription audit failed:\n${issues.join('\n')}`);
-  return reviewed.sort((a, b) => a.file.localeCompare(b.file) || a.evidence_line - b.evidence_line);
+  if (issues.length > 0 && onDrift === 'throw') {
+    throw new Error(`lowercase subscription audit failed:\n${issues.join('\n')}`);
+  }
+  return {
+    rows: reviewed.sort((a, b) => a.file.localeCompare(b.file) || a.evidence_line - b.evidence_line),
+    pending: issues,
+  };
 }
 
 function providerCallbackSummary(property: string, handler: any): string {
@@ -3957,7 +3996,8 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
   const aliasIssues = validateAliasMap(aliasMap);
   if (aliasIssues.length) throw new Error(`invalid alias-map.json:\n${aliasIssues.join('\n')}`);
   const productCombo = scannedProductCombo(root, scannerConfig.productPinSource, options.noGit);
-  const registeredOtherTeam = collectRegisteredOtherTeamRoutes(root, productCombo);
+  const humanReviewDrift = options.humanReviewDrift ?? 'throw';
+  const registeredOtherTeam = collectRegisteredOtherTeamRoutes(root, productCombo, humanReviewDrift);
 
   if (!options.noGit) assertOwnedUiSourcesClean(root, uiRoots);
   const uiFiles = configuredUiFiles(root, uiRoots);
@@ -4046,11 +4086,14 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     if (!control) throw new Error(`declarative menu audit has no control: ${audit.menu}/${audit.item_id}`);
     return { ...audit, control_id: control.control_id, effect_id: control.effect_id };
   });
-  const methodSubscriptionAudit = reviewMethodSubscriptionCandidates(
+  const methodSubscriptionReview = reviewMethodSubscriptionCandidates(
     subscriptions.audits,
     rows.rows,
     exclusions.subscription_rules,
+    humanReviewDrift,
   );
+  const methodSubscriptionAudit = methodSubscriptionReview.rows;
+  const pendingHumanReview = [...registeredOtherTeam.drift, ...methodSubscriptionReview.pending];
   const providerDiBranches = collectProviderDiBranches(uiFiles);
   const providerDi = annotateProviderDiBranches(providerDiBranches, rows.rows, rows.edges);
   const currentControlIds = new Set(rows.rows.map((row) => row.control_id));
@@ -4127,7 +4170,7 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     ...(scannerConfig.baselineNote ? { baseline_note: scannerConfig.baselineNote } : {}),
     combo_sha: productComboSha,
     scanned_product_combo: productCombo,
-    scanner_configuration_fingerprint: computeInventoryScannerConfigurationFingerprint(root),
+    scanner_configuration_fingerprint: computeScannerConfigurationFingerprint(root),
     artifact_commit: options.noGit ? productCombo.studio : artifactCommit(root),
     pinned_submodule_status: 'docs/ai-native/PINNED-submodule-status.txt',
   };
@@ -4166,6 +4209,7 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     negativeCandidates: negativeCandidates(uiFiles, hitFiles),
     declarativeMenuAudit,
     otherTeamRouteAudit: registeredOtherTeam.audit,
+    pendingHumanReview,
   };
 }
 

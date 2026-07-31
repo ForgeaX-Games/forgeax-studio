@@ -34,26 +34,24 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDotenv } from './lib/env.ts';
 import {
-  PORT_ENGINE,
-  PORT_GATEWAY_BRIDGE,
-  PORT_INTERFACE,
-  PORT_NARRATIVE,
-  PORT_SERVER,
-} from './lib/ports.ts';
-import {
   type SpawnOpts,
   clearPidfiles,
   isPortBusy,
-  killTree,
   recordPid,
   reapPidfiles,
   runDir,
   sleep,
-  spawnService,
   waitForPort,
 } from './lib/proc.ts';
+import { readinessSummary, waitForRuntime } from './lib/runtime-readiness.ts';
+import { RuntimeStateStore } from './lib/runtime-state.ts';
 import { resolveActiveServerRole, serverRuntimeInvocation } from './lib/server-role.ts';
+import { ServiceSupervisor, type ServiceEvent } from './lib/service-supervisor.ts';
 import { StartLock } from './lib/startlock.ts';
+import {
+  resolveStartupEnvironment,
+  startupProcessEnv,
+} from './lib/startup-environment.ts';
 import { vanityBanner, versionCheck, versionString, writeVersionJson } from './lib/version.ts';
 import { viteGuard, vitePurgeAll } from './lib/vite-cache.ts';
 
@@ -62,11 +60,6 @@ const argv = process.argv.slice(2);
 const has = (flag: string) => argv.includes(flag);
 const rhiDebug = has('--rhi-debug');
 const coreOnly = process.env.FORGEAX_CORE_ONLY === '1';
-const parsePort = (value: string | undefined, fallback: number): number => {
-  const port = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(port) && port > 0 && port < 65536 ? port : fallback;
-};
-const RHI_REVIEWER_PORT = parsePort(process.env.FORGEAX_RHI_REVIEWER_PORT, 15274);
 
 // ── 0 purge-vite / start lock ───────────────────────────────────────────────
 if (has('--purge-vite') || has('--fresh')) {
@@ -87,12 +80,12 @@ process.env.FORGEAX_VERSION = versionString(ROOT);
 versionCheck(ROOT);
 
 console.log();
-console.log('  ⚠ BREAKING CHANGE: Preview 运行时引擎已从 Three.js 切换到 forgeax-engine ECS。');
-console.log('  存量 THREE.js 游戏代码合并后将无法运行，需按新 scaffold 重写为 ECS 范式。');
+console.log('  ⚠ BREAKING CHANGE: The preview engine changed from Three.js to forgeax-engine ECS.');
+console.log('  Existing THREE.js game code will not run after merge; rewrite it for the ECS scaffold.');
 console.log();
 
 // ── 1 .env ───────────────────────────────────────────────────────────────────
-const envFile = join(ROOT, '.env');
+const envFile = process.env.FORGEAX_ENV_FILE ?? join(ROOT, '.env');
 const envExample = join(ROOT, '.env.example');
 if (!existsSync(envFile)) {
   const legacy = join(ROOT, 'packages/forgeax/.env');
@@ -109,6 +102,21 @@ if (!existsSync(envFile)) {
   }
 }
 const env = loadDotenv(envFile); // also injected into process.env
+const startup = resolveStartupEnvironment({
+  root: ROOT,
+  profile: process.env.FORGEAX_STARTUP_PROFILE ?? 'web-dev',
+  env: process.env,
+});
+Object.assign(process.env, startupProcessEnv(startup));
+const PORT_SERVER = startup.server.port;
+const PORT_INTERFACE = startup.interface.port;
+const PORT_ENGINE = startup.engine.port;
+const PORT_NARRATIVE = parsePort(process.env.NARRATIVE_PORT, 8900, 'NARRATIVE_PORT');
+const RHI_REVIEWER_PORT = parsePort(
+  process.env.FORGEAX_RHI_REVIEWER_PORT,
+  15274,
+  'FORGEAX_RHI_REVIEWER_PORT',
+);
 const activeServer = resolveActiveServerRole({
   root: ROOT,
   profile: process.env.FORGEAX_SERVER_PROFILE,
@@ -125,7 +133,7 @@ try {
 // only remaps FORGEAX_PROJECT_ROOT, so Settings must keep reading/writing THIS
 // file (not <active-root>/.env) or creds/FORGEAX_MODEL appear to vanish after a
 // switch. Inherited by every launched child via `...process.env` below.
-process.env.FORGEAX_ENV_FILE = envFile;
+process.env.FORGEAX_ENV_FILE = startup.envFile;
 
 // `bun fx start` is the development launcher. Its children must never inherit a
 // parent shell's NODE_ENV=production: Vite then omits the React Refresh preamble
@@ -185,7 +193,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
 }
 
 // Optional-key audit (masked) — mirrors packages/server settings SAFE_ENV_KEYS.
-console.log('[env]  key audit (优化 wb-* / multi-provider 体验):');
+console.log('[env]  key audit (wb-* / multi-provider diagnostics):');
 for (const k of [
   'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
@@ -231,7 +239,6 @@ const preflight: Array<[string, number]> = [
   ['interface', PORT_INTERFACE],
   ['engine', PORT_ENGINE],
 ];
-if (process.env.FORGEAX_BRIDGE !== '0') preflight.push(['gw-bridge', PORT_GATEWAY_BRIDGE]);
 if (rhiDebug) preflight.push(['rhi-debug-reviewer', RHI_REVIEWER_PORT]);
 let preflightBusy = false;
 for (const [name, port] of preflight) {
@@ -268,21 +275,25 @@ console.log('[workspace] @forgeax/* linked');
 
 // ── 2.x engine dist precondition + freshness ─────────────────────────────────
 const enginePkgDir = join(ROOT, 'packages/editor/packages/engine/packages');
-const engineEntryPkgs = ['app', 'runtime', 'ecs', 'vite-plugin-pack', 'vite-plugin-shader'];
-const missing = engineEntryPkgs.filter((p) => !existsSync(join(enginePkgDir, p, 'dist/index.mjs')));
+const engineEntryPkgs = ['app', 'runtime', 'ecs', 'assets-runtime', 'vite-plugin-pack', 'vite-plugin-shader'];
+const engineEntryOutputs = ['index.mjs', 'index.d.ts'];
+const missing = engineEntryPkgs.flatMap((p) => engineEntryOutputs
+  .filter((name) => !existsSync(join(enginePkgDir, p, 'dist', name)))
+  .map((name) => `${p}/dist/${name}`));
 if (missing.length > 0) {
   console.error(`  ERROR: engine dist missing for: ${missing.join(' ')}`);
-  console.error('  (expected packages/editor/packages/engine/packages/<pkg>/dist/index.mjs)');
+  console.error('  (expected packages/editor/packages/engine/packages/<pkg>/dist/index.mjs and index.d.ts)');
   console.error('  The editor nested engine submodule has not been fully built yet. Run: bun install');
   process.exit(1);
 }
-console.log(`[engine] dist found for entry packages: ${engineEntryPkgs.join(' ')}`);
+console.log(`[engine] entry artifacts found for packages: ${engineEntryPkgs.join(' ')}`);
 
 if (process.env.FORGEAX_SKIP_ENGINE_DIST_FRESHNESS !== '1') {
   const stale = engineEntryPkgs.filter((p) => {
     const pdir = join(enginePkgDir, p);
-    const dist = join(pdir, 'dist/index.mjs');
-    return existsSync(join(pdir, 'src')) && existsSync(dist) && anyNewerThan(join(pdir, 'src'), statSync(dist).mtimeMs);
+    const outputs = engineEntryOutputs.map((name) => join(pdir, 'dist', name));
+    const oldestOutputMs = Math.min(...outputs.map((output) => statSync(output).mtimeMs));
+    return existsSync(join(pdir, 'src')) && anyNewerThan(join(pdir, 'src'), oldestOutputMs);
   });
   if (stale.length > 0) {
     if (process.env.FORGEAX_AUTO_DEPLOY === '1') {
@@ -338,7 +349,7 @@ if (process.env.FORGEAX_VITE_NO_CLEAN !== '1') {
 }
 
 // ── 3 instance .forgeax/ + junction ──────────────────────────────────────────
-const instanceRoot = ROOT;
+const instanceRoot = startup.projectRoot;
 const engineSrcDir = join(ROOT, 'packages/editor/packages/play-runtime');
 mkdirSync(join(instanceRoot, '.forgeax/games'), { recursive: true });
 ensureForgeaxJunction(join(engineSrcDir, '.forgeax'), join(instanceRoot, '.forgeax'));
@@ -380,7 +391,7 @@ if (existsSync(join(ROOT, 'scripts/build-extensions.ts'))) {
 }
 
 // ── 3.8 discover standalone-backend plugins ──────────────────────────────────
-const runtimeDir = join(ROOT, '.forgeax');
+const runtimeDir = join(instanceRoot, '.forgeax');
 const extensionDevPortsFile = join(runtimeDir, 'extension-dev-ports.json');
 const runStackFile = join(runtimeDir, 'dev-stack.env');
 mkdirSync(runtimeDir, { recursive: true });
@@ -419,7 +430,7 @@ writeFileSync(
   extensionDevPortsFile,
   `${JSON.stringify(
     {
-      generatedBy: 'scripts/run.ts',
+      generatedBy: 'scripts/local-runtime.ts',
       plugins: Object.fromEntries(extensions.map((p) => [p.id, { frontendPort: p.frontendPort, backendPort: p.backendPort }])),
     },
     null,
@@ -429,17 +440,38 @@ writeFileSync(
 process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE = extensionDevPortsFile;
 
 // ── cleanup trap ──────────────────────────────────────────────────────────────
-const children: number[] = [];
 let cleanedUp = false;
+let runtimeFailed = false;
+const runtimeState = new RuntimeStateStore(startup);
+runtimeState.writeStarting();
+const supervisor = new ServiceSupervisor({
+  onEvent: (event) => {
+    recordRuntimeServiceEvent(event);
+    if (event.status === 'restarting' || event.status === 'failed') {
+      console.error(
+        `[run] service '${event.name}' ${event.status}${event.error ? `: ${event.error}` : ''}`,
+      );
+    }
+  },
+  onFatal: (error) => {
+    if (cleanedUp || runtimeFailed) return;
+    runtimeFailed = true;
+    runtimeState.markFailed(error.message);
+    console.error(`[run] ${error.message}`);
+    setTimeout(() => process.exit(1), 0);
+  },
+});
 function cleanup(): void {
   if (cleanedUp) return;
   cleanedUp = true;
-  reapPidfiles(ROOT, false);
-  for (const pid of children) killTree(pid, false);
-  clearPidfiles(ROOT);
+  if (!runtimeFailed) runtimeState.markStopping();
+  supervisor.shutdown(runtimeFailed);
+  reapPidfiles(instanceRoot, runtimeFailed);
+  clearPidfiles(instanceRoot);
   lock.release();
   rmSync(runStackFile, { force: true });
   rmSync(extensionDevPortsFile, { force: true });
+  if (!runtimeFailed) runtimeState.remove();
 }
 process.on('SIGINT', () => {
   cleanup();
@@ -452,8 +484,8 @@ process.on('SIGTERM', () => {
 process.on('exit', cleanup);
 
 // Fresh run dir.
-clearPidfiles(ROOT);
-mkdirSync(runDir(ROOT), { recursive: true });
+clearPidfiles(instanceRoot);
+mkdirSync(runDir(instanceRoot), { recursive: true });
 
 // ── 4 launch services ─────────────────────────────────────────────────────────
 console.log(
@@ -462,63 +494,54 @@ console.log(
 if (narrativeWillStart()) console.log(`[run] + narrative API :${PORT_NARRATIVE} (wb-narrative standalone)`);
 if (rhiDebug) console.log(`[run] + RHI reviewer :${RHI_REVIEWER_PORT} (pnpm @forgeax/engine-rhi-debug-viewer vite)`);
 console.log(`[run] open http://localhost:${PORT_INTERFACE} to use the Studio UI`);
-console.log('[run]   浏览器(WebGPU): bun fx start   ·   桌面 App: bun fx start desktop');
+console.log('[run]   Browser (WebGPU): bun fx start   ·   Desktop App: bun fx start desktop');
 
-const launch = (name: string, cmd: string, args: string[], opts: SpawnOpts): number => {
-  const child = spawnService(cmd, args, { ...opts, env: devServiceEnv(opts.env) });
-  const pid = child.pid ?? 0;
+const launch = (
+  name: string,
+  cmd: string,
+  args: string[],
+  opts: SpawnOpts,
+  required = false,
+): number => {
+  const pid = supervisor.launch({
+    name,
+    command: cmd,
+    args,
+    spawn: { ...opts, env: devServiceEnv(opts.env) },
+    required,
+    restartPolicy: startup.supervision.restartPolicy,
+    maxRestarts: startup.supervision.maxRestarts,
+  });
   if (pid) {
-    children.push(pid);
-    recordPid(ROOT, name, pid);
+    recordPid(instanceRoot, name, pid);
   }
-  // Monitor unexpected death. `launch()` previously fire-and-forgot: a service
-  // that crashed AFTER boot (e.g. the engine vite dying mid-session) vanished
-  // silently — run.ts never noticed, so `/preview` + `/__import` (proxied to the
-  // dead engine) 500'd with no signal anywhere. Surface it loudly on stdout (the
-  // fd is captured into forgeax-stack.log, and `fx start`'s engine-readiness
-  // poll tails that). NOT auto-restarted by design: a crash-looping service
-  // should be seen and fixed, not silently respawned into a hot loop.
-  child.on('exit', (code, signal) => {
-    if (cleanedUp) return; // expected teardown — say nothing
-    const how = signal ? `signal ${signal}` : `code ${code}`;
-    console.error(`[run] ⚠ service '${name}' (pid ${pid}) exited unexpectedly (${how}) — not restarting; run \`bun fx restart\` after fixing the cause`);
-  });
-  child.on('error', (err: unknown) => {
-    if (cleanedUp) return;
-    console.error(`[run] ⚠ service '${name}' failed to spawn:`, err instanceof Error ? err.message : String(err));
-  });
   return pid;
 };
 
-const srv = launch('server', 'bun', ['--watch', activeServerRuntime.entryPath], { cwd: activeServer.packageDir });
+const srv = launch(
+  'server',
+  'bun',
+  ['--watch', activeServerRuntime.entryPath],
+  { cwd: activeServer.packageDir },
+  true,
+);
 
 // Wait for server to bind before starting interface (avoids proxy ECONNREFUSED race).
-await waitForPort(PORT_SERVER, 10_000);
-
-// ── DEV-only live gateway bridge (forgeax-editor-gateway `gateway-live.mjs`) ──
-// Single-realm studio serves the editor page IN-PROCESS in the :18920 vite, so
-// unlike the editor's own `dev:standalone` (which wires this into its :15290 host)
-// nothing here dialed the relay before. Two lines are needed, mirroring editor
-// fx.ts §bridge: (1) the compile-time `VITE_FORGEAX_BRIDGE` flag MUST reach the
-// interface(studio) vite — that vite is what inlines it into ViewportComponent's
-// bridge-dial code (import.meta.env.VITE_FORGEAX_BRIDGE), so it goes on the UI
-// launch env below; (2) the loopback relay process (:15295), spawned after. On by
-// default so `bun fx start` matches the editor; FORGEAX_BRIDGE=0 opts out.
-const bridge = process.env.FORGEAX_BRIDGE !== '0';
-const bridgePort = String(PORT_GATEWAY_BRIDGE);
-const bridgeEnv: NodeJS.ProcessEnv = bridge
-  ? { VITE_FORGEAX_BRIDGE: '1', VITE_FORGEAX_BRIDGE_PORT: bridgePort }
-  : { VITE_FORGEAX_BRIDGE: '0' };
+if (!await waitForPort(PORT_SERVER, 10_000)) {
+  runtimeFailed = true;
+  runtimeState.markFailed(`server did not bind :${PORT_SERVER} within 10 seconds`);
+  console.error(`[run] server did not bind :${PORT_SERVER} within 10 seconds`);
+  process.exit(1);
+}
 
 const uiPkg = STUDIO === '1' ? 'studio' : 'interface';
 const ui = launch('interface', 'bun', ['x', 'vite'], {
   cwd: join(ROOT, 'packages', uiPkg),
   env: {
     ...process.env,
-    ...bridgeEnv,
     ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
   },
-});
+}, true);
 // play-runtime holds ZERO on-disk layout convention now — the HOST injects it.
 // Studio's layout is `<engineSrcDir>/.forgeax/games` (via the junction above),
 // served under the vite root as the URL prefix `.forgeax/games`. Both must agree.
@@ -530,7 +553,7 @@ const en = launch('engine', 'bun', ['x', 'vite'], {
     FORGEAX_PREVIEW_GAMES_DIR: join(engineSrcDir, '.forgeax/games'),
     FORGEAX_GAMES_URL_PREFIX: '.forgeax/games',
   },
-});
+}, true);
 // Single-realm (feat-20260703): the editor engine boots IN-PROCESS in the
 // interface(studio) vite at :18920 — no separate edit-runtime vite service. The
 // former `editor` (:15280) launch is gone; the play/preview engine (:15173) stays
@@ -546,32 +569,6 @@ if (rhiDebug) {
       env: { ...process.env, FORGEAX_ENGINE_RHI_DEBUG: '1' },
     },
   );
-}
-
-// Live gateway bridge relay (:15295) — the loopback meeting point the CLI POSTs to
-// and the in-process editor page dials out to. The relay script lives in the editor
-// submodule; `bun` (not node) so its vendored `ws` resolves, cwd:ROOT so the isolated
-// store is on the resolution path. DEV-only, loopback-only; skipped by FORGEAX_BRIDGE=0.
-const GATEWAY_RELAY_SCRIPT = join(
-  ROOT,
-  'packages/editor/skills/forgeax-editor-gateway/scripts/gateway-bridge-server.mjs',
-);
-if (bridge) {
-  if (existsSync(GATEWAY_RELAY_SCRIPT)) {
-    launch('gw-bridge', 'bun', [GATEWAY_RELAY_SCRIPT], {
-      cwd: ROOT,
-      env: { ...process.env, FORGEAX_BRIDGE_PORT: bridgePort },
-    });
-    console.log(
-      `[run] live gateway bridge :${bridgePort} → node packages/editor/skills/forgeax-editor-gateway/scripts/gateway-live.mjs (opt out: FORGEAX_BRIDGE=0)`,
-    );
-  } else {
-    // Editor submodule not populated (fresh worktree / partial checkout). The page
-    // still dials, but with no relay it just retries harmlessly — don't fail boot.
-    console.error(
-      `[run] ⚠ gateway bridge relay script missing (${GATEWAY_RELAY_SCRIPT}) — run \`git submodule update --init packages/editor\`; skipping relay`,
-    );
-  }
 }
 
 let narr = 0;
@@ -647,7 +644,9 @@ for (const p of extensions) {
 writeFileSync(
   runStackFile,
   [
-    '# generated by scripts/run.ts',
+    '# generated by scripts/local-runtime.ts',
+    `FORGEAX_STARTUP_PROFILE="${startup.profile}"`,
+    `FORGEAX_RUNTIME_STATE_FILE="${startup.stateFile}"`,
     `FORGEAX_RUN_PIDS="${[process.pid, srv, ui, en, reviewer, narr, ...extensionPids].filter(Boolean).join(' ')}"`,
     `FORGEAX_RUN_PORTS="${[
       PORT_SERVER,
@@ -663,10 +662,45 @@ writeFileSync(
   ].join('\n'),
 );
 
+const readiness = await waitForRuntime(startup, {
+  onCheck: (result) => runtimeState.setReadiness(result),
+});
+if (!readiness.ready) {
+  runtimeFailed = true;
+  const error = `core services failed readiness: ${readinessSummary(readiness)}`;
+  runtimeState.markFailed(error, readiness);
+  console.error(`[run] ${error}`);
+  process.exit(1);
+}
+runtimeState.markReady(readiness);
+console.log(`[run] runtime ready (${startup.profile}): ${readinessSummary(readiness)}`);
+
 // Keep the orchestrator alive until interrupted (mirrors bash `wait`).
 await new Promise<void>(() => {});
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+function parsePort(value: string | undefined, fallback: number, name: string): number {
+  if (value === undefined || value.trim() === '') return fallback;
+  if (!/^\d+$/.test(value.trim())) {
+    throw new Error(`${name} must be a positive integer, got '${value}'`);
+  }
+  const port = Number(value);
+  if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error(`${name} must be a port between 1 and 65535, got '${value}'`);
+  }
+  return port;
+}
+
+function recordRuntimeServiceEvent(event: ServiceEvent): void {
+  if (event.pid) {
+    runtimeState.setServicePid(event.name, event.pid);
+    return;
+  }
+  if (event.status === 'failed' || event.status === 'stopped') {
+    runtimeState.setServicePid(event.name, 0);
+  }
+}
 
 /** Recursively true if any file under `dir` has mtime > `anchorMs`. */
 function anyNewerThan(dir: string, anchorMs: number): boolean {

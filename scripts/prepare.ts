@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { has, resolvePython, run } from './lib/sh.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
 import { ensureWorkspacePackageLink } from './lib/workspace-package-link.ts';
+import { writeSetupSnapshot } from './lib/setup-version.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -427,20 +428,35 @@ function buildWgpuWasm(): void {
 // These packages are imported while loading the Studio Vite config. They must be
 // fresh even when the normal app/runtime entry checks would otherwise skip the
 // filtered engine build.
-const engineEntryPkgs = ['app', 'runtime', 'ecs', 'font', 'vite-plugin-pack', 'vite-plugin-shader'];
+// These packages are also imported by the copied game template. Keep them in
+// the cache-hit freshness gate so a new template dependency cannot be hidden
+// by an older engine-dist cache.
+const engineEntryPkgs = [
+  'app',
+  'runtime',
+  'ecs',
+  'font',
+  'assets-runtime',
+  'npc',
+  'vite-plugin-pack',
+  'vite-plugin-shader',
+];
+const engineEntryOutputs = ['index.mjs', 'index.d.ts'];
 const enginePkgDir = join(engineDir, 'packages');
 const engineEntryDistsFresh = (): boolean => engineEntryPkgs.every((p) => {
   const pdir = join(enginePkgDir, p);
-  const dist = join(pdir, 'dist/index.mjs');
-  if (!existsSync(dist)) return false;
-  if (existsSync(join(pdir, 'src')) && anyNewerThan(join(pdir, 'src'), statSync(dist).mtimeMs)) return false;
+  const outputs = engineEntryOutputs.map((name) => join(pdir, 'dist', name));
+  if (outputs.some((output) => !existsSync(output))) return false;
+  const oldestOutputMs = Math.min(...outputs.map((output) => statSync(output).mtimeMs));
+  if (existsSync(join(pdir, 'src')) && anyNewerThan(join(pdir, 'src'), oldestOutputMs)) return false;
   return true;
 });
 const skipEngineBuild =
   !force &&
   // CI's cached engine dist is safe to skip only when EVERY Vite-config entry
   // remains present and fresh. Checking app/runtime alone let a newly imported
-  // package (font) reach Studio's config without its emitted `.mjs` entry.
+  // package (font/assets-runtime) reach Studio's config without its emitted
+  // `.mjs` entry.
   engineEntryDistsFresh();
 if (skipEngineBuild) {
   if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed (skip-build path).');
@@ -451,9 +467,13 @@ if (skipEngineBuild) {
   buildWgpuWasm();
   const filters = [
     '@forgeax/engine-app...', '@forgeax/engine-runtime...', '@forgeax/engine-ecs...', '@forgeax/engine-types...',
+    '@forgeax/engine-assets-runtime...',
     '@forgeax/engine-vite-plugin-shader...', '@forgeax/engine-vite-plugin-pack...', '@forgeax/engine-shader-compiler...',
     '@forgeax/engine-naga...', '@forgeax/engine-wgpu-wasm...', '@forgeax/engine-gltf...', '@forgeax/engine-image...',
     '@forgeax/engine-font...', '@forgeax/engine-pack...', '@forgeax/engine-project...',
+    // The game template imports the host-injected NPC adapter. This package
+    // must be emitted even when the engine dist cache is cold or incomplete.
+    '@forgeax/engine-npc...',
     // engine-fbx: editor-core's fbx-cook imports the ufbx WASM runtime
     // (initFbxWasm / parseFbx) + the parse-* helpers from it — the engine
     // collapsed the former engine-fbx-wasm package INTO engine-fbx (#603). Its
@@ -581,6 +601,7 @@ const missingEngineArtifacts = [
   codecEncoderWasm,
   codecEncoderMjs,
   ...engineEntryPkgs.map((name) => join(enginePkgDir, name, 'dist/index.mjs')),
+  ...engineEntryPkgs.map((name) => join(enginePkgDir, name, 'dist/index.d.ts')),
 ].filter((path) => !existsSync(path));
 if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
   fail(`required engine artefacts missing after prepare:\n${missingEngineArtifacts.map((path) => `  - ${path}`).join('\n')}`);
@@ -588,21 +609,30 @@ if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
 
 }
 
-// ── 2e. Studio workspace dedupe symlinks ────────────────────────────────────
+// ── 2e. Workspace @forgeax dedupe symlinks ──────────────────────────────────
 // Vite's resolve.dedupe (studio vite.config.ts) resolves the whole @forgeax
 // family from the Studio root's node_modules. bun's workspace linker only
 // creates symlinks for DIRECT deps there; transitive workspace deps
 // (engine-runtime, engine-ecs, editor-core, …) are absent. When dedupe can't
 // find a package, game-file imports resolve a second module instance → ECS
 // component identity splits (e.g. Camera spawned by the game !== the Camera
-// the editor queries for) → "no Camera entity in play world". Fix: ensure
-// every @forgeax workspace package is symlinked into
-// packages/studio/node_modules/@forgeax/.
+// the editor queries for) → "no Camera entity in play world". A worktree root
+// can also fall through to the parent checkout's node_modules, so repair both
+// @forgeax scopes against the packages in this worktree.
 {
-  const studioNm = join(ROOT, 'packages/studio/node_modules/@forgeax');
-  if (existsSync(join(ROOT, 'packages/studio/node_modules'))) {
-    mkdirSync(studioNm, { recursive: true });
-    const isWin = process.platform === 'win32';
+  const forgeaxLinkRoots = [
+    { label: 'root', path: join(ROOT, 'node_modules/@forgeax') },
+    { label: 'Studio', path: join(ROOT, 'packages/studio/node_modules/@forgeax') },
+  ];
+  const isWin = process.platform === 'win32';
+  const packageParents = [
+    join(ROOT, 'packages/editor/packages/engine/packages'),
+    join(ROOT, 'packages/editor/packages'),
+  ];
+
+  for (const { label, path: forgeaxNm } of forgeaxLinkRoots) {
+    if (!existsSync(dirname(forgeaxNm))) continue;
+    mkdirSync(forgeaxNm, { recursive: true });
     let linked = 0;
     let relinked = 0;
 
@@ -615,7 +645,7 @@ if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
         const pkg = readJson(pkgJsonPath) as { name?: string } | null;
         if (!pkg?.name?.startsWith('@forgeax/')) continue;
         const shortName = pkg.name.slice('@forgeax/'.length);
-        const linkPath = join(studioNm, shortName);
+        const linkPath = join(forgeaxNm, shortName);
         try {
           const result = ensureWorkspacePackageLink(linkPath, join(parent, e.name), ROOT, isWin);
           if (result === 'linked') linked++;
@@ -629,12 +659,11 @@ if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
       }
     };
 
-    scanDir(join(ROOT, 'packages/editor/packages/engine/packages'));
-    scanDir(join(ROOT, 'packages/editor/packages'));
+    for (const parent of packageParents) scanDir(parent);
 
     if (linked > 0 || relinked > 0) {
-      ok(`Studio @forgeax dedupe symlinks ready (${linked} linked, ${relinked} repaired)`);
-    } else ok('Studio @forgeax dedupe symlinks already complete');
+      ok(`${label} @forgeax dedupe symlinks ready (${linked} linked, ${relinked} repaired)`);
+    } else ok(`${label} @forgeax dedupe symlinks already complete`);
   }
 }
 
@@ -645,9 +674,6 @@ if (skipPlugins) {
 } else {
   const pluginsDir = join(ROOT, 'packages/marketplace/extensions');
   const sharedPackagesDir = join(pluginsDir, '_shared');
-  const localOnlyPluginRequirements = new Map<string, string>([
-    ['wb-asset-canvas', join(ROOT, 'packages/asset-canvas-core/package.json')],
-  ]);
   for (const e of existsSync(sharedPackagesDir) ? readdirSync(sharedPackagesDir, { withFileTypes: true }) : []) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     const d = join(sharedPackagesDir, e.name);
@@ -658,12 +684,6 @@ if (skipPlugins) {
     if (e.name === '_template') continue;
     const d = join(pluginsDir, e.name);
     if (!existsSync(join(d, 'package.json'))) continue;
-    const localRequirement = localOnlyPluginRequirements.get(e.name);
-    if (localRequirement && !existsSync(localRequirement)) {
-      console.log(`  → ${e.name} local-only source dependency absent (skipped)`);
-      continue;
-    }
-
     if (existsSync(join(d, 'pnpm-workspace.yaml'))) {
       console.log(`  → pnpm install (${e.name} pnpm workspace)`);
       const installArgs = existsSync(join(d, 'pnpm-lock.yaml'))
@@ -738,6 +758,16 @@ if (prepareResults.length > 0) {
 if (prepareFailed) {
   console.error('[prepare] one or more submodules failed to update; see report above');
   process.exit(1);
+}
+if (publicDistribution) {
+  console.log('[prepare] setup version snapshot skipped (public distribution has no Git metadata)');
+} else {
+  try {
+    const snapshot = writeSetupSnapshot(ROOT);
+    console.log(`[prepare] recorded setup version ${snapshot.rootHead.slice(0, 12)} (+${snapshot.submodules.length} submodule pins)`);
+  } catch (error) {
+    fail(`could not record setup version: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 console.log('Next:\n  bun fx start');
 console.log('Endpoints once running:\n  http://localhost:18920  Studio UI\n  http://localhost:18900  Server\n  http://localhost:15173  Engine');

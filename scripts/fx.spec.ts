@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   cleanTreeFlags,
+  cleanLockAction,
   didCreateStash,
   formatUpdateReport,
+  hasActiveGitProcess,
   parseSubmodulePaths,
   resolveCommand,
   startBusyPorts,
@@ -24,7 +26,8 @@ describe('scripts/fx.ts command routing', () => {
 
     expect(source).toContain("const DEV_NODE_ENV = 'development'");
     expect(source).toMatch(/const devServiceEnv[\s\S]*NODE_ENV:\s*DEV_NODE_ENV/);
-    expect(source).toMatch(/spawnService\(cmd, args, \{\s*\.\.\.opts,\s*env:\s*devServiceEnv\(opts\.env\)/);
+    expect(source).toContain('new ServiceSupervisor({');
+    expect(source).toContain("spawn: { ...opts, env: devServiceEnv(opts.env) }");
   });
 
   it('keeps package.json scripts focused on fx plus checks', () => {
@@ -79,10 +82,16 @@ describe('scripts/fx.ts command routing', () => {
     ]);
   });
 
-  it('preflights the Studio-owned gateway relay too', () => {
-    expect(startBusyPorts((port) => (port === 15295 ? 'pid-15295' : ''))).toEqual([
-      ['gw-bridge', 15295, 'pid-15295'],
-    ]);
+  it('does not declare or launch the retired Studio-owned gateway relay', () => {
+    const runSource = readFileSync(script('run.ts'), 'utf8');
+    const portsSource = readFileSync(resolve(ROOT, 'scripts', 'lib', 'ports.ts'), 'utf8');
+    expect(runSource).not.toContain('PORT_GATEWAY_BRIDGE');
+    expect(runSource).not.toContain('VITE_FORGEAX_BRIDGE');
+    expect(runSource).not.toContain('gateway-bridge-server.mjs');
+    expect(runSource).not.toContain('gw-bridge');
+    expect(portsSource).not.toContain('PORT_GATEWAY_BRIDGE');
+    expect(portsSource).not.toContain('15295');
+    expect(startBusyPorts((port) => (port === 15295 ? 'pid-15295' : ''))).toEqual([]);
   });
 
   it('does not expose legacy dev/web/app commands at the fx top level', () => {
@@ -130,6 +139,30 @@ describe('scripts/fx.ts command routing', () => {
     expect(cleanTreeFlags(true, true)).toBe('-ffndx');
   });
 
+  it('stops the Studio stack before destructive clean work', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const cleanBody = source.slice(source.indexOf('function clean('), source.indexOf('/** Remove local'));
+    expect(cleanBody.indexOf('stopBeforeClean(dryRun)')).toBeGreaterThanOrEqual(0);
+    expect(cleanBody.indexOf('stopBeforeClean(dryRun)')).toBeLessThan(cleanBody.indexOf('step(\'.\', [\'reset\''));
+  });
+
+  it('repairs stale index locks but blocks when Git is still active', () => {
+    expect(cleanLockAction(false, false, false)).toBe('none');
+    expect(cleanLockAction(true, false, false)).toBe('remove');
+    expect(cleanLockAction(true, false, true)).toBe('plan-remove');
+    expect(cleanLockAction(true, true, false)).toBe('block');
+  });
+
+  it('recognizes active git and git-lfs processes without counting itself', () => {
+    const ps = [
+      ' 101 /usr/bin/git reset --hard /workspace',
+      ' 102 /usr/local/bin/git-lfs filter-process',
+      ' 103 bun scripts/fx.ts clean',
+    ].join('\n');
+    expect(hasActiveGitProcess(ps, '103')).toBe(true);
+    expect(hasActiveGitProcess(' 103 bun scripts/fx.ts clean', '103')).toBe(false);
+  });
+
   it('keeps update separate from setup and build work', () => {
     const source = readFileSync(script('fx.ts'), 'utf8');
     const updateBody = source.slice(source.indexOf('function update('), source.indexOf('function restartStack('));
@@ -138,6 +171,16 @@ describe('scripts/fx.ts command routing', () => {
     expect(updateBody).not.toContain('Running setup');
     expect(updateBody).not.toContain('--no-plugins');
     expect(updateBody).not.toContain('--skip-bootstrap');
+  });
+
+  it('projects CI through the real frozen prepare path', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const ciBody = source.slice(source.indexOf('function ci('), source.indexOf('// ── clean'));
+    expect(ciBody).toContain("['submodule', 'update', '--init', '--recursive']");
+    expect(ciBody).toContain("['install', '--frozen-lockfile']");
+    expect(ciBody).not.toContain('--ignore-scripts');
+    expect(ciBody).toContain("FORGEAX_SKIP_HARNESS: '1'");
+    expect(ciBody).toContain("FORGEAX_SKIP_BOOTSTRAP: '1'");
   });
 
   it('refreshes the floating runtime harness only from update', () => {

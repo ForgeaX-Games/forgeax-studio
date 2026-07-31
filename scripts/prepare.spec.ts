@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dir, '..');
 const prepareSource = () => readFileSync(join(ROOT, 'scripts/prepare.ts'), 'utf8');
+const runSource = () => readFileSync(join(ROOT, 'scripts/run.ts'), 'utf8');
 
 describe('scripts/prepare.ts contracts', () => {
   it('does not run root bun install (lifecycle already did)', () => {
@@ -17,6 +18,30 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).toContain('FORGEAX_SKIP_PREPARE');
     expect(src).toContain('FORGEAX_FORCE_PREPARE');
+  });
+  it('covers assets-runtime in prepare and start engine entry gates', () => {
+    const prepare = prepareSource();
+    const run = runSource();
+    expect(prepare).toMatch(/const engineEntryPkgs = \[[\s\S]*'assets-runtime'/);
+    expect(prepare).toContain("'@forgeax/engine-assets-runtime...'");
+    expect(run).toMatch(/const engineEntryPkgs = \[[\s\S]*'assets-runtime'/);
+  });
+  it('requires declaration outputs for engine entry freshness gates', () => {
+    const prepare = prepareSource();
+    const run = runSource();
+    expect(prepare).toContain("const engineEntryOutputs = ['index.mjs', 'index.d.ts'];");
+    expect(prepare).toContain('Math.min(...outputs.map((output) => statSync(output).mtimeMs))');
+    expect(prepare).toContain("dist/index.d.ts");
+    expect(run).toContain("const engineEntryOutputs = ['index.mjs', 'index.d.ts'];");
+    expect(run).toContain('Math.min(...outputs.map((output) => statSync(output).mtimeMs))');
+  });
+  it('repairs @forgeax links in both the worktree root and Studio roots', () => {
+    const src = prepareSource();
+    expect(src).toMatch(
+      /const forgeaxLinkRoots = \[[\s\S]*join\(ROOT, 'node_modules\/@forgeax'\)[\s\S]*join\(ROOT, 'packages\/studio\/node_modules\/@forgeax'\)/,
+    );
+    expect(src).toContain('ensureWorkspacePackageLink(linkPath, join(parent, e.name), ROOT, isWin)');
+    expect(src).toContain('existing path is not a symlink; leaving it unchanged');
   });
   it('honours FORGEAX_SKIP_HARNESS (skip harness sync + skill install)', () => {
     const src = prepareSource();
@@ -52,10 +77,15 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain('required engine artefacts missing after prepare');
     expect(src).toContain('required CLI artefact missing after prepare');
   });
-  it('skips the private asset-canvas plugin when its local-only core is absent', () => {
+  it('builds the engine package imported by the new-game NPC template', () => {
     const src = prepareSource();
-    expect(src).toContain("['wb-asset-canvas', join(ROOT, 'packages/asset-canvas-core/package.json')]");
-    expect(src).toContain('local-only source dependency absent (skipped)');
+    expect(src).toContain("'npc'");
+    expect(src).toContain("'@forgeax/engine-npc...'");
+  });
+  it('does not bypass the asset-canvas plugin build', () => {
+    const src = prepareSource();
+    expect(src).not.toContain('localOnlyPluginRequirements');
+    expect(src).not.toContain('local-only source dependency absent (skipped)');
   });
   it('treats an incomplete wgpu/codec pkg/ as stale (gates on the glue, not just .wasm)', () => {
     const src = prepareSource();
@@ -83,6 +113,12 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).toContain('bun fx start');
     expect(src).not.toContain("['fx', 'start']");
+  });
+  it('does not require Git metadata when preparing the public distribution', () => {
+    const src = prepareSource();
+    expect(src).toContain('if (publicDistribution)');
+    expect(src).toContain('setup version snapshot skipped (public distribution has no Git metadata)');
+    expect(src.indexOf('setup version snapshot skipped')).toBeLessThan(src.indexOf('writeSetupSnapshot(ROOT)'));
   });
   it('scaffolds .env silently without readline key prompt', () => {
     const src = prepareSource();

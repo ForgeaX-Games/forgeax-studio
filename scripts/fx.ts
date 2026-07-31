@@ -5,17 +5,29 @@
 // Usage:
 //   bun fx <command> [args...]
 
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, openSync, readFileSync, renameSync, statSync, utimesSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PORT_ENGINE, PORT_GATEWAY_BRIDGE, PORT_INTERFACE, PORT_SERVER } from './lib/ports.ts';
 import { parseSubmodulePaths } from './lib/repos.ts';
+import {
+  sourceRuntimePorts,
+  startSourceRuntime,
+} from './lib/source-runtime-launcher.ts';
+import {
+  isStartupProfile,
+  resolveStartupEnvironment,
+  type StartupProfile,
+} from './lib/startup-environment.ts';
+import { readRuntimeState } from './lib/runtime-state.ts';
 import {
   missingWorkspacePackageJson,
   readWorkspaceGlobs,
 } from './ensure-workspace-submodules.ts';
+import {
+  checkSetupVersion,
+  writeSetupSnapshot,
+} from './lib/setup-version.ts';
 
 
 // Re-exported so existing consumers/specs keep one import site; the
@@ -43,16 +55,12 @@ type StartPort = readonly [name: string, port: number];
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUN = process.execPath;
-const START_PORTS: readonly StartPort[] = [
-  ['server', PORT_SERVER],
-  ['interface', PORT_INTERFACE],
-  ['engine', PORT_ENGINE],
-];
-
 function startPorts(): readonly StartPort[] {
-  if (process.env.FORGEAX_BRIDGE === '0') return START_PORTS;
-  const bridgePort = Number.parseInt(process.env.FORGEAX_BRIDGE_PORT ?? String(PORT_GATEWAY_BRIDGE), 10);
-  return [...START_PORTS, ['gw-bridge', Number.isFinite(bridgePort) ? bridgePort : PORT_GATEWAY_BRIDGE]];
+  return sourceRuntimePorts(resolveStartupEnvironment({
+    root: ROOT,
+    profile: sourceProfileFromEnvironment(),
+    env: process.env,
+  }));
 }
 
 const script = (name: string): string => resolve(ROOT, 'scripts', name);
@@ -124,17 +132,19 @@ Usage:
   bun fx <command> [args...]
 
 Common commands:
-  setup                 Equivalent to bun install → prepare (build deps, engine, plugins, .env)
+  setup                 Equivalent to bun install → prepare; records root + submodule setup pins
   update                Pull latest root code, sync submodules, and refresh harness if present
   sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
   clean [--deep|-x]     Restore a fully-clean git status across root + all
                         submodules. Discards uncommitted edits and untracked
                         files, then syncs pins. Gitignored products are kept
                         unless --deep. --dry-run/-n previews. Keeps .forgeax-harness.
+                        Stops the Studio stack first; missing git-lfs uses pointer-only checkout.
   start [web|app|local] Start Studio and open the selected client (default: web)
                         local = 127.0.0.1-only on a third port band (:38920) — use
                         when default and dev-local ports are both taken.
-                        Add --rhi-debug to enable editor RHI capture.
+                        Add --rhi-debug to enable editor RHI capture; use
+                        --skip-setup-check only to bypass a stale setup snapshot.
   stop                  Stop web-dev stack
   restart               Stop then start web-dev stack
   status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)
@@ -167,6 +177,15 @@ function runSetup(args: string[]): never {
   console.log('  (npm prepare lifecycle runs automatically after install)');
   if (ignored.length > 0) console.warn(`\x1b[33m⚠ Ignoring legacy flags: ${ignored.join(' ')}\x1b[0m`);
   const r = spawnSync(BUN, ['install'], { cwd: ROOT, stdio: 'inherit', env: process.env });
+  if ((r.status ?? 1) === 0) {
+    try {
+      const snapshot = writeSetupSnapshot(ROOT);
+      console.log(`[setup] recorded setup version ${snapshot.rootHead.slice(0, 12)} (+${snapshot.submodules.length} submodule pins)`);
+    } catch (error) {
+      console.error(`[setup] could not record setup version: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    }
+  }
   process.exit(r.status ?? 1);
 }
 
@@ -397,21 +416,29 @@ function touchWgpuWasm(): void {
   utimesSync(wasm, now, now);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function tailLog(path: string, lines: number): string {
-  try {
-    const all = readFileSync(path, 'utf8').split(/\r?\n/);
-    return all.slice(-lines).join('\n');
-  } catch {
-    return '(log unavailable)';
-  }
-}
-
 function startStudio(args: string[]): never {
-  const [maybeMode, ...rest] = args;
+  const skipSetupCheck = args.includes('--skip-setup-check');
+  const startArgs = args.filter((arg) => arg !== '--skip-setup-check');
+  if (!skipSetupCheck) {
+    const setup = checkSetupVersion(ROOT);
+    if (setup.status === 'current') {
+      console.log('[start] setup version is current');
+    } else {
+      const reason = setup.status === 'missing'
+        ? 'no setup snapshot found'
+        : setup.status === 'invalid'
+          ? 'setup snapshot is invalid'
+          : 'repository or submodule versions changed since setup';
+      console.error(`[start] ${reason}; run bun fx setup before starting`);
+      for (const difference of setup.differences) console.error(`        ${difference}`);
+      console.error('[start] bypass once with: bun fx start --skip-setup-check');
+      process.exit(1);
+    }
+  } else {
+    console.warn('[start] setup version check skipped');
+  }
+
+  const [maybeMode, ...rest] = startArgs;
   if (maybeMode === 'desktop') runScript(script('desktop.ts'), rest);
   if (maybeMode && maybeMode !== 'web' && !maybeMode.startsWith('-')) {
     console.error(`[start] unknown client: ${maybeMode}`);
@@ -419,166 +446,35 @@ function startStudio(args: string[]): never {
     process.exit(2);
   }
 
-  const runArgs = maybeMode === 'web' ? rest : args;
-  // Floating on purpose: startWeb awaits the UI port, then exits the process
-  // itself (open-web / error). The pending timer keeps the loop alive.
+  const runArgs = maybeMode === 'web' ? rest : startArgs;
+  // Floating on purpose: startWeb awaits unified HTTP readiness, then exits
+  // through open-web / no-open / error.
   void startWeb(runArgs);
 }
 
 async function startWeb(runArgs: string[]): Promise<never> {
-  const uiPort = Number.parseInt(process.env.FORGEAX_INTERFACE_PORT ?? '18920', 10);
-  const serverPort = Number.parseInt(process.env.FORGEAX_SERVER_PORT ?? '18900', 10);
-  const enginePort = Number.parseInt(process.env.FORGEAX_ENGINE_PORT ?? '15173', 10);
-  const busyPorts = startBusyPorts();
-  if (busyPorts.length > 0) {
-    console.error('[start] dev stack already appears to be running:');
-    for (const [name, port, pid] of busyPorts) {
-      console.error(`  :${String(port).padEnd(5)} ${name.padEnd(9)} pid=${pid}`);
-    }
-    console.error('\n[start] use `bun fx restart` to stop and start the stack, or `bun fx stop` first.');
+  const ensure = runArgs.includes('--ensure');
+  const noOpen = runArgs.includes('--no-open');
+  const launcherArgs = runArgs.filter((arg) => arg !== '--ensure' && arg !== '--no-open');
+  let startup: ReturnType<typeof resolveStartupEnvironment>;
+  try {
+    const result = await startSourceRuntime({
+      root: ROOT,
+      profile: sourceProfileFromEnvironment(),
+      existing: ensure ? 'ensure' : 'error',
+      runArgs: launcherArgs,
+    });
+    startup = result.startup;
+    console.log(
+      `[start] ${result.reused ? 'reusing' : 'started'} ${startup.profile} launcher pid=${result.launcherPid || '?'}`,
+    );
+    console.log(`[start] server   http://127.0.0.1:${startup.server.port}`);
+    console.log(`[start] UI       ${startup.interface.localOrigin}`);
+    console.log(`[start] engine   http://127.0.0.1:${startup.engine.port}`);
+  } catch (error) {
+    console.error(`[start] ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
-
-  console.log('[start] starting web stack in background...');
-  const stackLog = resolve(tmpdir(), 'forgeax-stack.log');
-  // Rotate: archive any prior log to forgeax-stack-<timestamp>.log instead of
-  // appending. Appending across every start/stop grew this to >1GB and mixed
-  // multiple runs' timelines, making a crash post-mortem impossible. A fresh
-  // file per start means `tailLog(stackLog)` and manual reads only ever see the
-  // current run. (Old archives are left for the user to inspect/delete.)
-  if (existsSync(stackLog)) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    try {
-      renameSync(stackLog, resolve(tmpdir(), `forgeax-stack-${stamp}.log`));
-    } catch {
-      /* best-effort rotation; fall through to a fresh truncating open below */
-    }
-  }
-  const fd = openSync(stackLog, 'w');
-  const child = spawn(BUN, [script('run.ts'), ...runArgs], {
-    cwd: ROOT,
-    detached: true,
-    env: process.env,
-    stdio: ['ignore', fd, fd],
-  });
-  child.unref();
-  // Track child death: run.ts fails fast (missing/stale engine dist, port
-  // conflict, preflight) by exiting non-zero within the first second. Without
-  // this, the loop below would poll the port for the full 180s and then print a
-  // generic timeout, burying the real error in the log.
-  let childExit: number | null = null;
-  child.on('exit', (code, signal) => {
-    childExit = code ?? (signal ? 1 : 0);
-  });
-
-  // detached: true + unref() disowns the child, so child.exitCode may stay null
-  // even after the child exits, and Atomics.wait blocks the event loop so
-  // .on('exit') listeners don't fire between sleeps. Zombie state also fools
-  // kill(pid, 0). Probe process state directly via platform-native tools:
-  //   macOS/Linux: `ps -o state=` → 'R'/'S'/'D'/etc (alive) or 'Z' (zombie)
-  //   Windows:     `tasklist /FI "PID eq N"` → contains the PID when alive
-  const childPid = child.pid!;
-  const isAlive = (): boolean => {
-    try {
-      if (process.platform === 'win32') {
-        const out = execFileSync('tasklist', ['/FI', `PID eq ${childPid}`, '/NH'], {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-          windowsHide: true,
-        }).trim();
-        return out.includes(String(childPid));
-      }
-      const state = execFileSync('ps', ['-o', 'state=', '-p', String(childPid)], {
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })
-        .toString()
-        .trim();
-      return state.length > 0 && !state.startsWith('Z');
-    } catch {
-      // command exits non-zero when pid not found — process is gone
-      return false;
-    }
-  };
-
-  process.stdout.write(`[start] waiting for UI :${uiPort}`);
-  let up = false;
-  let crashed = false;
-  for (let i = 0; i < 90; i++) {
-    if (portOwner(uiPort)) {
-      up = true;
-      break;
-    }
-    // Detect child death — run.ts may exit early on stale-dist / env / port
-    // errors. Without this check we'd wait the full 3 minutes before failing.
-    if (childExit !== null) break; // stack process died before the UI came up
-    if (!isAlive()) {
-      crashed = true;
-      break;
-    }
-    process.stdout.write('.');
-    await sleep(2000); // async so the child 'exit' event can fire
-  }
-  console.log();
-
-  if (!up && childExit !== null) {
-    console.error(`[start] web stack process exited (code ${childExit}) before UI :${uiPort} came up.`);
-    console.error(`[start] last lines of ${stackLog}:\n`);
-    console.error(tailLog(stackLog, 25));
-    // exit 0 but UI never bound is still a failure → floor to 1
-    process.exit(childExit || 1);
-  }
-  if (!up) {
-    if (crashed) {
-      console.error(`[start] run.ts exited early (pid ${childPid}) before UI came up.`);
-    } else {
-      console.error(`[start] web stack timed out after 3 min waiting for UI :${uiPort} — see ${stackLog}`);
-    }
-    console.error(`[start] tail of ${stackLog}:`);
-    console.error('─'.repeat(60));
-    try {
-      const lines = readFileSync(stackLog, 'utf-8').split('\n');
-      const tail = lines.slice(Math.max(0, lines.length - 40)).join('\n');
-      console.error(tail || '(log empty)');
-    } catch (err) {
-      console.error(`(unable to read ${stackLog}: ${(err as Error).message})`);
-    }
-    console.error('─'.repeat(60));
-    process.exit(1);
-  }
-
-  // Engine readiness (:15173) — the UI (:18920) proxies /preview + /__import to
-  // the play engine (studio/vite.config.ts). If the engine service died on boot
-  // (e.g. crashed during first dep re-optimize, or lost a port race) the UI
-  // still binds, so waiting on the UI alone declared success while every
-  // engine-proxied request 500'd. Poll the engine port too and WARN loudly if
-  // it never binds — don't fail the whole start (the editor UI is usable; Play/
-  // preview are the degraded surface), but never report a half-up stack as clean.
-  let engineUp = false;
-  for (let i = 0; i < 60; i++) {
-    if (portOwner(enginePort)) {
-      engineUp = true;
-      break;
-    }
-    if (childExit !== null) break;
-    await sleep(1000);
-  }
-  if (!engineUp) {
-    console.error(`\n[start] ⚠ engine :${enginePort} did NOT come up — Play / preview will 500`);
-    console.error('[start]   (the editor UI works; only the play-engine-proxied routes fail)');
-    console.error(`[start]   last lines of ${stackLog}:\n`);
-    console.error(tailLog(stackLog, 30));
-    console.error('[start]   fix: bun fx restart   (if it persists: bun run prepare to rebuild engine dist)');
-  }
-
-  // Advertise all listening ports to the foreground stdout. The stack's own
-  // stdout/stderr (vite "Local: http://..." lines, server startup logs) is
-  // redirected to `stackLog` — so IDE port-forwarders that scan the terminal
-  // stdout (VSCode Remote's `output` autoForwardPortsSource) only ever saw
-  // `:18920` from the "waiting for UI" line and missed the other two. Emitting
-  // each URL here on its own line lets the IDE detect + forward all three.
-  console.log(`[start] server   http://localhost:${serverPort}`);
-  console.log(`[start] UI       http://localhost:${uiPort}`);
-  console.log(`[start] engine   http://localhost:${enginePort}`);
   // Optional upstream sidecars: only advertise when actually listening so the
   // IDE doesn't try to forward ports that were never bound this run.
   const narrativePort = 8900;
@@ -586,10 +482,25 @@ async function startWeb(runArgs: string[]): Promise<never> {
   if (portOwner(narrativePort)) console.log(`[start] narrative http://localhost:${narrativePort}`);
   if (portOwner(faceMaskPort)) console.log(`[start] face-mask http://localhost:${faceMaskPort}`);
 
+  if (noOpen) process.exit(0);
   runScript(script('open-web.ts'), []);
 }
 
+function sourceProfileFromEnvironment(): Exclude<StartupProfile, 'desktop-prod'> {
+  const profile = process.env.FORGEAX_STARTUP_PROFILE;
+  if (profile === undefined) return 'web-dev';
+  if (!isStartupProfile(profile) || profile === 'desktop-prod') {
+    throw new Error(`bun fx start web requires a source startup profile, got '${profile}'`);
+  }
+  return profile;
+}
+
 function status(): void {
+  const startup = resolveStartupEnvironment({
+    root: ROOT,
+    profile: sourceProfileFromEnvironment(),
+    env: process.env,
+  });
   console.log('ForgeaX Studio status');
   console.log(`root: ${ROOT}`);
   console.log(`branch: ${currentBranch()}`);
@@ -601,12 +512,17 @@ function status(): void {
   }
   console.log(`dirty: ${isDirty() ? 'yes' : 'no'}`);
   console.log(`wgpu-wasm: ${wgpuWasmStatus()}`);
+  const runtime = readRuntimeState(startup.stateFile);
+  console.log(
+    `runtime: ${runtime ? `${runtime.status} profile=${runtime.profile} launcher=${runtime.launcherPid}` : 'stopped'}`,
+  );
+  if (runtime?.error) console.log(`runtime error: ${runtime.error}`);
   console.log();
   console.log('ports:');
   for (const [name, port] of [
-    ['server', PORT_SERVER],
-    ['ui', PORT_INTERFACE],
-    ['engine', PORT_ENGINE],
+    ['server', startup.server.port],
+    ['ui', startup.interface.port],
+    ['engine', startup.engine.port],
     ['narrative', 8900],
     ['face-mask', 18930],
   ] as const) {
@@ -745,21 +661,33 @@ function restartStack(args: string[]): never {
 
 // Local PR gate for the Studio superrepo. Run this PR's root contracts plus
 // its pinned editor leaf; unrelated dirty submodules belong to parallel PRs
-// and must not make this command non-deterministic. Frozen installs come first
-// so a lock rewrite cannot hide the same failure GitHub would reject.
+// and must not make this command non-deterministic. The install deliberately
+// keeps lifecycle scripts enabled: GitHub CI's frozen install runs prepare.ts,
+// which materializes submodules and builds the pinned editor engine dist before
+// the import-resolution tests. Using --ignore-scripts here made local CI stop
+// at a stale-dist preflight and miss the same test failure that CI reported.
 function ci(args: string[]): never {
   if (args.length > 0) {
     console.error('usage: bun fx ci');
     process.exit(2);
   }
+  const ciEnv = {
+    ...process.env,
+    // Match the non-interactive CI setup while still using the caller's
+    // already-installed toolchain. Harness installation is orthogonal to the
+    // Studio build and is explicitly skipped by .github/workflows/ci.yml.
+    FORGEAX_SKIP_HARNESS: '1',
+    FORGEAX_SKIP_BOOTSTRAP: '1',
+  };
   const steps: readonly [string, string, string[], string][] = [
-    ['root frozen Bun install', BUN, ['install', '--frozen-lockfile', '--ignore-scripts'], ROOT],
+    ['recursive submodule checkout', 'git', ['submodule', 'update', '--init', '--recursive'], ROOT],
+    ['root frozen Bun install + prepare', BUN, ['install', '--frozen-lockfile'], ROOT],
     ['root repository gates', BUN, [script('repos.ts'), 'check', '.'], ROOT],
     ['editor PR CI projection', BUN, ['scripts/fx.ts', 'ci'], join(ROOT, 'packages', 'editor')],
   ];
   for (const [name, command, argv, cwd] of steps) {
     console.log(`\n[ci] ${name}`);
-    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env: process.env });
+    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env: ciEnv });
     if ((result.status ?? 1) !== 0) {
       console.error(`[ci] FAIL: ${name}`);
       process.exit(result.status ?? 1);
@@ -786,9 +714,169 @@ export function cleanTreeFlags(deep: boolean, dryRun: boolean): string {
   return `-ff${dryRun ? 'n' : ''}d${deep ? 'x' : ''}`;
 }
 
+export type CleanLockAction = 'none' | 'remove' | 'plan-remove' | 'block';
+
+export function cleanLockAction(lockExists: boolean, activeGitProcess: boolean, dryRun: boolean): CleanLockAction {
+  if (!lockExists) return 'none';
+  if (activeGitProcess) return 'block';
+  return dryRun ? 'plan-remove' : 'remove';
+}
+
+export function hasActiveGitProcess(psOutput: string, currentPid = String(process.pid)): boolean {
+  return psOutput.split(/\r?\n/).some((line) => {
+    const match = line.match(/^\s*(\d+)\s+(.+)$/);
+    if (!match || match[1] === currentPid) return false;
+    return /(?:^|[\s/])git(?:[-\w]*)(?:\s|$)/.test(match[2]);
+  });
+}
+
+const LFS_FALLBACK_CONFIG = [
+  '-c', 'filter.lfs.process=',
+  '-c', 'filter.lfs.smudge=',
+  '-c', 'filter.lfs.clean=',
+  '-c', 'filter.lfs.required=false',
+  // A missing git-lfs install also leaves a post-checkout hook that exits 2.
+  // Disable local hooks for this pointer-only checkout; otherwise Git reports
+  // the hook failure as "Unable to checkout" even when the commit is present.
+  '-c', `core.hooksPath=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`,
+];
+
+function gitLfsAvailable(): boolean {
+  const result = spawnSync('git-lfs', ['--version'], { stdio: 'ignore' });
+  return result.status === 0;
+}
+
+function isInitializedSubmodule(path: string): boolean {
+  const gitSentinel = resolve(ROOT, path, '.git');
+  if (!existsSync(gitSentinel)) return false;
+  try {
+    execFileSync('git', ['-C', path, 'rev-parse', '--git-dir'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function submoduleStatusPaths(): string[] {
+  return gitOut(['submodule', 'status', '--recursive'])
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(/\s+/)[1])
+    .filter((path): path is string => Boolean(path));
+}
+
+function pruneNonGitSubmodulePaths(dryRun: boolean, results: UpdateResult[]): void {
+  const paths = new Set([...submodulePaths(), ...submoduleStatusPaths()]);
+  for (const path of paths) {
+    const absPath = resolve(ROOT, path);
+    if (!existsSync(absPath)) continue;
+    if (isInitializedSubmodule(path)) continue;
+
+    if (dryRun) {
+      console.log(`[dry-run] rm -rf ${path}`);
+      results.push({
+        repoType: 'submodule',
+        repo: path,
+        result: 'planned',
+        detail: 'would remove stale non-git submodule path before update',
+      });
+      continue;
+    }
+
+    try {
+      rmSync(absPath, { recursive: true, force: true });
+      console.log(`[clean] removed stale non-git submodule path: ${path}`);
+      results.push({
+        repoType: 'submodule',
+        repo: path,
+        result: 'ok',
+        detail: 'removed stale non-git submodule path before update',
+      });
+    } catch (error) {
+      results.push({
+        repoType: 'submodule',
+        repo: path,
+        result: 'failed',
+        detail: `rm -rf ${path} failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
+}
+
+function rootIndexLockPath(): string {
+  const result = spawnSync('git', ['rev-parse', '--git-path', 'index.lock'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  const path = result.status === 0 ? String(result.stdout ?? '').trim() : '.git/index.lock';
+  return isAbsolute(path) ? path : resolve(ROOT, path);
+}
+
+function activeGitProcessExists(): boolean {
+  if (process.platform === 'win32') {
+    const result = spawnSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf8', stdio: 'pipe' });
+    if (result.status !== 0) return true;
+    return /"git(?:[-\w]*)\.exe"/i.test(String(result.stdout ?? ''));
+  }
+  const result = spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', stdio: 'pipe' });
+  // An unknown process list is not proof that the lock is stale.
+  return result.status !== 0 || hasActiveGitProcess(String(result.stdout ?? ''));
+}
+
+function prepareRootIndexLock(dryRun: boolean, results: UpdateResult[]): void {
+  const lockPath = rootIndexLockPath();
+  const action = cleanLockAction(existsSync(lockPath), activeGitProcessExists(), dryRun);
+  if (action === 'none') return;
+  if (action === 'block') {
+    const detail = `${lockPath} is locked by an active Git process; close it and re-run bun fx clean`;
+    console.error(`[clean] ${detail}`);
+    results.push({ repoType: 'root', repo: '.', result: 'failed', detail });
+    console.log(`\n${formatUpdateReport(results)}`);
+    process.exit(1);
+  }
+  if (action === 'plan-remove') {
+    console.log(`[dry-run] remove stale Git lock ${lockPath}`);
+    return;
+  }
+  try {
+    unlinkSync(lockPath);
+    console.log(`[clean] removed stale Git lock ${lockPath}`);
+  } catch (error) {
+    const detail = `could not remove stale Git lock ${lockPath}: ${error instanceof Error ? error.message : String(error)}`;
+    console.error(`[clean] ${detail}`);
+    results.push({ repoType: 'root', repo: '.', result: 'failed', detail });
+    console.log(`\n${formatUpdateReport(results)}`);
+    process.exit(1);
+  }
+}
+
+function stopBeforeClean(dryRun: boolean): void {
+  if (dryRun) {
+    console.log('[dry-run] bun fx stop');
+    return;
+  }
+  console.log('[clean] stopping Studio stack first: bun fx stop');
+  const stop = spawnSync(BUN, [fileURLToPath(import.meta.url), 'stop'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if ((stop.status ?? 1) !== 0) {
+    console.error('[clean] bun fx stop failed; aborting clean');
+    process.exit(stop.status ?? 1);
+  }
+}
+
 function clean(args: string[]): never {
   const dryRun = args.includes('--dry-run') || args.includes('-n');
   const deep = args.includes('--deep') || args.includes('-x');
+  stopBeforeClean(dryRun);
   // Double -f (-ff): a plain `git clean -fd` SKIPS nested git directories
   // ("Skipping repository packages/core"). After submodule renames/removals
   // (e.g. packages/core → packages/cli), the old path often remains as an
@@ -796,7 +884,18 @@ function clean(args: string[]): never {
   const cleanFlags = cleanTreeFlags(deep, dryRun);
   // Use the same ignore policy recursively. -ff descends into nested git dirs
   // (e.g. an uninitialised nested submodule) rather than skipping them.
-  const subForeachCmd = `git reset --hard -q && git clean ${cleanFlags}`;
+  const lfsFallback = !gitLfsAvailable();
+  const gitPrefix = lfsFallback ? LFS_FALLBACK_CONFIG : [];
+  const gitCommand = (gitArgs: string[]): string => ['git', ...gitPrefix, ...gitArgs].join(' ');
+  const submoduleInsideWorktreeCheck = `${gitCommand(['-C', '.', 'rev-parse', '--is-inside-work-tree'])} >/dev/null 2>&1`;
+  const subForeachCmd = [
+    'if',
+    `${submoduleInsideWorktreeCheck}; then`,
+    `${gitCommand(['reset', '--hard', '-q'])} && ${gitCommand(['clean', cleanFlags])};`,
+    'else',
+    'echo "[clean] skip non-git submodule path: $path";',
+    'fi',
+  ].join(' ');
 
   const results: UpdateResult[] = [];
   const step = (repo: string, gitArgs: string[], okDetail: string): void => {
@@ -806,7 +905,7 @@ function clean(args: string[]): never {
       return;
     }
     console.log(`[clean] ${repo}: git ${gitArgs.join(' ')}`);
-    const r = spawnSync('git', gitArgs, { cwd: ROOT, stdio: 'inherit' });
+    const r = spawnSync('git', [...gitPrefix, ...gitArgs], { cwd: ROOT, stdio: 'inherit' });
     const status = r.status ?? 1;
     results.push({
       repoType: repo === '.' ? 'root' : 'submodule',
@@ -817,11 +916,16 @@ function clean(args: string[]): never {
   };
 
   console.log(`[clean] workspace mode: ${deep ? 'deep (removes gitignored artefacts — re-run bun install after)' : 'standard (keeps gitignored artefacts)'}${dryRun ? ' · DRY RUN' : ''}`);
+  if (lfsFallback) {
+    console.warn('[clean] git-lfs not found; LFS files will remain as pointer files until git-lfs is installed and hydrated');
+  }
 
   // 1. discard tracked edits + reset submodule pointers to recorded pins.
+  prepareRootIndexLock(dryRun, results);
   step('.', ['reset', '--hard'], 'reset tracked changes');
   // 2. sync submodule URLs (repo renames) then checkout recorded pins — also
   //    materialises empty dirs left by a plain `git pull` of a new submodule.
+  pruneNonGitSubmodulePaths(dryRun, results);
   step('submodules', ['submodule', 'sync', '--recursive'], 'submodule URLs synced');
   step('submodules', ['submodule', 'update', '--init', '--recursive', '--force'], 'checkouts synced to pins');
   // 3. scrub every submodule working tree (tracked + untracked, recursively).
@@ -840,7 +944,7 @@ function clean(args: string[]): never {
   console.log(`\n${formatUpdateReport(results)}`);
 
   if (!dryRun) {
-    const stillDirty = gitOut(['status', '--porcelain']);
+    const stillDirty = gitOut([...gitPrefix, 'status', '--porcelain']);
     if (stillDirty === '') {
       console.log('\n[clean] working tree is now completely clean ✓');
     } else {

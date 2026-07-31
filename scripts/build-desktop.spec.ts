@@ -18,6 +18,24 @@ describe('desktop build pack scan scope', () => {
     expect(buildScript).toContain("process.env.FORGEAX_PREVIEW_GAMES_DIR = join(ROOT, 'packages/games')");
     expect(buildScript).toContain("run('bun', ['x', 'vite', 'build']");
   });
+
+  it('bundles the shared startup launcher into the desktop payload', () => {
+    const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
+    const tauriShell = readFileSync(
+      join(root, 'packages/interface/src-tauri/src/lib.rs'),
+      'utf8',
+    );
+
+    expect(buildScript).toContain("'runtime', 'local-runtime.mjs'");
+    expect(buildScript).toContain("'scripts', 'local-runtime.ts'");
+    expect(buildScript).toContain("'--target=bun'");
+    expect(tauriShell.match(/\.sidecar\("bun"\)/g)).toHaveLength(1);
+    expect(tauriShell).toContain('FORGEAX_STARTUP_PROFILE", "desktop-prod');
+    expect(tauriShell).toContain('FORGEAX_RUNTIME_STATE_FILE');
+    expect(tauriShell).not.toContain('fn http_ok(');
+    expect(tauriShell).not.toContain('fn setup_engine_work(');
+    expect(tauriShell).not.toContain('fn seed_shared_games(');
+  });
 });
 
 describe('desktop server runtime closure', () => {
@@ -28,6 +46,7 @@ describe('desktop server runtime closure', () => {
     expect(buildScript).toContain('Object.keys(serverPkg.dependencies ?? {})');
     expect(buildScript).toContain('Object.keys(pj.dependencies ?? {})');
     expect(buildScript).toContain("if (dep.startsWith('@forgeax/')) queue.push(dep)");
+    expect(buildScript).toContain("copyTree(join(ROOT, 'brand'), join(RES, 'brand')");
   });
 });
 

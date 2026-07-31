@@ -13,11 +13,11 @@
 // open packaging is macOS-only (.app/.dmg).
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, openSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isPortBusy, sleep, spawnService } from './lib/proc.ts';
+import { startSourceRuntime } from './lib/source-runtime-launcher.ts';
 import { readRootVersion, syncReleaseVersion } from './lib/sync-release-version.ts';
 import { has, IS_WIN } from './lib/sh.ts';
 
@@ -67,33 +67,19 @@ async function devMode(): Promise<void> {
     if (r.status !== 0) process.exit(r.status ?? 1);
   }
 
-  // The desktop app OWNS the full dev-stack lifecycle: reap any existing/stale
-  // stack, start fresh, and tear it all down when the window closes.
-  console.log('[desktop] clean restart — reaping any existing/stale web stack first…');
-  runScript('stop.ts', ['--force'], true);
-
   console.log('[desktop] clearing webview HTTP cache (force fresh source load)…');
   clearWebviewCache();
 
-  console.log('[desktop] starting web stack (run.ts) in background…');
-  const stackLog = join(tmpdir(), 'forgeax-stack.log');
-  const fd = openSync(stackLog, 'a');
-  spawnService(process.execPath, [join(ROOT, 'scripts/run.ts')], { cwd: ROOT, detach: true, logFd: fd });
-
-  process.stdout.write('[desktop] waiting for UI :18920');
-  let up = false;
-  for (let i = 0; i < 90; i++) {
-    if (isPortBusy(18920)) {
-      up = true;
-      break;
-    }
-    process.stdout.write('.');
-    await sleep(2000);
-  }
-  console.log();
-  if (!up) {
-    console.error(`[desktop] web stack failed to come up — see ${stackLog}`);
-    runScript('stop.ts', ['--force'], true);
+  console.log('[desktop] starting desktop-dev through the shared local runtime launcher…');
+  let runtime;
+  try {
+    runtime = await startSourceRuntime({
+      root: ROOT,
+      profile: 'desktop-dev',
+      existing: 'restart',
+    });
+  } catch (error) {
+    console.error(`[desktop] ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 
@@ -114,8 +100,16 @@ async function devMode(): Promise<void> {
   ensureCcToolchain();
 
   console.log(`[desktop] launching desktop dev window (tauri:dev — live HMR, DevTools ${devtools ? 'ON' : 'off'})…`);
-  // tauri:dev always runs from packages/interface (src-tauri lives there).
-  const r = spawnSync(process.execPath, ['run', 'tauri:dev'], { cwd: ifaceDir, stdio: 'inherit', windowsHide: true });
+  // The dev URL is derived from the same StartupEnvironment as the launcher.
+  // Tauri's inline --config override avoids a second hard-coded port/protocol.
+  const tauriConfig = JSON.stringify({
+    build: { devUrl: runtime.startup.interface.localOrigin },
+  });
+  const r = spawnSync(
+    process.execPath,
+    ['run', 'tauri:dev', '--', '--config', tauriConfig],
+    { cwd: ifaceDir, stdio: 'inherit', windowsHide: true, env: process.env },
+  );
   process.exit(r.status ?? 0);
 }
 
@@ -179,7 +173,7 @@ function openMode(): void {
     console.error('[desktop] no built .app — run: bun fx build desktop');
     process.exit(1);
   }
-  spawnSync('open', [desktop], { stdio: 'inherit' });
+  spawnSync('open', [app], { stdio: 'inherit' });
   console.log(`[desktop] opened ${app}`);
 }
 

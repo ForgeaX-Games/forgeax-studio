@@ -17,8 +17,10 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE_SCRIPT = path.join(HERE, "build-marketplace.mjs");
 const CHECKED_IN_DATA = path.join(HERE, "marketplace.data.json");
+const MARKETPLACE_DIR = path.join(HERE, "..", "..", "packages", "marketplace");
 const MARKETPLACE_FALLBACK =
   "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions";
+const TEST_TIMEOUT_MS = 30_000;
 
 function git(cwd, args, date) {
   execFileSync("git", args, {
@@ -32,6 +34,18 @@ function git(cwd, args, date) {
       : process.env,
     stdio: "ignore",
   });
+}
+
+function hasFullGitHistory(cwd) {
+  const shallowFile = execFileSync(
+    "git",
+    ["rev-parse", "--git-path", "shallow"],
+    {
+      cwd,
+      encoding: "utf8",
+    },
+  ).trim();
+  return !existsSync(path.resolve(cwd, shallowFile));
 }
 
 async function writeJson(file, value) {
@@ -137,108 +151,115 @@ async function createFixture() {
   };
 }
 
-test("builds standalone and bundled repository URLs from their owning sources", async (t) => {
-  const fixture = await createFixture();
-  t.after(fixture.cleanup);
-  execFileSync(process.execPath, [fixture.script], { stdio: "ignore" });
-  const data = JSON.parse(await readFile(fixture.dataFile, "utf8"));
+test(
+  "builds standalone and bundled repository URLs from their owning sources",
+  { timeout: TEST_TIMEOUT_MS },
+  async (t) => {
+    const fixture = await createFixture();
+    t.after(fixture.cleanup);
+    execFileSync(process.execPath, [fixture.script], { stdio: "ignore" });
+    const data = JSON.parse(await readFile(fixture.dataFile, "utf8"));
 
-  assert.equal(
-    data.standalone.repoUrl,
-    "https://github.com/ForgeaX-Games/standalone",
-  );
-  assert.notEqual(
-    data.standalone.repoUrl,
-    `${MARKETPLACE_FALLBACK}/standalone`,
-  );
-  assert.doesNotMatch(data.standalone.repoUrl, /^(?:git\+)|\.git$/u);
-  assert.equal(
-    data["string-http"].repoUrl,
-    "http://example.test/string-http",
-  );
-  assert.equal(
-    data["object-https"].repoUrl,
-    "https://example.test/object-https",
-  );
-  assert.equal(data.bundled.repoUrl, `${MARKETPLACE_FALLBACK}/bundled`);
-  for (const dir of [
-    "javascript-repo",
-    "file-repo",
-    "ssh-repo",
-    "garbage-repo",
-  ]) {
-    assert.equal(data[dir].repoUrl, `${MARKETPLACE_FALLBACK}/${dir}`);
-  }
-});
-
-test("derives creation and update dates from the real extensions directory", async (t) => {
-  const fixture = await createFixture();
-  t.after(fixture.cleanup);
-  execFileSync(process.execPath, [fixture.script], { stdio: "ignore" });
-  const data = JSON.parse(await readFile(fixture.dataFile, "utf8"));
-
-  assert.equal(data.standalone.created, "2024-01-02");
-  assert.equal(data.standalone.updated, "2024-03-04");
-  assert.equal(data.bundled.created, "2024-01-02");
-  assert.equal(data.bundled.updated, "2024-01-02");
-});
-
-test("canonical generation is deterministic and full-history output matches checked-in data", async (t) => {
-  const temp = await mkdtemp(path.join(tmpdir(), "marketplace-canonical-"));
-  t.after(() => rm(temp, { recursive: true, force: true }));
-  const firstFile = path.join(temp, "first.json");
-  const secondFile = path.join(temp, "second.json");
-  const original = await readFile(CHECKED_IN_DATA);
-  t.after(() => writeFile(CHECKED_IN_DATA, original));
-
-  const run = (output) =>
-    execFileSync(process.execPath, [SOURCE_SCRIPT], {
-      env: { ...process.env, MARKETPLACE_DATA_OUT: output },
-      stdio: "ignore",
-    });
-  run(firstFile);
-  assert.equal(
-    existsSync(firstFile),
-    true,
-    "builder must honor MARKETPLACE_DATA_OUT instead of rewriting canonical data",
-  );
-  run(secondFile);
-
-  const first = await readFile(firstFile);
-  const second = await readFile(secondFile);
-  assert.equal(
-    Buffer.compare(second, first),
-    0,
-    "two canonical generations must be byte-identical",
-  );
-  const hasFullHistory =
-    execFileSync("git", ["rev-parse", "--is-shallow-repository"], {
-      cwd: path.join(HERE, "..", ".."),
-      encoding: "utf8",
-    }).trim() !== "true";
-  if (hasFullHistory) {
     assert.equal(
-      Buffer.compare(first, original),
-      0,
-      "full-history generated data must be byte-identical to the checked-in file",
+      data.standalone.repoUrl,
+      "https://github.com/ForgeaX-Games/standalone",
     );
-  }
+    assert.notEqual(
+      data.standalone.repoUrl,
+      `${MARKETPLACE_FALLBACK}/standalone`,
+    );
+    assert.doesNotMatch(data.standalone.repoUrl, /^(?:git\+)|\.git$/u);
+    assert.equal(
+      data["string-http"].repoUrl,
+      "http://example.test/string-http",
+    );
+    assert.equal(
+      data["object-https"].repoUrl,
+      "https://example.test/object-https",
+    );
+    assert.equal(data.bundled.repoUrl, `${MARKETPLACE_FALLBACK}/bundled`);
+    for (const dir of [
+      "javascript-repo",
+      "file-repo",
+      "ssh-repo",
+      "garbage-repo",
+    ]) {
+      assert.equal(data[dir].repoUrl, `${MARKETPLACE_FALLBACK}/${dir}`);
+    }
+  },
+);
 
-  const wbGameVideo = JSON.parse(first.toString("utf8"))["wb-game-video"];
-  assert.deepEqual(
-    {
-      version: wbGameVideo.version,
-      repoUrl: wbGameVideo.repoUrl,
-      ...(hasFullHistory
-        ? { created: wbGameVideo.created, updated: wbGameVideo.updated }
-        : {}),
-    },
-    {
-      version: "0.1.5",
-      repoUrl: "https://github.com/ForgeaX-Games/forgeax-wb-game-video",
-      ...(hasFullHistory
-        ? { created: "2026-07-14", updated: "2026-07-30" }
-        : {}),
-    },
-  );
-});
+test(
+  "derives creation and update dates from the real extensions directory",
+  { timeout: TEST_TIMEOUT_MS },
+  async (t) => {
+    const fixture = await createFixture();
+    t.after(fixture.cleanup);
+    execFileSync(process.execPath, [fixture.script], { stdio: "ignore" });
+    const data = JSON.parse(await readFile(fixture.dataFile, "utf8"));
+
+    assert.equal(data.standalone.created, "2024-01-02");
+    assert.equal(data.standalone.updated, "2024-03-04");
+    assert.equal(data.bundled.created, "2024-01-02");
+    assert.equal(data.bundled.updated, "2024-01-02");
+  },
+);
+
+test(
+  "canonical generation is deterministic and full-history output matches checked-in data",
+  { timeout: TEST_TIMEOUT_MS },
+  async (t) => {
+    const temp = await mkdtemp(path.join(tmpdir(), "marketplace-canonical-"));
+    t.after(() => rm(temp, { recursive: true, force: true }));
+    const firstFile = path.join(temp, "first.json");
+    const secondFile = path.join(temp, "second.json");
+    const original = await readFile(CHECKED_IN_DATA);
+    t.after(() => writeFile(CHECKED_IN_DATA, original));
+
+    const run = (output) =>
+      execFileSync(process.execPath, [SOURCE_SCRIPT], {
+        env: { ...process.env, MARKETPLACE_DATA_OUT: output },
+        stdio: "ignore",
+      });
+    run(firstFile);
+    assert.equal(
+      existsSync(firstFile),
+      true,
+      "builder must honor MARKETPLACE_DATA_OUT instead of rewriting canonical data",
+    );
+    run(secondFile);
+
+    assert.equal(
+      Buffer.compare(await readFile(secondFile), await readFile(firstFile)),
+      0,
+      "two canonical generations must be byte-identical",
+    );
+    const first = await readFile(firstFile);
+    const hasFullHistory = hasFullGitHistory(MARKETPLACE_DIR);
+    if (hasFullHistory) {
+      assert.equal(
+        Buffer.compare(first, original),
+        0,
+        "full-history generated data must be byte-identical to the checked-in file",
+      );
+    }
+
+    const wbGameVideo = JSON.parse(first.toString("utf8"))["wb-game-video"];
+    assert.deepEqual(
+      {
+        version: wbGameVideo.version,
+        repoUrl: wbGameVideo.repoUrl,
+        ...(hasFullHistory
+          ? { created: wbGameVideo.created, updated: wbGameVideo.updated }
+          : {}),
+      },
+      {
+        version: "0.1.5",
+        repoUrl: "https://github.com/ForgeaX-Games/forgeax-wb-game-video",
+        ...(hasFullHistory
+          ? { created: "2026-07-14", updated: "2026-07-31" }
+          : {}),
+      },
+    );
+  },
+);

@@ -100,11 +100,8 @@ smoke-*.png
 /scripts/gen-hellforge-scene-assets.py
 
 # .cursor/skills/* — local symlinks into vendored skills/ + harness + ~/.cc-switch
-# (machine-specific paths, not committable). Keep the tracked real dirs below.
+# (machine-specific paths, not committable).
 /.cursor/skills/*
-!/.cursor/skills/forgeax-editor-ui-pattern/
-!/.cursor/skills/forgeax-release/
-!/.cursor/skills/update-readme/
 
 # skills/workflow/feature-land — local symlink to ~/.cc-switch (machine-specific)
 /skills/workflow/feature-land

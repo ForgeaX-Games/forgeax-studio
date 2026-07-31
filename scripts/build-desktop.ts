@@ -2,9 +2,9 @@
 // @ts-nocheck
 // scripts/build-desktop.ts — assemble the Plan B desktop payload (cross-platform).
 //
-// Replaces build-desktop.sh. Same contract: stage the `bun` runtime + the server
-// SOURCE + its runtime node_modules closure + asset dists into the Tauri app's
-// Resources, so lib.rs can run the server/engine as bun sidecars off SOURCE.
+// Replaces build-desktop.sh. Stage the `bun` runtime + one bundled local-runtime
+// launcher + the server/engine payload into Tauri Resources. Tauri starts only
+// the launcher; the launcher owns preparation, supervision and readiness.
 //
 // Why a rewrite (the bash version's three Windows killers):
 //   1. rsync / cp -RL          → fs.cpSync({ recursive, dereference }) (portable)
@@ -203,6 +203,18 @@ rmrf(BIN);
 mkdirSync(RES, { recursive: true });
 mkdirSync(BIN, { recursive: true });
 
+// ── 2.5 shared runtime launcher ─────────────────────────────────────────────
+log('2.5/7 bundling shared local-runtime launcher…');
+const runtimeBundle = join(RES, 'runtime', 'local-runtime.mjs');
+mkdirSync(dirname(runtimeBundle), { recursive: true });
+run('bun', [
+  'build',
+  join(ROOT, 'scripts', 'local-runtime.ts'),
+  '--target=bun',
+  '--outfile',
+  runtimeBundle,
+]);
+
 // ── 3 server runtime node_modules (cycle-safe) ──────────────────────────────
 log('3/7 assembling server runtime node_modules…');
 mkdirSync(join(RES, 'node_modules/@forgeax'), { recursive: true });
@@ -271,6 +283,7 @@ if (existsSync(join(activeServer.packageDir, 'builtin'))) {
   copyTree(join(activeServer.packageDir, 'builtin'), join(serverDest, 'builtin'), new Set());
 }
 cpSync(join(activeServer.packageDir, 'package.json'), join(serverDest, 'package.json'));
+copyTree(join(ROOT, 'brand'), join(RES, 'brand'), new Set());
 
 // tsconfig carries the path aliases bun honors at RUN time. Keep the src-relative
 // ones (@/*, @server-lib/*, @forgeax/bus); strip the cross-package @forgeax/*

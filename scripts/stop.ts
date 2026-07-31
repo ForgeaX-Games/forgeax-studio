@@ -37,6 +37,8 @@ import {
   serverOrphanNeedles,
   serverRuntimeInvocation,
 } from './lib/server-role.ts';
+import { readRuntimeState } from './lib/runtime-state.ts';
+import { STARTUP_PROFILES } from './lib/startup-environment.ts';
 import { vitePurgeAll } from './lib/vite-cache.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,7 +84,23 @@ const extensionDevPortsJson = join(ROOT, '.forgeax', 'extension-dev-ports.json')
 
 // ── gather dynamic ports + pids from prior run's state ──────────────────────
 const stackEnv = parseEnvFile(runStackFile);
-const runPids = (stackEnv.FORGEAX_RUN_PIDS ?? '').split(/\s+/).map(Number).filter(Boolean);
+const runtimeStateFiles = new Set([
+  stackEnv.FORGEAX_RUNTIME_STATE_FILE,
+  process.env.FORGEAX_RUNTIME_STATE_FILE,
+  ...STARTUP_PROFILES
+    .filter((profile) => profile !== 'desktop-prod')
+    .map((profile) => join(process.env.FORGEAX_PROJECT_ROOT ?? ROOT, '.forgeax', 'runtime', `${profile}.json`)),
+].filter((file): file is string => Boolean(file)));
+const runtimeStates = [...runtimeStateFiles]
+  .map((file) => readRuntimeState(file))
+  .filter((state) => state !== null);
+const runPids = [
+  ...(stackEnv.FORGEAX_RUN_PIDS ?? '').split(/\s+/).map(Number).filter(Boolean),
+  ...runtimeStates.flatMap((state) => [
+    state.launcherPid,
+    ...Object.values(state.servicePids),
+  ]),
+];
 const runPorts = (stackEnv.FORGEAX_RUN_PORTS ?? '').split(/\s+/).map(Number).filter(Boolean);
 const dynamicExtensionPorts = readExtensionDevPorts(extensionDevPortsJson);
 
@@ -96,6 +114,12 @@ const appendPort = (p: number) => {
   }
 };
 for (const p of [...runPorts, ...dynamicExtensionPorts]) appendPort(p);
+for (const state of runtimeStates) {
+  appendPort(state.startup.server.port);
+  appendPort(state.startup.interface.port);
+  appendPort(state.startup.engine.port);
+  if (state.startup.gatewayBridge.enabled) appendPort(state.startup.gatewayBridge.port);
+}
 
 const startTs = performance.now();
 
@@ -215,6 +239,7 @@ function cleanupStateFiles(): void {
   rmSync(runStackFile, { force: true });
   rmSync(extensionDevPortsJson, { force: true });
   if (process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE) rmSync(process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE, { force: true });
+  for (const file of runtimeStateFiles) rmSync(file, { force: true });
   clearPidfiles(ROOT);
   rmSync(join(ROOT, '.forgeax', 'run.lock'), { recursive: true, force: true });
 }

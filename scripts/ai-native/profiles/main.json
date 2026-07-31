@@ -58,6 +58,9 @@
     "capture_frame": {
       "explicit_out_of_scope_reason": "foundation-observation-outside-ui-control-effects"
     },
+    "gameplay": {
+      "explicit_out_of_scope_reason": "foundation-runtime-control-outside-ui-control-effects"
+    },
     "character_generate-portrait": {
       "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
     },
@@ -72,9 +75,6 @@
     },
     "character_rename": {
       "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
-    },
-    "editor_gateway_eval": {
-      "explicit_out_of_scope_reason": "editor-subsystem-protocol-outside-main-studio-profile"
     },
     "gen3d_apply-motion": {
       "explicit_out_of_scope_reason": "plugin-domain-capability-outside-main-studio-control-effects"
@@ -210,7 +210,7 @@
   "approval_record": {
     "approver": "supervisory-lane(orchestration)",
     "date": "2026-07-24",
-    "profile_sha256": "10dbb7881ea9c32b21c87b4fc041db54af0f99a33e226fab86b0f21b44f1289c",
+    "profile_sha256": "36fbe304ce5aa2245f4981fe71565eb4e0bd15c14124c5a8ff260669eee48d1e",
     "channel": "orchestration session 2026-07-23",
     "pending_user_ratification": true
   }

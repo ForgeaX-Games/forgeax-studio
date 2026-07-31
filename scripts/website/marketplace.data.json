@@ -1435,49 +1435,6 @@
     "updated": "2026-07-27",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-anim"
   },
-  "wb-asset-canvas": {
-    "slug": "wb-asset-canvas",
-    "id": "@forgeax-extension/wb-asset-canvas",
-    "version": "0.1.0",
-    "kind": "workbench",
-    "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
-    },
-    "experimental": true,
-    "name": {
-      "zh": "资产画布",
-      "en": "Asset Canvas"
-    },
-    "desc": {
-      "zh": "用节点画布串联 2D、3D、动画、视频、音频和游戏资产交付。",
-      "en": "Compose 2D, 3D, animation, video, audio, and game-asset delivery as a node graph."
-    },
-    "author": "forgeax",
-    "keywords": [
-      "asset",
-      "canvas",
-      "workflow",
-      "workbench"
-    ],
-    "caps": {
-      "workbench": "asset-canvas",
-      "lens": "by-category",
-      "skills": 1,
-      "skillTriggers": [],
-      "tools": 5,
-      "toolSample": [
-        "asset-canvas:list-node-kinds",
-        "asset-canvas:get",
-        "asset-canvas:save",
-        "asset-canvas:patch",
-        "asset-canvas:intake-upload"
-      ]
-    },
-    "created": "2026-07-29",
-    "updated": "2026-07-30",
-    "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-asset-canvas"
-  },
   "wb-balance": {
     "slug": "wb-balance",
     "id": "@forgeax-extension/wb-balance",
@@ -1717,7 +1674,7 @@
       ]
     },
     "created": "2026-07-14",
-    "updated": "2026-07-30",
+    "updated": "2026-07-31",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-game-video"
   },
   "wb-gen3d": {
@@ -1763,7 +1720,7 @@
       ]
     },
     "created": "2026-07-14",
-    "updated": "2026-07-27",
+    "updated": "2026-07-31",
     "repoUrl": null
   },
   "wb-items": {

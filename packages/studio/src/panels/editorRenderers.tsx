@@ -66,6 +66,139 @@ import { createChromeStatusFeedsExtension } from '@forgeax/interface/core/extens
 import { createDetachedAgentsBrowserExtension } from '@forgeax/interface/core/extensions/detached-agents-browser';
 import { createDetachedFilesBrowserExtension } from '@forgeax/interface/core/extensions/detached-files-browser';
 import { createPanelsWorkbenchInlineExtension } from '@forgeax/interface/core/extensions/panels-workbench-plugins';
+import { createEditorTransportClient } from '../editor-product/client';
+import {
+  type RuntimeAvailability,
+  type TransportResponse,
+} from '@forgeax/editor/product';
+
+export interface ProjectionTransientState {
+  readonly panelId: string;
+  readonly layoutId: string;
+  readonly timerPending: boolean;
+  readonly hmrActive: boolean;
+}
+
+export interface EditorRenderFactsInput {
+  readonly discover: TransportResponse;
+  readonly document: TransportResponse;
+  readonly assets: TransportResponse;
+  readonly run?: TransportResponse;
+  readonly transient?: ProjectionTransientState;
+}
+
+export interface EditorRenderFacts {
+  readonly status: 'ready' | 'unavailable';
+  readonly document: { readonly revision: string | null; readonly content: unknown };
+  readonly assets: { readonly revision: string | null; readonly importedSubjectIds: readonly string[] };
+  readonly run: { readonly id: string | null; readonly status: string | null; readonly revision: string | null } | null;
+  readonly runtime: RuntimeAvailability | null;
+  readonly errors: readonly { readonly code: string; readonly recoveryActions: readonly string[] }[];
+  readonly transient: ProjectionTransientState | null;
+}
+
+export const EDIT_REALM_READ_WRITE_CLASSIFICATION = Object.freeze({
+  document: Object.freeze({
+    owner: 'Editor product',
+    category: 'canonical-fact',
+    evidence: 'query response revision and content are rendered without a local document store',
+  }),
+  assets: Object.freeze({
+    owner: 'Editor product AssetWorkspace',
+    category: 'canonical-fact',
+    evidence: 'asset.snapshot resourceRevision and subject ids are rendered without a local asset catalog',
+  }),
+  runs: Object.freeze({
+    owner: 'Editor product RunJournal',
+    category: 'canonical-fact',
+    evidence: 'run.list is projected only when the typed response contains a run record',
+  }),
+  runtimeAvailability: Object.freeze({
+    owner: 'Editor product GameRuntimePort',
+    category: 'canonical-fact',
+    evidence: 'discover runtime availability is read and no runtime operation is dispatched on panel open',
+  }),
+  activeSlug: Object.freeze({
+    owner: 'Studio workbench active-game route',
+    category: 'derived-projection',
+    evidence: 'useActiveSlug validates the route against the server game list before mounting the realm',
+  }),
+  panelLayout: Object.freeze({
+    owner: 'Studio interface shell',
+    category: 'ui-session-transient',
+    evidence: 'dock layout and panel selection remain in the existing shell contribution path',
+  }),
+  timerAndViewportEpoch: Object.freeze({
+    owner: 'Studio EditRealm',
+    category: 'ui-session-transient',
+    evidence: 'debounce, remount epoch, and display restoration only control local presentation timing',
+  }),
+  hmrAndDiskWatch: Object.freeze({
+    owner: 'Studio EditRealm compatibility bridge',
+    category: 'ui-session-transient',
+    evidence: 'HMR and disk-watch events retain existing restart behavior and do not update canonical facts',
+  }),
+  hostTools: Object.freeze({
+    owner: 'Studio/server host tools',
+    category: 'legacy-writer',
+    evidence: 'no host-tool writer is changed or deleted in M4; M5 red tests own its removal decision',
+  }),
+  evalRelay: Object.freeze({
+    owner: 'Studio/server compatibility relay',
+    category: 'legacy-writer',
+    evidence: 'M4 emits no eval request and leaves executable relay deletion to M5 after parity gates',
+  }),
+} as const);
+
+function projectionRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function projectionResult(response: TransportResponse): unknown {
+  const result = projectionRecord(response.result);
+  return result?.ok === true && Object.prototype.hasOwnProperty.call(result, 'value') ? result.value : response.result;
+}
+
+function projectionErrors(response: TransportResponse): { readonly code: string; readonly recoveryActions: readonly string[] }[] {
+  return response.error === undefined ? [] : [{ code: response.error.code, recoveryActions: response.error.recoveryActions }];
+}
+
+/** Derive the panel read model from public transport responses and UI transient input. */
+export function projectEditorRenderFacts(input: EditorRenderFactsInput): EditorRenderFacts {
+  const document = projectionRecord(projectionResult(input.document)) ?? {};
+  const assets = projectionRecord(projectionResult(input.assets)) ?? {};
+  const runValue = input.run === undefined ? undefined : projectionRecord(projectionResult(input.run));
+  const discovery = projectionRecord(projectionResult(input.discover)) ?? {};
+  const runtime = projectionRecord(discovery.runtime) as RuntimeAvailability | undefined;
+  const subjects = Array.isArray(assets.subjects) ? assets.subjects : [];
+  const importedSubjectIds = subjects.flatMap((subject) => {
+    const value = projectionRecord(subject)?.id;
+    return typeof value === 'string' ? [value] : [];
+  });
+  const errors = [input.discover, input.document, input.assets, ...(input.run === undefined ? [] : [input.run])].flatMap(projectionErrors);
+
+  return Object.freeze({
+    status: errors.length === 0 ? 'ready' : 'unavailable',
+    document: Object.freeze({
+      revision: typeof document.revision === 'string' ? document.revision : null,
+      content: document.content,
+    }),
+    assets: Object.freeze({
+      revision: typeof assets.resourceRevision === 'string' ? assets.resourceRevision : typeof assets.revision === 'string' ? assets.revision : null,
+      importedSubjectIds: Object.freeze(importedSubjectIds),
+    }),
+    run: runValue === undefined ? null : Object.freeze({
+      id: typeof input.run?.runId === 'string' ? input.run.runId : typeof runValue.runId === 'string' ? runValue.runId : null,
+      status: typeof runValue.status === 'string' ? runValue.status : null,
+      revision: typeof runValue.revision === 'string' ? runValue.revision : null,
+    }),
+    runtime: runtime === undefined ? null : runtime,
+    errors: Object.freeze(errors),
+    transient: input.transient === undefined ? null : Object.freeze({ ...input.transient }),
+  });
+}
 
 // Resolve the active game slug: pinned slug first, else poll the workbench
 // active-slug endpoint (carried over verbatim from the interface EditMode/
@@ -126,6 +259,107 @@ function studioGameRoot(slug: string): string {
   return `.forgeax/games/${slug}`;
 }
 
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function responseWithLatestRun(
+  response: Awaited<ReturnType<ReturnType<typeof createEditorTransportClient>['listRuns']>>,
+): Awaited<ReturnType<ReturnType<typeof createEditorTransportClient>['listRuns']>> | undefined {
+  const result = objectRecord(response.result);
+  const first = Array.isArray(result?.items) ? objectRecord(result.items[0]) : undefined;
+  if (first === undefined) return undefined;
+  return {
+    ...response,
+    ...(typeof first.runId === 'string' ? { runId: first.runId } : {}),
+    result: first,
+  };
+}
+
+/**
+ * Canonical Editor facts are a read projection. This component never dispatches
+ * a runtime operation, so opening Studio cannot create a carrier or renderer.
+ * Loading and unavailable states expose structured recovery codes instead of
+ * guessing from an error message.
+ */
+function EditorCanonicalProjection({ slug }: { readonly slug: string | null }): ReactNode {
+  const [facts, setFacts] = useState<EditorRenderFacts | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    const client = createEditorTransportClient({
+      scope: `game:${slug}`,
+      actor: { id: 'studio-ui', kind: 'human' },
+      sessionId: `studio-ui:${slug}`,
+    });
+    const load = async (): Promise<void> => {
+      const [discover, document, assets, runs] = await Promise.all([
+        client.discover(),
+        client.query({ documentId: 'scene:main' }),
+        client.assetSnapshot(),
+        client.listRuns(),
+      ]);
+      if (cancelled) return;
+      const transient: ProjectionTransientState = {
+        panelId: 'editor',
+        layoutId: 'scene',
+        timerPending: false,
+        hmrActive: import.meta.hot !== undefined,
+      };
+      const nextFacts = projectEditorRenderFacts({
+        discover,
+        document,
+        assets,
+        run: responseWithLatestRun(runs),
+        transient,
+      });
+      setFacts(nextFacts);
+      setLoadError(null);
+    };
+    void load().catch((error: unknown) => {
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : 'transport request failed');
+    });
+    const timer = window.setInterval(() => { void load(); }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [slug]);
+
+  const status = facts?.status ?? 'loading';
+  const recoveryActions = facts?.errors.flatMap((error) => error.recoveryActions) ?? [];
+  const importedAssets = facts?.assets.importedSubjectIds.join(',') || 'none';
+  const runtimeAvailability = facts?.runtime === null || facts?.runtime === undefined
+    ? 'unavailable'
+    : facts.runtime.blocking ? 'blocking' : 'available';
+  const documentContent = typeof facts?.document.content === 'string' ? facts.document.content : 'unavailable';
+  const documentRevision = facts?.document.revision ?? 'unavailable';
+  const assetRevision = facts?.assets.revision ?? 'unavailable';
+  const runStatus = facts?.run?.status ?? 'none';
+
+  return (
+    <div
+      // This is a machine-readable parity seam, not a user-facing viewport overlay.
+      data-testid="studio-editor-canonical-projection"
+      data-forgeax-canonical-facts="true"
+      data-scope={slug ? `game:${slug}` : 'unavailable'}
+      data-projection-status={loadError === null ? status : 'unavailable'}
+      data-document-revision={documentRevision}
+      data-document-content={documentContent}
+      data-asset-revision={assetRevision}
+      data-imported-assets={importedAssets}
+      data-run-status={runStatus}
+      data-runtime-availability={runtimeAvailability}
+      data-recovery-actions={recoveryActions.join(',') || (loadError === null ? 'none' : 'request.retry')}
+      style={{ display: 'none' }}
+    />
+  );
+}
+
 type ViewportDisplay = 'scene' | 'game';
 
 function readViewportDisplay(): ViewportDisplay | null {
@@ -134,6 +368,29 @@ function readViewportDisplay(): ViewportDisplay | null {
   }).__forgeax_editor;
   const display = editor?.getViewportQuadrant?.().display;
   return display === 'scene' || display === 'game' ? display : null;
+}
+
+type EditorViewportRuntimeBridge = {
+  readonly playSimulation?: () => void | Promise<void>;
+  readonly stopSimulation?: () => void;
+  readonly setViewportQuadrant?: (patch: { readonly display: ViewportDisplay }) => void;
+};
+
+function editorViewportRuntimeBridge(): EditorViewportRuntimeBridge | null {
+  const editor = (window as unknown as { __forgeax_editor?: EditorViewportRuntimeBridge }).__forgeax_editor;
+  return editor ?? null;
+}
+
+function dispatchEditorViewportRuntime(operation: 'play' | 'stop' | 'show-scene'): void {
+  const editor = editorViewportRuntimeBridge();
+  if (editor === null) return;
+  if (operation === 'play') {
+    void editor.playSimulation?.();
+  } else if (operation === 'stop') {
+    editor.stopSimulation?.();
+  } else {
+    editor.setViewportQuadrant?.({ display: 'scene' });
+  }
 }
 
 // EditRealm — the in-process editor viewport surface (single realm). It owns
@@ -154,6 +411,18 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   // `bootedSlug` is the game the currently-mounted engine booted. null until
   // the first game mounts. When slug !== bootedSlug we do a teardown+remount.
   const [bootedSlug, setBootedSlug] = useState<string | null>(null);
+
+  /**
+   * EditRealm classification for the M4 projection boundary:
+   * - canonical facts: document, asset, run, and runtime availability are
+   *   fetched by EditorCanonicalProjection from the public transport client;
+   * - derived projection: bootedSlug and viewportEpoch select the one mounted
+   *   Editor realm for the active game;
+   * - UI/session transient: timers, pendingAssetReload, display restoration,
+   *   panelBridge HMR notifications, and gateway display mode stay local;
+   * - legacy writer: gateway and panelBridge remain compatibility surfaces until
+   *   M5 removes their executable relay, and this milestone adds no new writer.
+   */
   const [viewportEpoch, setViewportEpoch] = useState(0);
   const playRestartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assetRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -189,8 +458,8 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
       if (playRestartTimer.current !== null) clearTimeout(playRestartTimer.current);
       playRestartTimer.current = setTimeout(() => {
         playRestartTimer.current = null;
-        gateway.dispatch({ kind: 'stop' }, 'ai');
-        queueMicrotask(() => gateway.dispatch({ kind: 'play' }, 'ai'));
+        dispatchEditorViewportRuntime('stop');
+        queueMicrotask(() => dispatchEditorViewportRuntime('play'));
       }, 80);
     };
     import.meta.hot.on('forgeax:game-code-change', onGameCodeChange);
@@ -231,7 +500,7 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
           resumePlay: shouldResumePlay,
           display: shouldResumePlay ? readViewportDisplay() : null,
         };
-        if (shouldResumePlay) gateway.dispatch({ kind: 'stop' }, 'ai');
+        if (shouldResumePlay) dispatchEditorViewportRuntime('stop');
         resetEditRealm({ flushPendingSave: false });
         setViewportEpoch((epoch) => epoch + 1);
       }, 120);
@@ -259,13 +528,13 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
       pendingAssetReload.current = null;
       queueMicrotask(() => {
         if (pending.token !== assetReloadToken.current) return;
-        if (gateway.mode !== 'play') gateway.dispatch({ kind: 'play' }, 'ai');
+        if (gateway.mode !== 'play') dispatchEditorViewportRuntime('play');
         if (pending.display !== 'scene') return;
         let attempts = 0;
         const restoreDisplay = (): void => {
           if (pending.token !== assetReloadToken.current) return;
           if (gateway.playPhase === 'play') {
-            gateway.dispatch({ kind: 'setDisplay', display: 'scene' }, 'ai');
+            dispatchEditorViewportRuntime('show-scene');
             return;
           }
           if (gateway.playPhase === 'failed') return;
@@ -294,6 +563,7 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   const mounted = !!slug && bootedSlug === slug;
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#16161a' }}>
+      <EditorCanonicalProjection slug={slug} />
       {mounted && (
         // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
         // above guarantees the latch is clear so ViewportComponent actually re-boots.
@@ -483,13 +753,17 @@ function WorkbenchFiles(): ReactNode {
  *  drop out. Globs are eager — Vite resolves them at build time, so a new
  *  inline extension needs zero studio edits (§2.5). */
 function deriveInlineWorkbenchPanels(): PanelRenderers['workbenchPanels'] {
+  const importMeta = import.meta as ImportMeta & {
+    glob?: (pattern: string, options: { eager: boolean }) => Record<string, unknown>;
+  };
+  if (typeof importMeta.glob !== 'function') return {};
   // Flat `extensions/<slug>/` only — kind-bucketed `extensions/<kind>/<slug>/`
   // was rolled back; do not reintroduce nested globs here.
-  const manifests = import.meta.glob(
+  const manifests = importMeta.glob(
     '../../../marketplace/extensions/*/forgeax-extension.json',
     { eager: true },
   ) as Record<string, { id?: string; kind?: string; entry?: { frontend?: string; standalone?: unknown } }>;
-  const panels = import.meta.glob(
+  const panels = importMeta.glob(
     '../../../marketplace/extensions/*/src/panel.tsx',
     { eager: true },
   ) as Record<string, { default?: () => ReactNode }>;

@@ -35,14 +35,13 @@
   几秒就活。
 - **一份代码,Web 与桌面通吃。** 同一个 UI 既跑浏览器,也通过 Tauri 2 作为原生桌面应用运行。
 
-## 🆕 v0.3.22 更新
+## 🆕 v0.3.23 更新
 
-- **TUI:键盘驱动的 agent 终端** —— 直接在终端里驱动 Forge 与整个 agent 运行时(F1/F2/F3 验收通过);适合无头与 SSH 场景。
-- **工作台全面国际化** —— 角色、AI 资产、3D 生成三个工作台在所有支持语言下完全翻译。
-- **3D 资产管线修复** —— 生成的 3D 模型创建后即刻以正确 PBR 材质在实时视窗中渲染。
-- **API Key 配置精简** —— Settings 改用单个 LiteLLM 代理端点路由到所有模型,不再逐个供应商配置密钥。
-- **CLI 更稳** —— 工具调用自动注入项目 slug(告别「project not found」),处理器错误返回结构化错误码。
-- **新游戏场景包** —— 共享游戏库新增 Slagdeep Hollow 可编辑场景与 Rogue Encampment 地板模型。
+- **Asset Canvas 工作流** —— 集成共享 Workbench Host,统一资产编排、模型服务和媒体适配能力。
+- **场景创作增强** —— 场景创建、复制、删除、默认场景和字段编辑拥有更清晰、更安全的边界。
+- **游戏项目单位** —— 游戏成为项目单位,视频游戏与 `wb-game-video` 工作流进入稳定集成链路。
+- **无头 AI Carrier 支持** —— Carrier 管理器与 Wave 1 gameplay 兼容链路改善本地运行流程。
+- **桌面与 Play 修复** —— 原生“打开项目”、gameroot 外目录、Play 启动、预览资源、WebGL2 FXAA 回退和场景保存更加可靠。
 
 → 完整说明见 [Releases](https://github.com/ForgeaX-Games/forgeax-studio/releases) 页。
 

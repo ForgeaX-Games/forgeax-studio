@@ -146,8 +146,14 @@ jobs:
         id: engine-dist
         uses: actions/cache@v4
         with:
-          path: packages/editor/packages/engine/packages/*/dist
-          key: ${{ runner.os }}-engine-dist-${{ steps.engine-sha.outputs.sha }}
+          # wgpu-wasm/pkg is fetched (not committed) by the build step below; a
+          # dist-only cache hit skips that step and leaves studio's vite build
+          # without pkg/wgpu_wasm.js. Cache pkg alongside dist so hits restore
+          # both. Key v2: v1 entries were saved without pkg/ and must be missed.
+          path: |
+            packages/editor/packages/engine/packages/*/dist
+            packages/editor/packages/engine/packages/wgpu-wasm/pkg
+          key: ${{ runner.os }}-engine-dist-v2-${{ steps.engine-sha.outputs.sha }}
 
       - name: Enable engine-build skip on dist cache hit
         if: steps.engine-dist.outputs.cache-hit == 'true'

@@ -481,6 +481,10 @@ if (skipEngineBuild) {
     // entry for package @forgeax/engine-fbx"). The wasm BINARY (pkg/fbx-wasm.
     // {mjs,wasm}) is built separately in step 2c below.
     '@forgeax/engine-fbx...',
+    // The default game scaffold imports the public NPC adapter directly. A
+    // cache restored from before this package existed must fall through to a
+    // real build instead of leaving play-runtime with a dangling dist entry.
+    '@forgeax/engine-npc...',
     // engine-vite-plugin-rhi-debug: the editor's engine-vite-preset (studio's
     // vite.config imports it) unconditionally imports this plugin (editor #117
     // opt-in RHI-debug switch). Its exports point at ./dist/index.mjs, so the
@@ -743,6 +747,15 @@ if (existsSync(gamesSrc) && readdirSync(gamesSrc).length > 0) {
   });
   if (r.status !== 0) warnY('seed-games failed (continuing without shared games)');
   else ok('sample games seeded (symlinks)');
+  const soulsDst = join(ROOT, '.forgeax/souls-builtin');
+  mkdirSync(soulsDst, { recursive: true });
+  const souls = spawnSync(process.execPath, [join(ROOT, 'scripts/seed-souls.ts')], {
+    stdio: 'inherit',
+    cwd: ROOT,
+    env: { ...process.env, FORGEAX_GAMES_SRC: gamesSrc, FORGEAX_SOULS_DST: soulsDst },
+  });
+  if (souls.status !== 0) warnY('seed-souls failed (continuing without shared Soul packs)');
+  else ok('shared Soul packs seeded (symlinks)');
 } else {
   console.log('  → packages/games not found (skipped)');
 }

@@ -33,7 +33,7 @@ const repo = (over: Partial<RepoInfo>): RepoInfo => ({
 describe('scan helpers', () => {
   it('runs boundary checker tests in CI', () => {
     const workflow = readFileSync(resolve(import.meta.dir, '../.github/workflows/boundaries.yml'), 'utf8');
-    expect(workflow).toContain('run: bun run test:boundaries');
+    expect(workflow).toContain('run: bun run test:boundaries:fs');
   });
 
   it('parses submodule paths from git config output', () => {

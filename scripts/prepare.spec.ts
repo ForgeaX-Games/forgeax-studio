@@ -61,6 +61,11 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain('@forgeax/engine-codec');
     expect(src).toContain('healDanglingEngineSymlinks');
   });
+  it('treats the scaffold NPC adapter as a required cached engine entry', () => {
+    const src = prepareSource();
+    expect(src).toMatch(/engineEntryPkgs\s*=\s*\[[^\]]*['"]npc['"]/);
+    expect(src).toContain("'@forgeax/engine-npc...'");
+  });
   it('always lets bun verify standalone plugin installs instead of trusting node_modules mtime', () => {
     const src = prepareSource();
     expect(src).not.toMatch(/statSync\(nm\)\.mtimeMs\s*>\s*statSync\(join\(dir,\s*['"]package\.json['"]\)\)\.mtimeMs/);

@@ -355,7 +355,7 @@ export default defineConfig(() => ({
     //   packages/marketplace/extensions/wb-character-forge/DESIGN.md (template).
     fs: { allow: ['..', '../..', ...knownGameRoots()] },
     proxy: {
-      '/api': { target: SERVER, changeOrigin: true },
+      '/api': { target: SERVER, changeOrigin: true, ws: true },
       '/ws': { target: SERVER_WS, ws: true, changeOrigin: true },
       // Engine vite has `base: '/preview/'`, so ALL its asset/dep URLs are
       // already prefixed. One proxy catches everything (forgeax/engine/*,

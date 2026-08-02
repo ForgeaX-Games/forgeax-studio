@@ -354,13 +354,46 @@ const engineSrcDir = join(ROOT, 'packages/editor/packages/play-runtime');
 mkdirSync(join(instanceRoot, '.forgeax/games'), { recursive: true });
 ensureForgeaxJunction(join(engineSrcDir, '.forgeax'), join(instanceRoot, '.forgeax'));
 
-// Shared game library is seeded once by `bun install` (prepare.ts →
-// seed-games.ts symlinks). run.ts intentionally does NOT re-seed: seed-games is
-// idempotent so re-running was harmless, but doing it on every start blurred the
-// deploy/start split and risked piling up <slug>.bak-<ts> if a real dir ever
-// appeared. If .forgeax/games/ is empty, run `bun install` to (re)seed.
+// Games import @forgeax/npc-client through its public package export, which
+// deliberately points at dist/ so the SDK is also independently packable.
+// A clean checkout has no generated dist; build the tiny browser bundle on
+// every start so ▶ Play never depends on a prior test or manual package build.
+const npcClientRoot = join(ROOT, 'packages/npc-client');
+const npcClientBuild = spawnSync(process.execPath, [join(npcClientRoot, 'build.ts')], {
+  cwd: npcClientRoot,
+  stdio: 'inherit',
+  windowsHide: true,
+  env: process.env,
+});
+if (npcClientBuild.status !== 0 || !existsSync(join(npcClientRoot, 'dist/index.js'))) {
+  console.error('  ERROR: @forgeax/npc-client build failed.');
+  process.exit(1);
+}
+console.log('[npc-client] browser bundle ready');
+
+// Games stay install-time projections, but Soul declarations are runtime
+// prerequisites: a branch update may add or change a tracked pack without
+// re-running `bun install`. Re-project only Soul symlinks on every start. The
+// script is idempotent and never replaces a user-owned real directory.
+const soulsRoot = join(instanceRoot, '.forgeax/souls-builtin');
+mkdirSync(soulsRoot, { recursive: true });
+const seedSouls = spawnSync(process.execPath, [join(ROOT, 'scripts/seed-souls.ts')], {
+  cwd: ROOT,
+  stdio: 'inherit',
+  windowsHide: true,
+  env: {
+    ...process.env,
+    FORGEAX_GAMES_SRC: join(ROOT, 'packages/games'),
+    FORGEAX_SOULS_DST: soulsRoot,
+  },
+});
+if (seedSouls.status !== 0) {
+  console.error('  ERROR: tracked Soul pack projection failed.');
+  process.exit(1);
+}
 
 process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
+process.env.FORGEAX_HOST_PACKAGE_ROOT = ROOT;
 
 // ── 3.5 per-stack agent-host socket ──────────────────────────────────────────
 // The forgeax-core kernel runs inside a persistent `agent-host` sidecar the
@@ -539,6 +572,7 @@ const ui = launch('interface', 'bun', ['x', 'vite'], {
   cwd: join(ROOT, 'packages', uiPkg),
   env: {
     ...process.env,
+    FORGEAX_HOST_PACKAGE_ROOT: ROOT,
     ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
   },
 }, true);
@@ -549,6 +583,7 @@ const en = launch('engine', 'bun', ['x', 'vite'], {
   cwd: engineSrcDir,
   env: {
     ...process.env,
+    FORGEAX_HOST_PACKAGE_ROOT: ROOT,
     ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
     FORGEAX_PREVIEW_GAMES_DIR: join(engineSrcDir, '.forgeax/games'),
     FORGEAX_GAMES_URL_PREFIX: '.forgeax/games',

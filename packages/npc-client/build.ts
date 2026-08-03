@@ -27,6 +27,16 @@ export type AffordanceParam =
   | { type: 'enum'; source: 'nearby.id' }
   | { type: 'enum'; source: 'literal'; values: string[] };
 export interface Affordance { action: string; params?: Record<string, AffordanceParam> }
+export type NpcDecisionDeadline =
+  | { preset: 'fast' }
+  | { preset: 'balanced' }
+  | { preset: 'patient' }
+  | { preset: 'custom'; timeoutMs: number };
+export interface NpcSoulBinding {
+  npcId: string;
+  soulId?: string;
+  decisionDeadline?: NpcDecisionDeadline;
+}
 export interface PerceptionSnapshot {
   v: 1;
   eventId: string;
@@ -68,7 +78,6 @@ export interface SpotlightHooks {
   onDetach?: (npcId: string) => void;
 }
 export type NpcCognitiveLod = 'spotlight' | 'ambient' | 'offstage';
-export interface NpcSoulBinding { npcId: string; soulId?: string }
 export interface NpcClientOptions {
   game: string;
   npcIds: string[];
@@ -122,7 +131,8 @@ export declare class NpcClient {
   demote(npcId: string): void;
   setLod(npcId: string, level: NpcCognitiveLod, snapshot?: PerceptionSnapshot): void;
   lod(npcId: string): NpcCognitiveLod;
-  attach(npcId: string, snapshot?: PerceptionSnapshot, binding?: { soulId?: string }): Promise<void>;
+  decisionTimeoutMs(npcId: string): number;
+  attach(npcId: string, snapshot?: PerceptionSnapshot, binding?: Omit<NpcSoulBinding, 'npcId'>): Promise<void>;
   detach(npcId: string): Promise<void>;
   connectWebSocket(): Promise<void>;
   sendSnapshot(snapshot: PerceptionSnapshot): Promise<void>;

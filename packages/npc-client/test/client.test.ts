@@ -24,14 +24,14 @@ function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 }
 
-function session(epoch = 1) {
+function session(epoch = 1, decisionTimeoutMs = 6_000) {
   return {
     ok: true,
     sessionId: 's',
     token: 'test-token-000000',
     epoch,
     expiresAt: Date.now() + 10_000,
-    loaded: [{ npcId: 'guide', soulId: 'demo.guide', trustTier: 'own' }],
+    loaded: [{ npcId: 'guide', soulId: 'demo.guide', trustTier: 'own', decisionTimeoutMs }],
     wsUrl: '/api/npc/ws',
   };
 }
@@ -157,6 +157,27 @@ describe('NpcClient', () => {
     });
   });
 
+  test('sends deadline configuration and adopts the server-confirmed effective value', async () => {
+    let sessionBody: any;
+    const client = new NpcClient({
+      game: 'demo',
+      npcIds: ['guide'],
+      npcs: [{ npcId: 'guide', decisionDeadline: { preset: 'custom', timeoutMs: 15_000 } }],
+      fetcher: (async (url, init) => {
+        if (String(url).endsWith('/session')) {
+          sessionBody = JSON.parse(String(init?.body));
+          return json(session(1, 12_000));
+        }
+        return json({ ok: true, epoch: 1, decision: decision(1) });
+      }) as typeof fetch,
+    });
+
+    expect(client.decisionTimeoutMs('guide')).toBe(15_000);
+    await client.connect();
+    expect(sessionBody.npcs[0].decisionDeadline).toEqual({ preset: 'custom', timeoutMs: 15_000 });
+    expect(client.decisionTimeoutMs('guide')).toBe(12_000);
+  });
+
   test('establishes a capability session and drops duplicate decisions', async () => {
     let chatCalls = 0;
     const client = new NpcClient({
@@ -227,6 +248,34 @@ describe('NpcClient', () => {
     expect(await client.decide(snapshot, 1)).toBeUndefined();
     expect(fallback).toBe('NPC decision timeout');
     resolveFetch(json({ ok: true }));
+  });
+
+  test('uses the server-confirmed deadline plus bounded response grace', async () => {
+    const clock = new FakeClock();
+    let fallback = '';
+    const client = new NpcClient({
+      game: 'demo',
+      npcIds: ['guide'],
+      clock,
+      onFallback: (_snapshot, error) => { fallback = error.message; },
+      fetcher: (async (url, init) => {
+        if (String(url).endsWith('/session')) return json(session(1, 3_000));
+        return await new Promise<Response>((resolve) => {
+          init?.signal?.addEventListener('abort', () => {
+            resolve(json({ ok: false, error: init.signal?.reason?.message ?? 'aborted' }, 504));
+          }, { once: true });
+        });
+      }) as typeof fetch,
+    });
+
+    await client.connect();
+    const pending = client.decide(snapshot);
+    await Promise.resolve();
+    await clock.advance(3_999);
+    expect(fallback).toBe('');
+    await clock.advance(1);
+    expect(await pending).toBeUndefined();
+    expect(fallback).toBe('NPC decision timeout');
   });
 
   test('uses permanent pure-static fallback after session connect fails', async () => {

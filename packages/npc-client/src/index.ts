@@ -1,6 +1,10 @@
 import {
+  NPC_DECISION_DEADLINE_PRESETS_MS,
+  resolveNpcDecisionDeadlineMs,
   type AffordanceParam,
   type NpcBudgetState,
+  type NpcDecisionDeadline,
+  type NpcLoadedSoulBinding,
   type NpcSoulBinding,
 } from '@forgeax/types/npc-protocol';
 import {
@@ -15,7 +19,13 @@ import {
 
 export { npcProtocol } from './protocol-adapter';
 export const NPC_PROTOCOL_VERSION = npcProtocol.version;
-export type { Affordance, AffordanceParam, PerceptionSnapshot };
+export type {
+  Affordance,
+  AffordanceParam,
+  NpcDecisionDeadline,
+  NpcSoulBinding,
+  PerceptionSnapshot,
+};
 export type NpcDecision = NpcDecisionWire;
 
 export interface NpcClock {
@@ -77,6 +87,7 @@ interface SessionGrant {
   token: string;
   epoch: number;
   expiresAt: number;
+  loaded: NpcLoadedSoulBinding[];
 }
 
 interface ActiveIntent {
@@ -96,6 +107,7 @@ const defaultClock: NpcClock = {
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
+const DECISION_RESPONSE_GRACE_MS = 1_000;
 
 export class NpcClient {
   readonly #options: NpcClientOptions;
@@ -109,6 +121,7 @@ export class NpcClient {
   readonly #activeIntents = new Map<string, ActiveIntent>();
   readonly #lastDecisions = new Map<string, NpcDecisionWire>();
   readonly #lastSnapshots = new Map<string, PerceptionSnapshot>();
+  readonly #decisionTimeoutMs = new Map<string, number>();
   readonly #decisionHandlers = new Map<string, Set<(decision: NpcDecisionWire) => void>>();
   readonly #fallbackHandlers = new Map<string, Set<(error: Error) => void>>();
   readonly #spotlight = new Set<string>();
@@ -148,7 +161,14 @@ export class NpcClient {
     this.#options = options;
     this.#clock = options.clock ?? (options.now ? { ...defaultClock, now: options.now } : defaultClock);
     this.#attachedNpcIds = new Set(options.npcIds);
-    for (const npcId of options.npcIds) this.#lod.set(npcId, 'spotlight');
+    const requestedBindings = new Map(options.npcs?.map((binding) => [binding.npcId, binding]));
+    for (const npcId of options.npcIds) {
+      this.#lod.set(npcId, 'spotlight');
+      this.#decisionTimeoutMs.set(
+        npcId,
+        resolveNpcDecisionDeadlineMs(requestedBindings.get(npcId)?.decisionDeadline),
+      );
+    }
   }
 
   declareAffordances(npcId: string, affordances: Affordance[]): void {
@@ -190,19 +210,25 @@ export class NpcClient {
     const body = npcProtocol.sessionResponse(raw);
     if (!body.ok) throw new Error(body.error);
     this.#session = body;
+    for (const binding of body.loaded) {
+      this.#decisionTimeoutMs.set(binding.npcId, binding.decisionTimeoutMs);
+    }
     this.#permanentFallback = undefined;
     this.#stopped = false;
     this.#resetWireCountersForEpoch(this.#session.epoch);
   }
 
-  async decide(snapshot: PerceptionSnapshot, timeoutMs = 6_000): Promise<NpcDecisionWire | undefined> {
+  async decide(snapshot: PerceptionSnapshot, timeoutMs?: number): Promise<NpcDecisionWire | undefined> {
     const prepared = this.#prepareSnapshot(snapshot);
     const key = snapshotDedupeKey(prepared);
     const existing = this.#inFlight.get(key);
     if (existing) return existing;
     if (this.#seenEvents.has(key)) return undefined;
     this.#seenEvents.add(key);
-    const operation = this.#decideHttp(prepared, timeoutMs).finally(() => this.#inFlight.delete(key));
+    const effectiveTimeoutMs = timeoutMs ?? (
+      this.decisionTimeoutMs(prepared.npcId) + DECISION_RESPONSE_GRACE_MS
+    );
+    const operation = this.#decideHttp(prepared, effectiveTimeoutMs).finally(() => this.#inFlight.delete(key));
     this.#inFlight.set(key, operation);
     return operation;
   }
@@ -305,6 +331,11 @@ export class NpcClient {
     return this.#lod.get(npcId) ?? 'offstage';
   }
 
+  /** Server-confirmed Brain decision deadline, excluding transport response grace. */
+  decisionTimeoutMs(npcId: string): number {
+    return this.#decisionTimeoutMs.get(npcId) ?? NPC_DECISION_DEADLINE_PRESETS_MS.balanced;
+  }
+
   async attach(
     npcId: string,
     snapshot?: PerceptionSnapshot,
@@ -318,6 +349,7 @@ export class NpcClient {
       binding: { npcId, ...binding },
     });
     this.#attachedNpcIds.add(npcId);
+    this.#decisionTimeoutMs.set(npcId, resolveNpcDecisionDeadlineMs(binding.decisionDeadline));
     this.#lod.set(npcId, 'spotlight');
     this.#options.spotlight?.onAttach?.(npcId);
     if (snapshot) await this.emit({ ...snapshot, trigger: 'attach' });
@@ -332,6 +364,7 @@ export class NpcClient {
       npcId,
     });
     this.#attachedNpcIds.delete(npcId);
+    this.#decisionTimeoutMs.delete(npcId);
     this.#lod.set(npcId, 'offstage');
     this.#options.spotlight?.onDetach?.(npcId);
     this.#expireIntent(npcId);

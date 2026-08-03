@@ -50,7 +50,9 @@ try {
     join(consumer, 'smoke.ts'),
     [
       "import { NpcClient, type PerceptionSnapshot } from '@forgeax/npc-client';",
-      "const client: NpcClient = new NpcClient({ game: 'smoke', npcIds: ['guide'] });",
+      "const client: NpcClient = new NpcClient({ game: 'smoke', npcIds: ['guide'], npcs: [{ npcId: 'guide', decisionDeadline: { preset: 'custom', timeoutMs: 15000 } }] });",
+      "const timeout: number = client.decisionTimeoutMs('guide');",
+      "void timeout;",
       "const snapshot: PerceptionSnapshot = { v: 1, eventId: 'e', game: 'smoke', npcId: 'guide', t: 0, trigger: 'heartbeat', self: { pos: { x: 0, y: 0 }, activity: 'idle' }, nearby: [], events: [], affordances: [] };",
       "void client.decide(snapshot);",
       '',

@@ -11,6 +11,8 @@ export interface EditorTransportClientOptions {
   readonly endpoint?: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly fetcher?: typeof globalThis.fetch;
+  /** Reuse a connected Editor page without launching a managed runtime carrier when false. */
+  readonly allowCarrierProvisioning?: boolean;
   readonly scope: string;
   readonly actor: Readonly<{ id: string; kind: string }>;
   readonly sessionId: string;
@@ -112,6 +114,10 @@ export function createEditorTransportClient(
   const fetcher = options.fetch ?? options.fetcher ?? globalThis.fetch.bind(globalThis);
   const idFactory = options.idFactory ?? (() => makeId('editor-request'));
   const correlationIdFactory = options.correlationIdFactory ?? (() => makeId('editor-correlation'));
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (options.allowCarrierProvisioning === false) {
+    headers['x-forgeax-editor-carrier-provisioning'] = '0';
+  }
   const scope = options.scope.trim();
   if (scope === '') throw new Error('Editor transport client scope must not be empty.');
   if (options.sessionId.trim() === '') throw new Error('Editor transport client sessionId must not be empty.');
@@ -129,10 +135,10 @@ export function createEditorTransportClient(
       version: TRANSPORT_PROTOCOL_VERSION,
       id,
       correlationId,
+      scope,
       method,
       params: {
         ...paramsRecord(params),
-        scope,
         actor: options.actor,
         sessionId: options.sessionId,
         permission: requestOptions.permission ?? options.permission ?? 'read',
@@ -143,7 +149,7 @@ export function createEditorTransportClient(
     try {
       const response = await fetcher(endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
         signal: requestOptions.signal,
       });

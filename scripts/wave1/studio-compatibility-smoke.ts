@@ -97,7 +97,11 @@ try {
   ]);
   record('boot', `isolated core stack ready on server ${serverPort}, interface ${interfacePort}, engine ${enginePort}`);
 
-  await request(`/api/workbench/games/${gameSlug}/activate`, { method: 'POST' });
+  await request('/api/workbench/active-game', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ slug: gameSlug }),
+  });
   const catalog = await request('/api/workbench/games');
   if (!JSON.stringify(catalog).includes(gameSlug)) throw new Error(`${gameSlug} missing from catalog`);
   record('open', `${gameSlug} activated`);
@@ -141,11 +145,10 @@ try {
     args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--use-angle=swiftshader'],
   });
   const page = await browser.newPage();
-  await page.addInitScript((slug) => {
+  await page.addInitScript(() => {
     localStorage.setItem('forgeax.onboarding.v2', JSON.stringify({ v: 2, phase: 'done', done: { tour: true, firstChat: true } }));
-    localStorage.setItem('forgeax.pinnedSlug', slug);
-  }, gameSlug);
-  await page.goto(`http://127.0.0.1:${interfacePort}/?gameId=${gameSlug}`);
+  });
+  await page.goto(`http://127.0.0.1:${interfacePort}/`);
   await page.waitForFunction(() => Boolean((globalThis as { __forgeax_editor?: unknown }).__forgeax_editor), undefined, { timeout: 30_000 });
   await page.evaluate(() => (globalThis as unknown as {
     __forgeax_editor: { playSimulation(): Promise<void> };

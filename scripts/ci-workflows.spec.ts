@@ -26,6 +26,10 @@ const jobBlock = (workflow: string, name: string): string => {
 };
 
 describe('CI workflow orchestration', () => {
+  it('keeps the forgeax-build-game contract in the required non-docs boundary workflow', () => {
+    expect(jobBlock(boundaries, 'full-boundaries')).toContain('run: bun run test:forgeax-build-game');
+  });
+
   it('keeps post-merge tree reuse in one permission-complete workflow', () => {
     expect(postMergeWorkflow).toContain('workflow_call:');
     expect(postMergeWorkflow).toContain('pull-requests: read');
@@ -60,7 +64,20 @@ describe('CI workflow orchestration', () => {
     }
   });
 
-  it('keeps metadata decisions and aggregate gates off the self-hosted build pool', () => {
+  it('lets superseded runs stop without weakening fail-closed gates', () => {
+    for (const [workflow, heavyJob, aggregateJob] of [
+      [ci, 'build', 'check'],
+      [boundaries, 'full-boundaries', 'lint-boundaries'],
+      [pins, 'validate', 'check'],
+    ] as const) {
+      expect(jobBlock(workflow, heavyJob)).toMatch(
+        /\n    if: \$\{\{ !cancelled\(\) && needs\.changes\.result == 'success'/,
+      );
+      expect(jobBlock(workflow, aggregateJob)).toContain('if: ${{ !cancelled() }}');
+    }
+  });
+
+  it('keeps orchestration jobs on the self-hosted runner pool', () => {
     for (const [workflow, jobs] of [
       [ci, ['changes', 'check']],
       [boundaries, ['changes', 'lint-boundaries']],
@@ -69,14 +86,16 @@ describe('CI workflow orchestration', () => {
       [postMergeMonitor, ['monitor']],
     ] as const) {
       for (const job of jobs) {
-        expect(jobBlock(workflow, job)).toContain('runs-on: ubuntu-latest');
-        expect(jobBlock(workflow, job)).not.toContain('runs-on: [self-hosted');
+        expect(jobBlock(workflow, job)).toContain('runs-on: [self-hosted, Linux, X64]');
+        expect(jobBlock(workflow, job)).not.toContain('runs-on: ubuntu-latest');
       }
+      expect(workflow).not.toContain('runs-on: ubuntu-latest');
     }
 
     const pinDecision = jobBlock(pins, 'changes');
-    expect(pinDecision).not.toContain('Prepare self-hosted checkout');
+    expect(pinDecision).toContain('Prepare self-hosted checkout');
     expect(pinDecision).not.toContain('secrets.INTERNAL_TOKEN');
+    expect(jobBlock(postMergeWorkflow, 'compare')).toContain('Prepare self-hosted checkout');
   });
 
   it('fast-paths the pin guard only when no gitlink contract changed', () => {
@@ -102,6 +121,24 @@ describe('CI workflow orchestration', () => {
         /name: Mirror install smoke \(assemble \+ recursive-clone layout \+ bun install\)\n\s+if: steps\.changes\.outputs\.code == 'true'\n\s+run: bash scripts\/mirror\/smoke-install\.sh/,
       );
     }
+  });
+
+  it('uses persistent local dependency stores and bounded package typechecks', () => {
+    expect(ci).toContain('name: Configure runner-local dependency stores');
+    expect(ci).toContain('BUN_INSTALL_CACHE_DIR=');
+    expect(ci).toContain('NPM_CONFIG_USERCONFIG=');
+    expect(ci).not.toContain('name: Cache bun install');
+    expect(ci).not.toContain('name: Cache pnpm store');
+    expect(ci).toContain("FORGEAX_PLUGIN_BUILD_CONCURRENCY: '2'");
+    expect(ci).toContain('FORGEAX_TYPECHECK_CONCURRENCY');
+    expect(ci).toContain('bun scripts/ci/run-package-typechecks.ts');
+    expect(ci).toContain('FORGEAX_STATIC_GATE_CONCURRENCY');
+    expect(ci).toContain('FORGEAX_VITE_BUILD_CONCURRENCY');
+    expect(ci).toContain('bun scripts/ci/run-post-install-checks.ts');
+    expect(ci).toContain('scripts/ci/*.ts');
+    expect(pins).toContain("FORGEAX_PIN_CHECK_CONCURRENCY: '4'");
+    expect(pins).toContain('export GIT_CONFIG_GLOBAL="${auth_config}"');
+    expect(pins).not.toContain('git config --global "http.https://github.com/.extraheader"');
   });
 
   it('hardens mirror publish credentials and verifies token scope before recursion', () => {

@@ -398,11 +398,13 @@ for (const dep of ENGINE_RT_DEPS) {
   copyTree(src, dest, new Set(['node_modules']));
 }
 
-// Game template for "new game" scaffolding (lib.rs seeds it into the project root).
-if (existsSync(join(ENGINE_ROOT, 'templates/game-default'))) {
+// Minimal game template for "new game" scaffolding (lib.rs seeds it into the project root).
+// The engine's game-default is an explicit feature showcase, not a blank project.
+const gameTemplateSource = join(ROOT, 'packages/server/templates/game-minimal');
+if (existsSync(gameTemplateSource)) {
   const dst = join(RES, 'game-template');
   rmrf(dst);
-  copyTree(join(ENGINE_ROOT, 'templates/game-default'), dst, new Set(['node_modules', '.git']));
+  copyTree(gameTemplateSource, dst, new Set(['node_modules', '.git']));
 }
 
 // Shared game library (official examples). The .app can't link the git tree, so

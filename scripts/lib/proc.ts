@@ -24,6 +24,17 @@ export function runDir(root: string): string {
   return join(root, '.forgeax', 'run');
 }
 
+/** Read the leading pid, tolerating the normal readdir/read disappearance race. */
+export function readPidfilePid(file: string): number | null {
+  try {
+    const value = Number.parseInt(readFileSync(file, 'utf8').trim().split(/\s+/)[0] ?? '', 10);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 /** Record a backgrounded service's pid atomically (write-temp + rename). */
 export function recordPid(root: string, name: string, pid: number | undefined): void {
   if (!pid) return;

@@ -25,13 +25,17 @@ const TEST_TIMEOUT_MS = 30_000;
 function git(cwd, args, date) {
   execFileSync("git", args, {
     cwd,
-    env: date
-      ? {
-          ...process.env,
-          GIT_AUTHOR_DATE: `${date}T12:00:00Z`,
-          GIT_COMMITTER_DATE: `${date}T12:00:00Z`,
-        }
-      : process.env,
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: path.join(cwd, ".fixture-gitconfig.disabled"),
+      GIT_CONFIG_NOSYSTEM: "1",
+      ...(date
+        ? {
+            GIT_AUTHOR_DATE: `${date}T12:00:00Z`,
+            GIT_COMMITTER_DATE: `${date}T12:00:00Z`,
+          }
+        : {}),
+    },
     stdio: "ignore",
   });
 }

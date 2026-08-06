@@ -14,7 +14,7 @@
       "setFullscreen": "app.set_fullscreen",
       "setMode": "app.set_mode",
       "setTabAgent": "role.open",
-      "switchGame": "game.switch",
+      "setActiveGame": "game.switch",
       "switchToSession": "session.switch",
       "toggleChatpanel": "panel.toggle_chatpanel",
       "toggleFullscreen": "app.set_fullscreen",
@@ -30,7 +30,7 @@
   },
   "server_endpoint_overrides": {
     "game.switch": [
-      "POST /api/workbench/games/:slug/activate"
+      "PUT /api/workbench/active-game"
     ],
     "session.close": [
       "DELETE /api/sessions/:sid"

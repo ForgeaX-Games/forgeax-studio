@@ -63,6 +63,9 @@ forgeax-studio-ca.crt
 
 # studio build output (regenerated)
 /packages/studio/dist/
+# RHI debug reports/tapes are runtime evidence, never source.
+/packages/studio/.forgeax-debug/
+/packages/npc-client/dist/
 packages/editor
 packages/games
 packages/marketplace

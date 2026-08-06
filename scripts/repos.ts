@@ -26,6 +26,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   describeRepo,
+  dirtyReposUnder,
   formatTable,
   gatesForRepo,
   gitOut,
@@ -37,9 +38,17 @@ import {
   tagNudge,
   type RepoInfo,
 } from './lib/repos.ts';
+import { repositoryCommandHelp } from './lib/repos-help.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUN = process.execPath;
+
+function printCommandHelp(command: string): number {
+  const help = repositoryCommandHelp(command);
+  if (!help) return 2;
+  console.log(help);
+  return 0;
+}
 
 function git(repo: RepoInfo, args: string[], dryRun: boolean): boolean {
   if (dryRun) {
@@ -275,6 +284,13 @@ function bumpCmd(args: string[]): number {
       failed++;
       continue;
     }
+    const dirty = dirtyReposUnder(repos, path);
+    if (dirty.length > 0) {
+      const locations = dirty.map((item) => item.path || '(root)').join(', ');
+      rows.push([path, 'FAILED', `worktree dirty at ${locations} — clean or commit before bumping the Studio pin`]);
+      failed++;
+      continue;
+    }
     if (repo.branch === 'DETACHED') {
       rows.push([path, 'FAILED', 'detached HEAD — check out a branch first (see plan root-checkout rules)']);
       failed++;
@@ -326,6 +342,12 @@ function bumpCmd(args: string[]): number {
 
 function main(): void {
   const [cmd = 'help', ...args] = process.argv.slice(2);
+  // Help is a pure discovery path. In particular, do not scan every nested
+  // repository merely to explain a command: dirty/detached checkouts must not
+  // turn self-description into a wall of unrelated Git diagnostics.
+  if (args.includes('--help') || args.includes('-h')) {
+    process.exit(printCommandHelp(cmd));
+  }
   switch (cmd) {
     case 'status':
       console.log(scanTable(scanRepos(ROOT), false));

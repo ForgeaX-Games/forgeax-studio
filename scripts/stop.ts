@@ -28,6 +28,7 @@ import {
   isPortBusy,
   killTree,
   listenPids,
+  readPidfilePid,
   runDir,
   selfAndAncestors,
   sleep,
@@ -145,7 +146,7 @@ const rdir = runDir(ROOT);
 if (existsSync(rdir)) {
   for (const f of readdirSync(rdir)) {
     if (!f.endsWith('.pid')) continue;
-    const pid = Number.parseInt(readFileSync(join(rdir, f), 'utf8').trim().split(/\s+/)[0] ?? '', 10);
+    const pid = readPidfilePid(join(rdir, f));
     if (pid && isAlive(pid)) note(pid, `pidfile:${f.replace(/\.pid$/, '')}`);
   }
 }

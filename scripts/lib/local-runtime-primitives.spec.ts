@@ -51,10 +51,14 @@ describe('packaged engine workspace', () => {
   test('materializes writable sources and points runtime-owned trees at their authorities', () => {
     const root = temporaryRoot();
     const resources = join(root, 'resources');
+    const shared = join(root, 'node_modules');
     const work = join(root, 'work');
     const projects = join(root, 'projects');
     mkdirSync(join(resources, 'src'), { recursive: true });
-    mkdirSync(join(resources, 'node_modules'), { recursive: true });
+    mkdirSync(join(resources, 'node_modules', '@forgeax', 'engine-x'), { recursive: true });
+    mkdirSync(join(shared, '@forgeax', 'engine-x'), { recursive: true });
+    mkdirSync(join(shared, '@forgeax', 'wb-game-video'), { recursive: true });
+    mkdirSync(join(shared, 'three'), { recursive: true });
     mkdirSync(work, { recursive: true });
     writeFileSync(join(resources, 'vite.config.ts'), 'export default {};\n');
     writeFileSync(join(resources, 'src', 'main.ts'), 'export {};\n');
@@ -63,8 +67,18 @@ describe('packaged engine workspace', () => {
     materializePackagedEngineWorkspace(resources, work, projects);
 
     expect(readFileSync(join(work, 'src', 'main.ts'), 'utf8')).toBe('export {};\n');
-    expect(lstatSync(join(work, 'node_modules')).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(join(work, 'node_modules'))).toBe(join(resources, 'node_modules'));
+    // node_modules is a real dir of junctions merging engine-local + shared pools
+    const nmStat = lstatSync(join(work, 'node_modules'));
+    expect(nmStat.isDirectory() && !nmStat.isSymbolicLink()).toBe(true);
+    // engine-local entry wins over the same package in the shared pool
+    expect(readlinkSync(join(work, 'node_modules', '@forgeax', 'engine-x'))).toBe(
+      join(resources, 'node_modules', '@forgeax', 'engine-x'),
+    );
+    // shared-only entries are linked through, scopes merged per member
+    expect(readlinkSync(join(work, 'node_modules', '@forgeax', 'wb-game-video'))).toBe(
+      join(shared, '@forgeax', 'wb-game-video'),
+    );
+    expect(readlinkSync(join(work, 'node_modules', 'three'))).toBe(join(shared, 'three'));
     expect(lstatSync(join(work, '.forgeax')).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(work, '.forgeax'))).toBe(join(projects, '.forgeax'));
     expect(existsSync(join(projects, '.forgeax', 'games'))).toBe(true);

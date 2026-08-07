@@ -5,6 +5,8 @@ import { join, resolve } from 'node:path';
 const ROOT = resolve(import.meta.dir, '..');
 const prepareSource = () => readFileSync(join(ROOT, 'scripts/prepare.ts'), 'utf8');
 const runSource = () => readFileSync(join(ROOT, 'scripts/run.ts'), 'utf8');
+const engineEntryFreshnessSource = () =>
+  readFileSync(join(ROOT, 'scripts/lib/engine-entry-freshness.ts'), 'utf8');
 
 describe('scripts/prepare.ts contracts', () => {
   it('does not run root bun install (lifecycle already did)', () => {
@@ -26,14 +28,29 @@ describe('scripts/prepare.ts contracts', () => {
     expect(prepare).toContain("'@forgeax/engine-assets-runtime...'");
     expect(run).toMatch(/const engineEntryPkgs = \[[\s\S]*'assets-runtime'/);
   });
+  it('covers every VFX package imported by editor config and runtime entry points', () => {
+    const prepare = prepareSource();
+    const run = runSource();
+    for (const packageName of ['vfx', 'vfx-compiler', 'vfx-render']) {
+      expect(prepare).toMatch(new RegExp(`engineEntryPkgs\\s*=\\s*\\[[\\s\\S]*['"]${packageName}['"]`));
+      expect(run).toMatch(new RegExp(`engineEntryPkgs\\s*=\\s*\\[[\\s\\S]*['"]${packageName}['"]`));
+      expect(prepare).toContain(`'@forgeax/engine-${packageName}...'`);
+    }
+  });
   it('requires declaration outputs for engine entry freshness gates', () => {
     const prepare = prepareSource();
     const run = runSource();
-    expect(prepare).toContain("const engineEntryOutputs = ['index.mjs', 'index.d.ts'];");
-    expect(prepare).toContain('Math.min(...outputs.map((output) => statSync(output).mtimeMs))');
-    expect(prepare).toContain("dist/index.d.ts");
-    expect(run).toContain("const engineEntryOutputs = ['index.mjs', 'index.d.ts'];");
-    expect(run).toContain('Math.min(...outputs.map((output) => statSync(output).mtimeMs))');
+    expect(prepare).toContain('ENGINE_ENTRY_OUTPUTS');
+    expect(prepare).toContain('isEngineEntryDistFresh(pdir, engineDeclarationSentinel)');
+    expect(run).toContain('ENGINE_ENTRY_OUTPUTS');
+    expect(run).toContain('isEngineEntryDistFresh(join(enginePkgDir, p), engineDeclarationSentinel)');
+    expect(engineEntryFreshnessSource()).toContain("['index.mjs', 'index.d.ts']");
+  });
+  it('records a freshness sentinel after successful incremental declaration builds', () => {
+    const src = prepareSource();
+    expect(src).toContain(".forgeax/sentinels/engine-declarations.built");
+    expect(src).toContain('if (declarationsBuilt)');
+    expect(src).toContain('writeFileSync(engineDeclarationSentinel');
   });
   it('repairs @forgeax links in both the worktree root and Studio roots', () => {
     const src = prepareSource();
@@ -70,6 +87,7 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).not.toMatch(/statSync\(nm\)\.mtimeMs\s*>\s*statSync\(join\(dir,\s*['"]package\.json['"]\)\)\.mtimeMs/);
     expect(src).toContain('if (bunInstallWithRetry(dir))');
+    expect(src).toContain("run('bun', installArgs, { cwd: dir, env: gitEnv })");
     expect(src).toContain("else fail(`${dir} dependency install failed`)");
     expect(src).not.toContain('dependency install failed — continuing');
     expect(src).not.toContain("['install', '--ignore-scripts']");
@@ -78,7 +96,7 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).toContain("join(pluginsDir, '_shared')");
     expect(src).toContain('dependency install failed');
-    expect(src).toContain('build failed');
+    expect(src).toContain('plugin build failed');
     expect(src).toContain('required engine artefacts missing after prepare');
     expect(src).toContain('required CLI artefact missing after prepare');
   });
@@ -86,6 +104,12 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).toContain("'npc'");
     expect(src).toContain("'@forgeax/engine-npc...'");
+  });
+  it('installs plugins before running bounded parallel builds', () => {
+    const src = prepareSource();
+    expect(src).toContain('FORGEAX_PLUGIN_BUILD_CONCURRENCY');
+    expect(src).toContain('mapConcurrent(builds, concurrency');
+    expect(src.indexOf('installDir(d)')).toBeLessThan(src.indexOf('mapConcurrent(builds, concurrency'));
   });
   it('does not bypass the asset-canvas plugin build', () => {
     const src = prepareSource();

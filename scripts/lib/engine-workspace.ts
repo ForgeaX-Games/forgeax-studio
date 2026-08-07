@@ -3,23 +3,28 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   rmSync,
   symlinkSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
+// Keep in sync with the play-runtime file list in scripts/build-desktop.ts:
+// any file vite.config.ts imports relatively must be materialized here too.
 const ENGINE_ROOT_FILES = [
   'index.html',
   'vite.config.ts',
   'package.json',
   'pack-catalog.ts',
   'tsconfig.json',
+  'rhi-debug-config.ts',
 ] as const;
 
 export function materializePackagedEngineWorkspace(
   engineResourceRoot: string,
   engineWorkRoot: string,
   projectRoot: string,
+  sharedDepsRoot: string = join(engineResourceRoot, '..', 'node_modules'),
 ): void {
   if (!existsSync(join(engineResourceRoot, 'vite.config.ts'))) {
     throw new Error(`packaged engine is missing ${join(engineResourceRoot, 'vite.config.ts')}`);
@@ -51,14 +56,54 @@ export function materializePackagedEngineWorkspace(
   });
 
   mkdirSync(join(projectRoot, '.forgeax', 'games'), { recursive: true });
-  replaceWithJunction(
-    join(engineWorkRoot, 'node_modules'),
+  // Merged node_modules view: the engine payload ships only engine-local
+  // packages (engine/editor source workspaces + pnpm-store runtime deps);
+  // generic third-party lives once in the shared pool staged beside it
+  // (resources/node_modules, consumed by the server sidecar). Junction every
+  // entry of both into the work root, engine-local winning on conflict, so
+  // resolution semantics match a single physical node_modules without
+  // duplicating ~5GB into the bundle.
+  mergeNodeModulesJunctions(join(engineWorkRoot, 'node_modules'), [
     join(engineResourceRoot, 'node_modules'),
-  );
+    sharedDepsRoot,
+  ]);
   replaceWithJunction(
     join(engineWorkRoot, '.forgeax'),
     join(projectRoot, '.forgeax'),
   );
+}
+
+/**
+ * Recreate `linkRoot` as a real directory of junctions merging `sourceRoots`
+ * in precedence order (first source wins per package). Scoped packages are
+ * merged per-member because the same scope (@forgeax) exists in multiple
+ * sources with disjoint members.
+ */
+function mergeNodeModulesJunctions(linkRoot: string, sourceRoots: string[]): void {
+  rmSync(linkRoot, { recursive: true, force: true });
+  mkdirSync(linkRoot, { recursive: true });
+  const linked = new Set<string>();
+  const link = (target: string, path: string): void => {
+    if (linked.has(path) || !existsSync(target)) return;
+    linked.add(path);
+    // Junction targets must be absolute: a relative target would be resolved
+    // against the LINK's directory and dangle.
+    symlinkSync(resolve(target), path, 'junction');
+  };
+  for (const source of sourceRoots) {
+    if (!existsSync(source)) continue;
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+      const sourceEntry = join(source, entry.name);
+      if (entry.name.startsWith('@')) {
+        mkdirSync(join(linkRoot, entry.name), { recursive: true });
+        for (const sub of readdirSync(sourceEntry, { withFileTypes: true })) {
+          link(join(sourceEntry, sub.name), join(linkRoot, entry.name, sub.name));
+        }
+      } else {
+        link(sourceEntry, join(linkRoot, entry.name));
+      }
+    }
+  }
 }
 
 function replaceWithJunction(path: string, target: string): void {

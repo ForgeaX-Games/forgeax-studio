@@ -44,9 +44,13 @@ describe('resolveCredentialConfig — branch table', () => {
       alwaysFalse,
     );
     expect(c.branch).toBe('pat-rewrite');
-    expect(c.gitConfig.GIT_CONFIG_COUNT).toBe('1');
+    expect(c.gitConfig.GIT_CONFIG_COUNT).toBe('3');
     expect(c.gitConfig.GIT_CONFIG_KEY_0).toBe('url.https://x-access-token:ghp_dummy_abc@github.com/.insteadOf');
     expect(c.gitConfig.GIT_CONFIG_VALUE_0).toBe('https://github.com/');
+    expect(c.gitConfig.GIT_CONFIG_KEY_1).toBe(c.gitConfig.GIT_CONFIG_KEY_0);
+    expect(c.gitConfig.GIT_CONFIG_VALUE_1).toBe('git@github.com:');
+    expect(c.gitConfig.GIT_CONFIG_KEY_2).toBe(c.gitConfig.GIT_CONFIG_KEY_0);
+    expect(c.gitConfig.GIT_CONFIG_VALUE_2).toBe('ssh://git@github.com/');
     expect(c.message).toMatch(/GH_TOKEN detected/);
   });
 
@@ -184,7 +188,7 @@ describe('E2E — git honours the resolved GIT_CONFIG_* rewrites', () => {
       alwaysFalse,
     );
     expect(cfg.branch).toBe('pat-rewrite');
-    expect(cfg.gitConfig.GIT_CONFIG_COUNT).toBe('1');
+    expect(cfg.gitConfig.GIT_CONFIG_COUNT).toBe('3');
     expect(cfg.gitConfig.GIT_CONFIG_KEY_0).toContain('insteadOf');
 
     // RUNTIME assertion #1: the SAME env-var protocol

@@ -16,8 +16,10 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ENGINE_ENTRY_OUTPUTS, isEngineEntryDistFresh } from './lib/engine-entry-freshness.ts';
 import { has, resolvePython, run } from './lib/sh.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
+import { mapConcurrent, positiveConcurrency, runCommandBuffered } from './lib/process-pool.ts';
 import { ensureWorkspacePackageLink } from './lib/workspace-package-link.ts';
 import { writeSetupSnapshot } from './lib/setup-version.ts';
 
@@ -111,6 +113,8 @@ Env:
   FORGEAX_SKIP_HARNESS=1       skip harness sync + skill install entirely (CI)
   FORGEAX_SKIP_BOOTSTRAP=1     skip toolchain provisioning (node/pnpm/rust) — CI
   FORGEAX_BOOTSTRAP_YES=1      auto-accept toolchain installs (non-interactive)
+  FORGEAX_PLUGIN_BUILD_CONCURRENCY=N
+                                parallel plugin builds (default 2; installs stay serial)
 `);
     process.exit(0);
   } else fail(`unknown arg: ${a}`);
@@ -438,18 +442,17 @@ const engineEntryPkgs = [
   'font',
   'assets-runtime',
   'npc',
+  'vfx',
+  'vfx-compiler',
+  'vfx-render',
   'vite-plugin-pack',
   'vite-plugin-shader',
 ];
-const engineEntryOutputs = ['index.mjs', 'index.d.ts'];
 const enginePkgDir = join(engineDir, 'packages');
+const engineDeclarationSentinel = join(ROOT, '.forgeax/sentinels/engine-declarations.built');
 const engineEntryDistsFresh = (): boolean => engineEntryPkgs.every((p) => {
   const pdir = join(enginePkgDir, p);
-  const outputs = engineEntryOutputs.map((name) => join(pdir, 'dist', name));
-  if (outputs.some((output) => !existsSync(output))) return false;
-  const oldestOutputMs = Math.min(...outputs.map((output) => statSync(output).mtimeMs));
-  if (existsSync(join(pdir, 'src')) && anyNewerThan(join(pdir, 'src'), oldestOutputMs)) return false;
-  return true;
+  return isEngineEntryDistFresh(pdir, engineDeclarationSentinel);
 });
 const skipEngineBuild =
   !force &&
@@ -468,6 +471,7 @@ if (skipEngineBuild) {
   const filters = [
     '@forgeax/engine-app...', '@forgeax/engine-runtime...', '@forgeax/engine-ecs...', '@forgeax/engine-types...',
     '@forgeax/engine-assets-runtime...',
+    '@forgeax/engine-vfx...', '@forgeax/engine-vfx-compiler...', '@forgeax/engine-vfx-render...',
     '@forgeax/engine-vite-plugin-shader...', '@forgeax/engine-vite-plugin-pack...', '@forgeax/engine-shader-compiler...',
     '@forgeax/engine-naga...', '@forgeax/engine-wgpu-wasm...', '@forgeax/engine-gltf...', '@forgeax/engine-image...',
     '@forgeax/engine-font...', '@forgeax/engine-pack...', '@forgeax/engine-project...',
@@ -510,16 +514,22 @@ if (skipEngineBuild) {
   // hits this because it always runs `tsc -b --clean && tsc -b` (fresh); the local
   // incremental path can. So on failure, clean the composite outputs and retry once
   // — mirroring CI's clean-then-build. If it still fails, the error is real; warn.
-  if (!run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir })) {
+  let declarationsBuilt = run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir });
+  if (!declarationsBuilt) {
     warnY('engine tsc -b failed — clearing incremental cache (tsc -b --clean) and retrying once…');
     run('pnpm', ['exec', 'tsc', '-b', '--clean'], { cwd: engineDir });
-    if (!run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir })) {
+    declarationsBuilt = run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir });
+    if (!declarationsBuilt) {
       warnY('engine tsc -b (d.ts generation) still failing after clean — typecheck will red out until fixed; runtime is unaffected.');
     } else {
       ok('engine .d.ts generated (tsc -b, after clean retry)');
     }
   } else {
     ok('engine .d.ts generated (tsc -b)');
+  }
+  if (declarationsBuilt) {
+    mkdirSync(dirname(engineDeclarationSentinel), { recursive: true });
+    writeFileSync(engineDeclarationSentinel, `${new Date().toISOString()}\n`);
   }
 }
 
@@ -604,8 +614,8 @@ const missingEngineArtifacts = [
   codecTranscoderMjs,
   codecEncoderWasm,
   codecEncoderMjs,
-  ...engineEntryPkgs.map((name) => join(enginePkgDir, name, 'dist/index.mjs')),
-  ...engineEntryPkgs.map((name) => join(enginePkgDir, name, 'dist/index.d.ts')),
+  ...engineEntryPkgs.flatMap((name) =>
+    ENGINE_ENTRY_OUTPUTS.map((output) => join(enginePkgDir, name, 'dist', output))),
 ].filter((path) => !existsSync(path));
 if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
   fail(`required engine artefacts missing after prepare:\n${missingEngineArtifacts.map((path) => `  - ${path}`).join('\n')}`);
@@ -678,6 +688,7 @@ if (skipPlugins) {
 } else {
   const pluginsDir = join(ROOT, 'packages/marketplace/extensions');
   const sharedPackagesDir = join(pluginsDir, '_shared');
+  const builds: Array<{ name: string; dir: string }> = [];
   for (const e of existsSync(sharedPackagesDir) ? readdirSync(sharedPackagesDir, { withFileTypes: true }) : []) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     const d = join(sharedPackagesDir, e.name);
@@ -701,12 +712,40 @@ if (skipPlugins) {
     const pkg = readJson(join(d, 'package.json')) as { scripts?: Record<string, string> } | null;
     if (pkg?.scripts?.build) {
       if (!force && pluginBuildFresh(d)) ok(`${e.name}  build cache fresh, skip`);
-      else {
-        console.log(`  → bun run build (${e.name})`);
-        if (run('bun', ['run', 'build'], { cwd: d })) ok(`${e.name}  built`);
-        else fail(`${e.name} build failed`);
-      }
+      else builds.push({ name: e.name, dir: d });
     }
+  }
+
+  if (builds.length > 0) {
+    const concurrency = positiveConcurrency(
+      process.env.FORGEAX_PLUGIN_BUILD_CONCURRENCY,
+      2,
+      'FORGEAX_PLUGIN_BUILD_CONCURRENCY',
+    );
+    console.log(`  → building ${builds.length} plugin(s), concurrency=${concurrency}`);
+    const results = await mapConcurrent(builds, concurrency, async (build) => ({
+      build,
+      result: await runCommandBuffered('bun', ['run', 'build'], {
+        cwd: build.dir,
+        env,
+      }),
+    }));
+    const failures: string[] = [];
+    for (const { build, result } of results) {
+      console.log(`::group::plugin build ${build.name}`);
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stdout.write(result.stderr);
+      if (result.error) console.error(result.error.message);
+      if (result.status === 0) ok(`${build.name}  built`);
+      else {
+        failures.push(build.name);
+        console.error(
+          `${build.name} build failed (${result.status === null ? 'spawn error' : `exit ${result.status}`})`,
+        );
+      }
+      console.log('::endgroup::');
+    }
+    if (failures.length > 0) fail(`plugin build failed: ${failures.join(', ')}`);
   }
 }
 
@@ -853,10 +892,10 @@ function bunInstallWithRetry(dir: string): boolean {
     existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'bun.lockb'))
       ? ['install', '--frozen-lockfile']
       : ['install'];
-  if (run('bun', installArgs, { cwd: dir })) return true;
+  if (run('bun', installArgs, { cwd: dir, env: gitEnv })) return true;
   warnY(`bun install failed in ${dir}; removing the incomplete node_modules and retrying`);
   rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
-  return run('bun', installArgs, { cwd: dir });
+  return run('bun', installArgs, { cwd: dir, env: gitEnv });
 }
 
 function installDir(dir: string): void {

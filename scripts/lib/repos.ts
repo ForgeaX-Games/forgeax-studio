@@ -35,7 +35,11 @@ export type RepoInfo = {
 
 export function gitOut(cwd: string, args: string[]): string {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
   } catch {
     return '';
   }
@@ -62,7 +66,9 @@ function submodulePathsOf(repoAbs: string): string[] {
 function inspectRepo(absPath: string, path: string, parent: string | null, pin: string): RepoInfo {
   const rawBranch = gitOut(absPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
   const branch = rawBranch === 'HEAD' ? 'DETACHED' : rawBranch || '?';
-  const upstream = gitOut(absPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  const upstream = branch === 'DETACHED'
+    ? ''
+    : gitOut(absPath, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
   const counts = upstream ? parseLeftRight(gitOut(absPath, ['rev-list', '--left-right', '--count', 'HEAD...@{u}'])) : { ahead: 0, behind: 0 };
   return {
     path,
@@ -100,6 +106,15 @@ export function orderLeafFirst(repos: RepoInfo[]): RepoInfo[] {
   return [...repos].sort((a, b) => depth(b.path) - depth(a.path));
 }
 
+/** Return dirty repositories at or below a repo path, including nested submodules. */
+export function dirtyReposUnder(repos: RepoInfo[], rootPath: string): RepoInfo[] {
+  const prefix = rootPath === '' ? '' : `${rootPath}/`;
+  return repos.filter((repo) => {
+    const inTree = rootPath === '' || repo.path === rootPath || repo.path.startsWith(prefix);
+    return inTree && repo.dirty;
+  });
+}
+
 /** Gate script names, in run order, for submodule / workspace packages. */
 export const GATE_ORDER = ['lint', 'lint:dep', 'lint:agnostic', 'test'] as const;
 /** Gate script names for the root repo. */
@@ -108,6 +123,7 @@ export const ROOT_GATE_ORDER = [
   'lint:boundaries',
   'test:layers',
   'test:boundaries',
+  'test:forgeax-build-game',
 ] as const;
 
 /** Pick the gates a repo actually defines, preserving run order. */

@@ -55,6 +55,26 @@ type StartPort = readonly [name: string, port: number];
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUN = process.execPath;
+
+// Floating checkouts are not visible to `git submodule foreach`, so their
+// lifecycle policy must live in one place. `clean: false` protects state that
+// may contain unpushed loop work; `clean: true` gives a runtime checkout the
+// same scrub semantics as a submodule.
+const FLOATING_REPOS = {
+  studioLoopState: { path: '.forgeax-harness', clean: false },
+  runtimeHarness: { path: 'packages/harness', clean: true },
+} as const;
+
+export function cleanableFloatingRepoPaths(): string[] {
+  return Object.values(FLOATING_REPOS)
+    .filter((repo) => repo.clean)
+    .map((repo) => repo.path);
+}
+
+export function floatingRepoExclusionArgs(): string[] {
+  return Object.values(FLOATING_REPOS).flatMap((repo) => ['-e', repo.path]);
+}
+
 function startPorts(): readonly StartPort[] {
   return sourceRuntimePorts(resolveStartupEnvironment({
     root: ROOT,
@@ -87,7 +107,6 @@ const BUILTIN_COMMANDS = new Set([
   // git update orchestration
   'update',
   'clean',
-  'ci',
 
   // dev lifecycle orchestration
   'start',
@@ -135,10 +154,11 @@ Common commands:
   setup                 Equivalent to bun install → prepare; records root + submodule setup pins
   update                Pull latest root code, sync submodules, and refresh harness if present
   sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
-  clean [--deep|-x]     Restore a fully-clean git status across root + all
-                        submodules. Discards uncommitted edits and untracked
-                        files, then syncs pins. Gitignored products are kept
-                        unless --deep. --dry-run/-n previews. Keeps .forgeax-harness.
+  clean [--deep|-x]     Restore a fully-clean git status across root,
+                        submodules, and managed floating checkouts. Discards
+                        uncommitted edits and untracked files, then syncs pins.
+                        Gitignored products are kept unless --deep. --dry-run/-n
+                        previews. Keeps .forgeax-harness.
                         Stops the Studio stack first; missing git-lfs uses pointer-only checkout.
   start [web|app|local] Start Studio and open the selected client (default: web)
                         local = 127.0.0.1-only on a third port band (:38920) — use
@@ -150,9 +170,8 @@ Common commands:
   status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)
   versions              Derived version manifest: pin / branch / nearest tag per submodule
   check [--all]         Run each dirty repo's own gates (lint/test); --all gates everything
-  ci                    Run the local Studio PR CI surface (root gates + editor CI)
   commit -m "msg"       Leaf-first multi-repo commit [path...] [--push] [--dry-run] [--no-verify]
-  bump <path...>        Advance a submodule (fetch+ff) and stage its new pin in root
+  bump <path...>        Advance a clean submodule (fetch+ff) and stage its new pin in root
   doctor [--fix]        Diagnose common local setup problems
   build plugins         Rebuild missing/broken marketplace plugin dists
   build desktop         Package the desktop app
@@ -163,7 +182,6 @@ Examples:
   bun fx start
   bun fx update
   bun fx start desktop debug
-  bun fx ci
   bun fx sync --dry-run
   bun fx commit -m "fix: adjust dock layout" --push
   bun fx status
@@ -332,7 +350,7 @@ function updateSubmodules(dryRun: boolean): UpdateResult[] {
 }
 
 function updateFloatingHarness(dryRun: boolean): UpdateResult {
-  const repo = 'packages/harness';
+  const repo = FLOATING_REPOS.runtimeHarness.path;
   const syncScript = script('sync-package-harness.mjs');
   if (!existsSync(join(ROOT, repo))) {
     return { repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' };
@@ -468,19 +486,20 @@ async function startWeb(runArgs: string[]): Promise<never> {
     console.log(
       `[start] ${result.reused ? 'reusing' : 'started'} ${startup.profile} launcher pid=${result.launcherPid || '?'}`,
     );
-    console.log(`[start] server   http://127.0.0.1:${startup.server.port}`);
-    console.log(`[start] UI       ${startup.interface.localOrigin}`);
-    console.log(`[start] engine   http://127.0.0.1:${startup.engine.port}`);
+    // Avoid clickable URLs here because open-web.ts owns browser launch.
+    // Terminal URL detection racing that launch creates duplicate Studio tabs.
+    console.log(`[start] server   :${startup.server.port}`);
+    console.log(`[start] UI       :${startup.interface.port}`);
+    console.log(`[start] engine   :${startup.engine.port}`);
   } catch (error) {
     console.error(`[start] ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
-  // Optional upstream sidecars: only advertise when actually listening so the
-  // IDE doesn't try to forward ports that were never bound this run.
+  // Optional upstream sidecars: only report services that actually listened.
   const narrativePort = 8900;
   const faceMaskPort = 18930;
-  if (portOwner(narrativePort)) console.log(`[start] narrative http://localhost:${narrativePort}`);
-  if (portOwner(faceMaskPort)) console.log(`[start] face-mask http://localhost:${faceMaskPort}`);
+  if (portOwner(narrativePort)) console.log(`[start] narrative :${narrativePort}`);
+  if (portOwner(faceMaskPort)) console.log(`[start] face-mask :${faceMaskPort}`);
 
   if (noOpen) process.exit(0);
   runScript(script('open-web.ts'), []);
@@ -659,54 +678,17 @@ function restartStack(args: string[]): never {
   startStudio(args);
 }
 
-// Local PR gate for the Studio superrepo. Run this PR's root contracts plus
-// its pinned editor leaf; unrelated dirty submodules belong to parallel PRs
-// and must not make this command non-deterministic. The install deliberately
-// keeps lifecycle scripts enabled: GitHub CI's frozen install runs prepare.ts,
-// which materializes submodules and builds the pinned editor engine dist before
-// the import-resolution tests. Using --ignore-scripts here made local CI stop
-// at a stale-dist preflight and miss the same test failure that CI reported.
-function ci(args: string[]): never {
-  if (args.length > 0) {
-    console.error('usage: bun fx ci');
-    process.exit(2);
-  }
-  const ciEnv = {
-    ...process.env,
-    // Match the non-interactive CI setup while still using the caller's
-    // already-installed toolchain. Harness installation is orthogonal to the
-    // Studio build and is explicitly skipped by .github/workflows/ci.yml.
-    FORGEAX_SKIP_HARNESS: '1',
-    FORGEAX_SKIP_BOOTSTRAP: '1',
-  };
-  const steps: readonly [string, string, string[], string][] = [
-    ['recursive submodule checkout', 'git', ['submodule', 'update', '--init', '--recursive'], ROOT],
-    ['root frozen Bun install + prepare', BUN, ['install', '--frozen-lockfile'], ROOT],
-    ['root repository gates', BUN, [script('repos.ts'), 'check', '.'], ROOT],
-    ['editor PR CI projection', BUN, ['scripts/fx.ts', 'ci'], join(ROOT, 'packages', 'editor')],
-  ];
-  for (const [name, command, argv, cwd] of steps) {
-    console.log(`\n[ci] ${name}`);
-    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env: ciEnv });
-    if ((result.status ?? 1) !== 0) {
-      console.error(`[ci] FAIL: ${name}`);
-      process.exit(result.status ?? 1);
-    }
-  }
-  console.log('\n[ci] PASS: local Studio PR CI');
-  process.exit(0);
-}
-
 // ── clean ──────────────────────────────────────────────────────────────────
 // Restore the working tree to a fully-clean `git status`, recursively across the
-// root repo AND every submodule (incl. the editor→engine nesting).
+// root repo, every submodule (incl. the editor→engine nesting), and every
+// cleanable floating checkout.
 //
 // Standard clean respects .gitignore everywhere, including submodules, so local
 // dependencies and build products survive. `--deep`/-x opts the entire workspace
 // into deleting ignored content too (wipe node_modules/dist/.env; re-run bun
 // install after). `--dry-run`/-n previews without deleting.
-// `.forgeax-harness` (floating loop-state clone, gitignored, own .git) is ALWAYS
-// preserved — it holds unpushed closed-loop state and must never be wiped here.
+// Floating checkout policy is defined by FLOATING_REPOS. `.forgeax-harness`
+// remains preserved because it holds unpushed closed-loop state.
 //
 // NOTE: this function discards ALL uncommitted work (git reset --hard). Commit
 // anything worth keeping — including edits to this very file — before running it.
@@ -746,7 +728,7 @@ function gitLfsAvailable(): boolean {
   return result.status === 0;
 }
 
-function isInitializedSubmodule(path: string): boolean {
+function isGitCheckout(path: string): boolean {
   const gitSentinel = resolve(ROOT, path, '.git');
   if (!existsSync(gitSentinel)) return false;
   try {
@@ -775,7 +757,7 @@ function pruneNonGitSubmodulePaths(dryRun: boolean, results: UpdateResult[]): vo
   for (const path of paths) {
     const absPath = resolve(ROOT, path);
     if (!existsSync(absPath)) continue;
-    if (isInitializedSubmodule(path)) continue;
+    if (isGitCheckout(path)) continue;
 
     if (dryRun) {
       console.log(`[dry-run] rm -rf ${path}`);
@@ -827,6 +809,46 @@ function activeGitProcessExists(): boolean {
   const result = spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', stdio: 'pipe' });
   // An unknown process list is not proof that the lock is stale.
   return result.status !== 0 || hasActiveGitProcess(String(result.stdout ?? ''));
+}
+
+function scrubFloatingRepo(path: string, cleanFlags: string, dryRun: boolean, gitPrefix: string[]): UpdateResult {
+  const repoType = 'floating-repo' as const;
+  if (!existsSync(resolve(ROOT, path))) {
+    return { repoType, repo: path, result: 'skipped', detail: 'checkout absent' };
+  }
+  if (!isGitCheckout(path)) {
+    return { repoType, repo: path, result: 'failed', detail: 'path exists but is not a git checkout' };
+  }
+
+  const resetArgs = [...gitPrefix, '-C', path, 'reset', '--hard', '-q'];
+  const cleanArgs = [...gitPrefix, '-C', path, 'clean', cleanFlags];
+  if (dryRun) {
+    console.log(`[dry-run] git ${resetArgs.join(' ')}`);
+    console.log(`[dry-run] git ${cleanArgs.join(' ')}`);
+    return {
+      repoType,
+      repo: path,
+      result: 'planned',
+      detail: `git ${resetArgs.join(' ')} && git ${cleanArgs.join(' ')}`,
+    };
+  }
+
+  console.log(`[clean] ${path}: git ${resetArgs.join(' ')}`);
+  const reset = spawnSync('git', resetArgs, { cwd: ROOT, stdio: 'inherit' });
+  if ((reset.status ?? 1) !== 0) {
+    return { repoType, repo: path, result: 'failed', detail: `git reset --hard exited ${reset.status ?? 1}` };
+  }
+
+  console.log(`[clean] ${path}: git ${cleanArgs.join(' ')}`);
+  const clean = spawnSync('git', cleanArgs, { cwd: ROOT, stdio: 'inherit' });
+  if ((clean.status ?? 1) !== 0) {
+    return { repoType, repo: path, result: 'failed', detail: `git clean exited ${clean.status ?? 1}` };
+  }
+  return { repoType, repo: path, result: 'ok', detail: 'floating checkout scrubbed' };
+}
+
+function scrubFloatingRepos(cleanFlags: string, dryRun: boolean, gitPrefix: string[]): UpdateResult[] {
+  return cleanableFloatingRepoPaths().map((path) => scrubFloatingRepo(path, cleanFlags, dryRun, gitPrefix));
 }
 
 function prepareRootIndexLock(dryRun: boolean, results: UpdateResult[]): void {
@@ -931,11 +953,14 @@ function clean(args: string[]): never {
   // 3. scrub every submodule working tree (tracked + untracked, recursively).
   //    Ignored content is included only when deep mode was explicitly requested.
   step('submodules', ['submodule', 'foreach', '--recursive', subForeachCmd], 'submodule trees scrubbed');
-  // 4. remove root untracked files (incl. orphaned former-submodule dirs like
-  //    packages/core after rename), preserving both floating harness checkouts.
-  step('.', ['clean', cleanFlags, '-e', '.forgeax-harness', '-e', 'packages/harness'], 'root untracked removed');
+  // 4. scrub managed floating checkouts separately; root git clean cannot
+  // descend into them because they are gitignored independent repositories.
+  results.push(...scrubFloatingRepos(cleanFlags, dryRun, gitPrefix));
+  // 5. remove root untracked files (incl. orphaned former-submodule dirs like
+  //    packages/core after rename), preserving all floating checkouts.
+  step('.', ['clean', cleanFlags, ...floatingRepoExclusionArgs()], 'root untracked removed');
 
-  // 5. Drop stale submodule.*.path config entries that no longer exist in
+  // 6. Drop stale submodule.*.path config entries that no longer exist in
   //    .gitmodules (rename leftovers keep local config otherwise).
   if (!dryRun) {
     dropStaleSubmoduleConfig();
@@ -1028,9 +1053,6 @@ function main(): void {
       break;
     case 'clean':
       clean(plan.args);
-      break;
-    case 'ci':
-      ci(plan.args);
       break;
     case 'restart':
       restartStack(plan.args);

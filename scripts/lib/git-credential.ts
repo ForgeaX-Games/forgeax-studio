@@ -29,7 +29,7 @@ export type SshProbe = () => boolean;
  * Contract:
  * - parent origin not HTTPS github.com → nothing to do (submodules resolve via SSH parent, no rewrite needed).
  * - HTTPS parent + SSH key working     → set `url.git@github.com:.insteadOf=https://github.com/`.
- * - HTTPS parent + no SSH + token      → set `url.https://x-access-token:$TOKEN@github.com/.insteadOf=https://github.com/`.
+ * - HTTPS parent + no SSH + token      → rewrite GitHub HTTPS and SSH forms to token-authenticated HTTPS.
  * - HTTPS parent + neither             → return a loud warning; the caller keeps going and lets git fail-fast.
  *
  * The returned `gitConfig` uses git's `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_N` /
@@ -59,14 +59,19 @@ export function resolveCredentialConfig(
 
   const tok = env.GH_TOKEN ?? env.GITHUB_TOKEN;
   if (tok) {
+    const tokenUrl = `url.https://x-access-token:${tok}@github.com/.insteadOf`;
     return {
       branch: 'pat-rewrite',
       gitConfig: {
-        GIT_CONFIG_COUNT: '1',
-        GIT_CONFIG_KEY_0: `url.https://x-access-token:${tok}@github.com/.insteadOf`,
+        GIT_CONFIG_COUNT: '3',
+        GIT_CONFIG_KEY_0: tokenUrl,
         GIT_CONFIG_VALUE_0: 'https://github.com/',
+        GIT_CONFIG_KEY_1: tokenUrl,
+        GIT_CONFIG_VALUE_1: 'git@github.com:',
+        GIT_CONFIG_KEY_2: tokenUrl,
+        GIT_CONFIG_VALUE_2: 'ssh://git@github.com/',
       },
-      message: 'GH_TOKEN detected — using PAT for private submodules',
+      message: 'GH_TOKEN detected — using PAT for private GitHub repositories',
     };
   }
 

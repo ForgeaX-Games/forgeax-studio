@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import {
   formatTable,
   GATE_ORDER,
+  dirtyReposUnder,
   orderLeafFirst,
   parseLeftRight,
   parseSubmodulePaths,
@@ -15,6 +16,7 @@ import {
   tagNudge,
   type RepoInfo,
 } from './lib/repos.ts';
+import { repositoryCommandHelp } from './lib/repos-help.ts';
 
 const repo = (over: Partial<RepoInfo>): RepoInfo => ({
   path: '',
@@ -31,6 +33,13 @@ const repo = (over: Partial<RepoInfo>): RepoInfo => ({
 });
 
 describe('scan helpers', () => {
+  it('keeps every repository command self-describing without a repository scan', () => {
+    for (const command of ['status', 'versions', 'sync', 'check', 'commit', 'bump']) {
+      expect(repositoryCommandHelp(command)).toContain(`Usage: bun fx ${command}`);
+    }
+    expect(repositoryCommandHelp('unknown')).toBeUndefined();
+  });
+
   it('runs boundary checker tests in CI', () => {
     const workflow = readFileSync(resolve(import.meta.dir, '../.github/workflows/boundaries.yml'), 'utf8');
     expect(workflow).toContain('run: bun run test:boundaries:fs');
@@ -60,6 +69,20 @@ describe('scan helpers', () => {
     ]);
   });
 
+  it('finds dirty nested repositories before a parent pin can be bumped', () => {
+    const repos = [
+      repo({ path: '', dirty: false }),
+      repo({ path: 'packages/marketplace', parent: '', dirty: true }),
+      repo({ path: 'packages/marketplace/extensions/node-editor', parent: 'packages/marketplace', dirty: true }),
+      repo({ path: 'packages/chat', parent: '', dirty: true }),
+    ];
+    expect(dirtyReposUnder(repos, 'packages/marketplace').map((r) => r.path)).toEqual([
+      'packages/marketplace',
+      'packages/marketplace/extensions/node-editor',
+    ]);
+    expect(dirtyReposUnder(repos, 'packages/chat').map((r) => r.path)).toEqual(['packages/chat']);
+  });
+
   it('picks only gates a repo defines, in run order', () => {
     expect(pickGates({ test: 'x', lint: 'y', irrelevant: 'z' }, GATE_ORDER)).toEqual(['lint', 'test']);
     expect(pickGates({
@@ -67,11 +90,13 @@ describe('scan helpers', () => {
       'lint:boundaries': 'b',
       'test:layers': 'c',
       'test:boundaries': 'd',
+      'test:forgeax-build-game': 'e',
     }, ROOT_GATE_ORDER)).toEqual([
       'lint:layers',
       'lint:boundaries',
       'test:layers',
       'test:boundaries',
+      'test:forgeax-build-game',
     ]);
     expect(pickGates(undefined, GATE_ORDER)).toEqual([]);
   });

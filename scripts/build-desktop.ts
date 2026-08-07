@@ -115,17 +115,26 @@ function run(cmd: string, args: string[], cwd: string = ROOT): void {
 /**
  * Portable replacement for `rsync -aL --exclude … src/ dest/` and `cp -RL`.
  * dereference:true follows symlinks (so vendored workspace pkgs land as real
- * files); `exclude` is matched by path-segment basename, anywhere in the tree
- * (mirrors rsync's non-anchored --exclude).
+ * files); `exclude` entries are matched by path-segment basename anywhere in
+ * the tree (mirrors rsync's non-anchored --exclude), and additionally support
+ * `*.ext` suffix globs (e.g. '*.tgz', '*.db-wal').
  */
 function copyTree(src: string, dest: string, exclude: Set<string> = new Set(['node_modules', '.git'])): void {
   if (!existsSync(src)) return;
+  const isExcluded = (base: string): boolean => {
+    for (const pat of exclude) {
+      if (pat.startsWith('*.')) {
+        if (base.endsWith(pat.slice(1))) return true;
+      } else if (base === pat) return true;
+    }
+    return false;
+  };
   try {
     cpSync(src, dest, {
       recursive: true,
       dereference: true,
       force: true,
-      filter: (s) => !exclude.has(basename(s)),
+      filter: (s) => !isExcluded(basename(s)),
     });
   } catch (e) {
     // Tolerate transient "file vanished" while copying a live tree (IDE/watcher
@@ -162,6 +171,12 @@ function indexWorkspace(): Map<string, string> {
 }
 const WS = indexWorkspace();
 const isEnginePkg = (name: string) => name.startsWith('@forgeax/engine-');
+
+// Build/test-only tooling that the hoisted install lands at the root but no
+// packaged runtime ever imports: bun transpiles the server's .ts natively and
+// vite ships its own transpiler, so tsc / type stubs / DOM test harnesses are
+// dead weight in the .app (~90MB).
+const THIRD_PARTY_DENYLIST = new Set(['typescript', '@types', 'happy-dom', 'vite-node']);
 
 // ── 0 hoisted root node_modules ─────────────────────────────────────────────
 // Step 3 copies $ROOT/node_modules/* into the bundle, which needs a HOISTED root
@@ -260,7 +275,11 @@ const engineVendored: string[] = [];
       if (existsSync(join(dir, 'pkg'))) copyTree(join(dir, 'pkg'), join(dest, 'pkg'), new Set());
       engineVendored.push(name);
     } else {
-      copyTree(dir, dest, new Set(['node_modules', '.git']));
+      // Workspace packages' vendor/ dirs hold *.tgz install-time archives the
+      // ROOT package.json file: deps point at. Their extracted contents already
+      // ship in the staged node_modules, so bundling the archives again would
+      // double-ship ~0.5GB (wb-game-video alone is a 549MB tgz).
+      copyTree(dir, dest, new Set(['node_modules', '.git', '*.tgz']));
       vendored.push(name);
     }
     const pj = readJson(join(dir, 'package.json')) ?? {};
@@ -333,7 +352,8 @@ const ENG_SRC = join(ROOT, 'packages/editor/packages/play-runtime');
 const ENG = join(RES, 'engine');
 rmrf(ENG);
 mkdirSync(join(ENG, 'node_modules/@forgeax'), { recursive: true });
-for (const f of ['index.html', 'vite.config.ts', 'package.json', 'pack-catalog.ts', 'tsconfig.json']) {
+// rhi-debug-config.ts is imported by vite.config.ts (standalone RHI-debug plugins).
+for (const f of ['index.html', 'vite.config.ts', 'package.json', 'pack-catalog.ts', 'tsconfig.json', 'rhi-debug-config.ts']) {
   if (existsSync(join(ENG_SRC, f))) cpSync(join(ENG_SRC, f), join(ENG, f));
 }
 // vite.config.ts imports editor-core via a RELATIVE path ('../core/src/asset-roots')
@@ -358,9 +378,11 @@ for (const f of ['index.html', 'vite.config.ts', 'package.json', 'pack-catalog.t
 copyTree(join(ENG_SRC, 'src'), join(ENG, 'src'), new Set());
 if (existsSync(join(ENG_SRC, 'public'))) copyTree(join(ENG_SRC, 'public'), join(ENG, 'public'), new Set());
 
-// Third-party from ROOT hoisted node_modules (NOT engine-src's — those are
-// symlinks under hoisted and would be skipped). Same skip rules as step 3.
-copyThirdParty(join(ENG, 'node_modules'));
+// Third-party deps are NOT copied here. Step 3 already stages the identical
+// hoisted closure at resources/node_modules; at launch the launcher merges
+// that shared pool into the engine workspace's node_modules as junctions
+// (scripts/lib/engine-workspace.ts), engine-local entries winning. Copying it
+// here as well duplicated ~5GB into every .app.
 
 // ALL engine workspace packages (flat, keyed by package.json name) — vite must
 // resolve the whole graph including transitive engine-* deps. Each minus its
@@ -398,11 +420,13 @@ for (const dep of ENGINE_RT_DEPS) {
   copyTree(src, dest, new Set(['node_modules']));
 }
 
-// Game template for "new game" scaffolding (lib.rs seeds it into the project root).
-if (existsSync(join(ENGINE_ROOT, 'templates/game-default'))) {
+// Minimal game template for "new game" scaffolding (lib.rs seeds it into the project root).
+// The engine's game-default is an explicit feature showcase, not a blank project.
+const gameTemplateSource = join(ROOT, 'packages/server/templates/game-minimal');
+if (existsSync(gameTemplateSource)) {
   const dst = join(RES, 'game-template');
   rmrf(dst);
-  copyTree(join(ENGINE_ROOT, 'templates/game-default'), dst, new Set(['node_modules', '.git']));
+  copyTree(gameTemplateSource, dst, new Set(['node_modules', '.git']));
 }
 
 // Shared game library (official examples). The .app can't link the git tree, so
@@ -471,7 +495,20 @@ function copyThirdParty(destNm: string): void {
   mkdirSync(destNm, { recursive: true });
   for (const entry of dirsOf(join(ROOT, 'node_modules'))) {
     const name = basename(entry);
-    if (name === '@forgeax' || name === '@forgeax-studio') continue;
+    if (THIRD_PARTY_DENYLIST.has(name)) continue;
+    if (name === '@forgeax' || name === '@forgeax-studio') {
+      // First-party scope: workspace packages are vendored by the BFS closure
+      // above, but the scope can also hold EXTERNAL registry packages (e.g.
+      // @forgeax/workbench-host, imported by orchestrator). Copy only those
+      // whose package name is not a workspace package — skipping the whole
+      // scope here ships a server that crashes on startup.
+      for (const sub of dirsOf(entry)) {
+        const pj = readJson(join(sub, 'package.json'));
+        if (pj?.name && WS.has(pj.name)) continue;
+        copyTree(sub, join(destNm, name, basename(sub)), new Set());
+      }
+      continue;
+    }
     if (name.startsWith('@')) {
       // scoped third-party: copy the scope dir wholesale (deref real pkgs)
       copyTree(entry, join(destNm, name), new Set());

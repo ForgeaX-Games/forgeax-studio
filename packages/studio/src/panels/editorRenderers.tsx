@@ -10,15 +10,14 @@
 // in-process React components, NOT a /editor iframe. Studio's vite.config.ts
 // head comment locks this in ("editor viewport + ep:* panels are now in-process
 // React components ... not a /editor iframe"); this file is the concrete wiring.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useShellStore } from '@forgeax/interface/store';
 import { useTranslation } from '@forgeax/interface/i18n';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
-import { PulseFeeds } from '@forgeax/interface/components/StatusBar/feeds/PulseFeeds';
-import { VersionBadge } from '@forgeax/interface/components/StatusBar/VersionBadge';
 import {
   createEditorPanelContributionsExtension,
+  createEditorPageExtension,
   installInterfaceBridge,
   setContextMenuRenderer,
   panelBridge,
@@ -41,11 +40,12 @@ import { ChatPanel } from '@forgeax/chat';
 // stays dashboard/settings-agnostic; studio injects the overlay bodies here via
 // the overlays.Dashboard / overlays.Settings slots, exactly like chat/edit/preview.
 import { Dashboard } from '@forgeax/dashboard';
-import { SettingsPanel, SettingsSectionsRegister } from '@forgeax/settings';
+import { SettingsPanel, SettingsSectionsRegister, useSettingsSection } from '@forgeax/settings';
+import { SlidersHorizontal } from 'lucide-react';
 // studio→workbench is a legal aggregation edge. interface stays workbench-UI
 // agnostic (the plugin-host runtime stays L1); studio injects the workbench
 // main-area body here via slots.MainAreaBody + detached.AgentsBrowser/FilesBrowser.
-import { WorkbenchMode, WorkbenchModeDefault, AgentsMainArea, AgentsPanel, WorkbenchAgentPicker } from '@forgeax/ai-workbench';
+import { WorkbenchMode, WorkbenchModeDefault, AgentsMainArea, AgentsPanel, WorkbenchAgentPicker, activateFile } from '@forgeax/ai-workbench';
 // studio→marketplace is a legal edge at this aggregation layer. interface holds
 // no specific plugin id; studio derives the inline panel map from manifests
 // (ADR 0025 M4) — see deriveInlineWorkbenchPanels below.
@@ -62,15 +62,23 @@ import { createPanelsEditorExtension } from '@forgeax/interface/core/extensions/
 // D4 第一批(ADR 0025 / ADR 0027,双基座 Day 9):dashboard/settings 不再走
 // 工厂注入,改由统一 manifest(forgeax-extension.json 语法)经 v9 适配器装载。
 import { appExtensionFromManifest } from '@forgeax/interface/core/app-shell/manifest-adapter';
-import { createChromeStatusFeedsExtension } from '@forgeax/interface/core/extensions/chrome-status-feeds';
 import { createDetachedAgentsBrowserExtension } from '@forgeax/interface/core/extensions/detached-agents-browser';
 import { createDetachedFilesBrowserExtension } from '@forgeax/interface/core/extensions/detached-files-browser';
 import { createPanelsWorkbenchInlineExtension } from '@forgeax/interface/core/extensions/panels-workbench-plugins';
+import type {
+  ActivityRegistration,
+  PanelRenderContext,
+  PageTypeRegistration,
+  PanelTypeRegistration,
+  ResourceEditorRegistration,
+} from '@forgeax/interface/core/page-platform';
 import { createEditorTransportClient } from '../editor-product/client';
 import {
-  type RuntimeAvailability,
-  type TransportResponse,
-} from '@forgeax/editor/product';
+  connectStudioEditorTransport,
+  studioEditorTransportRole,
+} from '../editor-product/carrier';
+import { type TransportResponse } from '@forgeax/editor/product';
+import { installEditRealmPageLifecycle } from './editRealmPageLifecycle';
 
 export interface ProjectionTransientState {
   readonly panelId: string;
@@ -92,7 +100,7 @@ export interface EditorRenderFacts {
   readonly document: { readonly revision: string | null; readonly content: unknown };
   readonly assets: { readonly revision: string | null; readonly importedSubjectIds: readonly string[] };
   readonly run: { readonly id: string | null; readonly status: string | null; readonly revision: string | null } | null;
-  readonly runtime: RuntimeAvailability | null;
+  readonly gatewayOperations: readonly string[];
   readonly errors: readonly { readonly code: string; readonly recoveryActions: readonly string[] }[];
   readonly transient: ProjectionTransientState | null;
 }
@@ -113,10 +121,10 @@ export const EDIT_REALM_READ_WRITE_CLASSIFICATION = Object.freeze({
     category: 'canonical-fact',
     evidence: 'run.list is projected only when the typed response contains a run record',
   }),
-  runtimeAvailability: Object.freeze({
-    owner: 'Editor product GameRuntimePort',
+  gatewayOperations: Object.freeze({
+    owner: 'Editor Gateway capability registry',
     category: 'canonical-fact',
-    evidence: 'discover runtime availability is read and no runtime operation is dispatched on panel open',
+    evidence: 'discover publishes the registered Gateway operations; no runtime alias is projected',
   }),
   activeSlug: Object.freeze({
     owner: 'Studio workbench active-game route',
@@ -167,11 +175,19 @@ function projectionErrors(response: TransportResponse): { readonly code: string;
 
 /** Derive the panel read model from public transport responses and UI transient input. */
 export function projectEditorRenderFacts(input: EditorRenderFactsInput): EditorRenderFacts {
-  const document = projectionRecord(projectionResult(input.document)) ?? {};
+  const documentEnvelope = projectionRecord(projectionResult(input.document)) ?? {};
+  const document = projectionRecord(documentEnvelope.document) ?? documentEnvelope;
   const assets = projectionRecord(projectionResult(input.assets)) ?? {};
   const runValue = input.run === undefined ? undefined : projectionRecord(projectionResult(input.run));
   const discovery = projectionRecord(projectionResult(input.discover)) ?? {};
-  const runtime = projectionRecord(discovery.runtime) as RuntimeAvailability | undefined;
+  const capabilityManifest = projectionRecord(discovery.capabilityManifest);
+  const capabilities = Array.isArray(capabilityManifest?.capabilities) ? capabilityManifest.capabilities : [];
+  const gatewayOperations = capabilities.flatMap((entry) => {
+    const value = projectionRecord(entry);
+    if (typeof value?.verb === 'string') return [value.verb];
+    if (typeof value?.id === 'string' && value.id.startsWith('editor.')) return [value.id.slice('editor.'.length)];
+    return [];
+  });
   const subjects = Array.isArray(assets.subjects) ? assets.subjects : [];
   const importedSubjectIds = subjects.flatMap((subject) => {
     const value = projectionRecord(subject)?.id;
@@ -194,62 +210,20 @@ export function projectEditorRenderFacts(input: EditorRenderFactsInput): EditorR
       status: typeof runValue.status === 'string' ? runValue.status : null,
       revision: typeof runValue.revision === 'string' ? runValue.revision : null,
     }),
-    runtime: runtime === undefined ? null : runtime,
+    gatewayOperations: Object.freeze(gatewayOperations),
     errors: Object.freeze(errors),
     transient: input.transient === undefined ? null : Object.freeze({ ...input.transient }),
   });
 }
 
-// Resolve the active game slug: pinned slug first, else poll the workbench
-// active-slug endpoint (carried over verbatim from the interface EditMode/
-// PreviewMode mount points that used to live in interface).
-//
-// The resolved slug is then VALIDATED against the live game list before we
-// hand it to the engine: after a "重置 GAMES" (or any out-of-band deletion) the
-// pinned/auto slug can momentarily name a game that no longer exists on disk.
-// Booting the in-process engine against a 404'd game (or mounting <PlaySurface>
-// on one) was the blank/frozen viewport that the React error boundary can't
-// catch. When the resolved slug isn't in the list we drop to the first
-// available game, or null → the "Loading..." placeholder — never a dead mount.
+// Normal Studio pages derive from the server-authoritative active game. A
+// managed runtime carrier has a separate, immutable scope proven by its runtime
+// identity; an arbitrary `?gameId=` is never a page-local active-game override.
 function useActiveSlug(): string | null {
-  const pinnedSlug = useShellStore((s) => s.pinnedSlug);
-  const carrierSlug = new URLSearchParams(window.location.search).get('gameId');
-  const [autoSlug, setAutoSlug] = useState<string | null>(null);
-  const [liveSlugs, setLiveSlugs] = useState<string[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const r = await fetch('/api/workbench/active-slug');
-        const j = (await r.json()) as { activeSlug?: string | null };
-        if (!cancelled) setAutoSlug(j.activeSlug ?? null);
-      } catch { /* keep last known slug */ }
-      try {
-        const r = await fetch('/api/workbench/games');
-        const j = (await r.json()) as { games?: Array<{ slug: string }> };
-        if (!cancelled) setLiveSlugs((j.games ?? []).map((g) => g.slug));
-      } catch { /* keep last known list */ }
-    };
-    void load();
-    const t = setInterval(load, 5000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, []);
-
-  const resolved = carrierSlug ?? pinnedSlug ?? autoSlug;
-  // Until the first game-list fetch lands, trust the resolved slug (avoids a
-  // spurious null flash on boot). Once we know the list, gate on membership.
-  if (liveSlugs === null) return resolved;
-  if (resolved && liveSlugs.includes(resolved)) return resolved;
-  // `resolved` isn't in the live list. Before falling back, trust autoSlug:
-  // /api/workbench/active-slug resolves it via getActiveGame, which only returns
-  // a slug whose .forgeax/games/<slug>/ dir actually exists — so it's a real,
-  // mountable game even when the /games list is momentarily incomplete (e.g. a
-  // dangling symlink truncated the enumeration). Without this, a single bad
-  // games-list response would silently switch the preview to games[0] (the
-  // "wrong game in the viewport" bug). Only drop to games[0]/null when even the
-  // server has no authoritative active game (fresh workspace / everything deleted).
-  if (autoSlug) return autoSlug;
-  return liveSlugs[0] ?? null;
+  const activeGameSlug = useShellStore((s) => s.activeGameSlug);
+  const params = new URLSearchParams(window.location.search);
+  const managedCarrier = params.has('runtimeId') && params.has('ownershipChallenge');
+  return managedCarrier ? (params.get('gameId') ?? activeGameSlug) : activeGameSlug;
 }
 
 // Studio owns its on-disk game layout (`.forgeax/games/<slug>`, matching the
@@ -292,6 +266,7 @@ function EditorCanonicalProjection({ slug }: { readonly slug: string | null }): 
     if (!slug) return;
     let cancelled = false;
     const client = createEditorTransportClient({
+      allowCarrierProvisioning: false,
       scope: `game:${slug}`,
       actor: { id: 'studio-ui', kind: 'human' },
       sessionId: `studio-ui:${slug}`,
@@ -333,9 +308,7 @@ function EditorCanonicalProjection({ slug }: { readonly slug: string | null }): 
   const status = facts?.status ?? 'loading';
   const recoveryActions = facts?.errors.flatMap((error) => error.recoveryActions) ?? [];
   const importedAssets = facts?.assets.importedSubjectIds.join(',') || 'none';
-  const runtimeAvailability = facts?.runtime === null || facts?.runtime === undefined
-    ? 'unavailable'
-    : facts.runtime.blocking ? 'blocking' : 'available';
+  const playAvailability = facts?.gatewayOperations.includes('play') ? 'available' : 'unavailable';
   const documentContent = typeof facts?.document.content === 'string' ? facts.document.content : 'unavailable';
   const documentRevision = facts?.document.revision ?? 'unavailable';
   const assetRevision = facts?.assets.revision ?? 'unavailable';
@@ -353,7 +326,7 @@ function EditorCanonicalProjection({ slug }: { readonly slug: string | null }): 
       data-asset-revision={assetRevision}
       data-imported-assets={importedAssets}
       data-run-status={runStatus}
-      data-runtime-availability={runtimeAvailability}
+      data-gateway-play-availability={playAvailability}
       data-recovery-actions={recoveryActions.join(',') || (loadError === null ? 'none' : 'request.retry')}
       style={{ display: 'none' }}
     />
@@ -370,32 +343,19 @@ function readViewportDisplay(): ViewportDisplay | null {
   return display === 'scene' || display === 'game' ? display : null;
 }
 
-type EditorViewportRuntimeBridge = {
-  readonly playSimulation?: () => void | Promise<void>;
-  readonly stopSimulation?: () => void;
-  readonly setViewportQuadrant?: (patch: { readonly display: ViewportDisplay }) => void;
-};
-
-function editorViewportRuntimeBridge(): EditorViewportRuntimeBridge | null {
-  const editor = (window as unknown as { __forgeax_editor?: EditorViewportRuntimeBridge }).__forgeax_editor;
-  return editor ?? null;
-}
-
 function dispatchEditorViewportRuntime(operation: 'play' | 'stop' | 'show-scene'): void {
-  const editor = editorViewportRuntimeBridge();
-  if (editor === null) return;
   if (operation === 'play') {
-    void editor.playSimulation?.();
+    gateway.dispatch({ kind: 'play' }, 'human');
   } else if (operation === 'stop') {
-    editor.stopSimulation?.();
+    gateway.dispatch({ kind: 'stop' }, 'human');
   } else {
-    editor.setViewportQuadrant?.({ display: 'scene' });
+    gateway.dispatch({ kind: 'setDisplay', display: 'scene' }, 'human');
   }
 }
 
 // EditRealm — the in-process editor viewport surface (single realm). It owns
 // the studio-only multi-game orchestration:
-//   - resolve the active slug (useActiveSlug: pinnedSlug + server active-slug,
+//   - resolve the active slug (managed carrier scope or server active-game projection,
 //     validated against the live game list),
 //   - pass the active game to ViewportComponent as props (NOT `?scene=`/
 //     `?gameRoot=` URL params — the single realm removed the editor iframe those
@@ -408,6 +368,38 @@ function dispatchEditorViewportRuntime(operation: 'play' | 'stop' | 'show-scene'
 // but is a no-op — the in-process component always renders the full surface.
 function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   const slug = useActiveSlug();
+  const transportRole = studioEditorTransportRole(window.location.search);
+  const [carrierReadySlug, setCarrierReadySlug] = useState<string | null>(null);
+
+  // A reload creates a new in-process Editor and therefore a new WebGPU device.
+  // Dispose the old realm synchronously during the navigation so Chromium never
+  // has to overlap both devices. BFCache navigation is deliberately excluded:
+  // its React tree will resume without remounting this component.
+  useEffect(() => installEditRealmPageLifecycle(window, resetEditRealm), []);
+
+  // Register this same in-process Editor realm as the typed AI/server carrier.
+  // The page owns Gateway and the live World; the socket only carries the
+  // versioned Editor transport and is torn down with the realm. The canonical
+  // projection is mounted only after the hello/ready handshake; child passive
+  // effects run before parent effects, so mounting it eagerly would issue four
+  // requests before this carrier exists (eight under development StrictMode).
+  useEffect(() => {
+    if (!slug) {
+      setCarrierReadySlug(null);
+      return undefined;
+    }
+    let active = true;
+    setCarrierReadySlug(null);
+    const carrier = connectStudioEditorTransport(slug, { role: transportRole });
+    void carrier.ready.then(() => {
+      if (active) setCarrierReadySlug(slug);
+    });
+    return () => {
+      active = false;
+      carrier.dispose();
+    };
+  }, [slug, transportRole]);
+
   // `bootedSlug` is the game the currently-mounted engine booted. null until
   // the first game mounts. When slug !== bootedSlug we do a teardown+remount.
   const [bootedSlug, setBootedSlug] = useState<string | null>(null);
@@ -420,8 +412,9 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
    *   Editor realm for the active game;
    * - UI/session transient: timers, pendingAssetReload, display restoration,
    *   panelBridge HMR notifications, and gateway display mode stay local;
-   * - legacy writer: gateway and panelBridge remain compatibility surfaces until
-   *   M5 removes their executable relay, and this milestone adds no new writer.
+   * - legacy writer: gateway and panelBridge remain the in-process UI
+   *   compatibility surfaces; AI/server access uses the typed carrier above and
+   *   adds no executable eval relay.
    */
   const [viewportEpoch, setViewportEpoch] = useState(0);
   const playRestartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -563,7 +556,7 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   const mounted = !!slug && bootedSlug === slug;
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#16161a' }}>
-      <EditorCanonicalProjection slug={slug} />
+      <EditorCanonicalProjection slug={carrierReadySlug === slug ? slug : null} />
       {mounted && (
         // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
         // above guarantees the latch is clear so ViewportComponent actually re-boots.
@@ -723,18 +716,69 @@ function SettingsInjection(): ReactNode {
   return (
     <>
       <SettingsSectionsRegister />
+      <EditorSettingsSectionRegister />
       <SettingsPanel />
     </>
   );
 }
 
-function StatusFeedsInjection(): ReactNode {
+// ── Editor section — projects the editor's dockable Settings panel into the
+// studio settings overlay (interim OOS-11 projection). The panel itself
+// (viewport preferences) is owned by @forgeax/editor-panels and stays the
+// SSOT; here it is only embedded as a section body.
+//
+// Loaded dynamically with a graceful fallback: studio consumes the editor
+// through the packages/editor submodule, which can lag the panel's
+// introduction — an old submodule renders an upgrade hint instead of
+// breaking the overlay (a static import of the missing export would fail
+// the studio build).
+function EditorSettingsBody(): ReactNode {
+  const [Panel, setPanel] = useState<ComponentType | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void import('@forgeax/editor/panels')
+      .then((mod) => {
+        if (cancelled) return;
+        const C = (mod as unknown as { SettingsPanel?: ComponentType }).SettingsPanel;
+        if (C) setPanel(() => C);
+        else setUnavailable(true);
+      })
+      .catch(() => { if (!cancelled) setUnavailable(true); });
+    return () => { cancelled = true; };
+  }, []);
+  if (!Panel) {
+    return (
+      <div className="settings-info">
+        <div className="dim">
+          {unavailable
+            ? 'This build embeds an editor without the Settings panel — sync the packages/editor submodule to a build that ships it.'
+            : 'Loading…'}
+        </div>
+      </div>
+    );
+  }
+  // The panel themes off edit-runtime tokens (theme.css :root); pin surface
+  // tokens on the wrapper so it also reads correctly if it ever mounts
+  // before the editor runtime stylesheet is in the document.
   return (
-    <>
-      <PulseFeeds />
-      <VersionBadge />
-    </>
+    <div style={{ background: 'var(--bg-1)', color: 'var(--text)' }}>
+      <Panel />
+    </div>
   );
+}
+
+function EditorSettingsSectionRegister(): ReactNode {
+  useSettingsSection({
+    id: 'editor',
+    label: 'Editor',
+    description: 'Viewport interaction, flight and camera preferences.',
+    priority: 68,
+    group: 'system',
+    icon: SlidersHorizontal,
+    node: <EditorSettingsBody />,
+  });
+  return null;
 }
 
 function WorkbenchAgents(): ReactNode {
@@ -744,6 +788,121 @@ function WorkbenchAgents(): ReactNode {
 function WorkbenchFiles(): ReactNode {
   return <WorkbenchModeDefault showGalleryWhenEmpty={false} />;
 }
+
+function FileResourcePanel({ pageKey }: Pick<PanelRenderContext, 'pageKey'>): ReactNode {
+  useEffect(() => {
+    if (pageKey.cardinality === 'resource') activateFile(pageKey.resourceId);
+  }, [pageKey]);
+  return <WorkbenchFiles />;
+}
+
+/** Dockview requires the serialized root to be a branch, even when a Page owns
+ * exactly one placement. Keep that transport detail in one factory so built-in
+ * and manifest-derived singleton Pages cannot drift into invalid leaf roots. */
+export function singlePanelPageLayout(
+  placementId: string,
+  title: string,
+): PageTypeRegistration['layout'] {
+  const groupId = `page-group:${placementId}`;
+  return {
+    grid: {
+      height: 800,
+      width: 1200,
+      orientation: 'HORIZONTAL',
+      root: {
+        type: 'branch',
+        size: 800,
+        data: [{
+          type: 'leaf',
+          size: 1200,
+          data: { views: [placementId], activeView: placementId, id: groupId },
+        }],
+      },
+    },
+    panels: { [placementId]: { id: placementId, contentComponent: placementId, title } },
+    activeGroup: groupId,
+  } as PageTypeRegistration['layout'];
+}
+
+const studioAgentsPageExtension: AppExtension = {
+  id: '@forgeax/studio-agents',
+  version: '2.0.0',
+  requires: ['pages'],
+  contributes: {
+    panelTypes: [{
+      id: '@forgeax/studio-agents#panel/main' as PanelTypeRegistration['id'],
+      runtime: { kind: 'inline', render: () => <AgentsMainArea /> },
+    }],
+    pages: [{
+      id: '@forgeax/studio-agents#page/main' as PageTypeRegistration['id'],
+      title: 'Agents',
+      cardinality: 'singleton',
+      restorePolicy: 'project',
+      layoutVersion: 1,
+      panels: [{
+        id: 'agents-page',
+        panelTypeId: '@forgeax/studio-agents#panel/main' as PanelTypeRegistration['id'],
+      }],
+      layout: singlePanelPageLayout('agents-page', 'Agents'),
+    }],
+    activities: [{
+      id: '@forgeax/studio-agents#activity/launcher' as ActivityRegistration['id'],
+      title: 'Agents',
+      category: 'builtin',
+      order: 10,
+      pageTypeId: '@forgeax/studio-agents#page/main' as PageTypeRegistration['id'],
+    }],
+  },
+};
+
+const filesExplorerPanelExtension: AppExtension = {
+  id: '@forgeax/files',
+  version: '1.0.0',
+  requires: ['pages'],
+  contributes: {
+    panelTypes: [
+      {
+        id: '@forgeax/files#panel/explorer' as PanelTypeRegistration['id'],
+        runtime: { kind: 'inline', render: () => <WorkbenchFiles /> },
+      },
+      {
+        id: '@forgeax/files#panel/preview' as PanelTypeRegistration['id'],
+        runtime: { kind: 'inline', render: (context) => <FileResourcePanel pageKey={context.pageKey} /> },
+      },
+    ],
+    pages: [{
+      id: '@forgeax/files#page/explorer' as PageTypeRegistration['id'],
+      title: 'Files',
+      cardinality: 'singleton',
+      restorePolicy: 'project',
+      layoutVersion: 1,
+      panels: [{ id: 'files-explorer', panelTypeId: '@forgeax/files#panel/explorer' as PanelTypeRegistration['id'] }],
+      layout: singlePanelPageLayout('files-explorer', 'Files'),
+    }, {
+      id: '@forgeax/files#page/preview' as PageTypeRegistration['id'],
+      title: 'File',
+      cardinality: 'resource',
+      restorePolicy: 'project',
+      layoutVersion: 1,
+      panels: [{ id: 'file-preview', panelTypeId: '@forgeax/files#panel/preview' as PanelTypeRegistration['id'] }],
+      layout: singlePanelPageLayout('file-preview', 'File'),
+    }],
+    activities: [{
+      id: '@forgeax/files#activity/launcher' as ActivityRegistration['id'],
+      title: 'Files',
+      category: 'builtin',
+      order: 20,
+      pageTypeId: '@forgeax/files#page/explorer' as PageTypeRegistration['id'],
+    }],
+    resourceEditors: [{
+      id: '@forgeax/files#resource-editor/default' as ResourceEditorRegistration['id'],
+      selector: { schemes: ['forgeax-file'] },
+      pageTypeId: '@forgeax/files#page/preview' as PageTypeRegistration['id'],
+      priority: 'default',
+      sourceLayer: 'builtin',
+    }],
+  },
+};
 
 /** ADR 0025 M4 — derive the inline workbench panel map from manifests instead
  *  of a hand-written import table. Rule (mirrors WorkbenchExtensionHost's
@@ -829,6 +988,7 @@ export const studioExtensions: readonly AppExtension[] = [
     surfaces: { SceneEditor: EditRealm },
   }),
   createEditorPanelContributionsExtension(),
+  createEditorPageExtension((id) => <EditorPanelBody id={id} />),
   appExtensionFromManifest({
     manifest: {
       schemaVersion: 1,
@@ -881,9 +1041,10 @@ export const studioExtensions: readonly AppExtension[] = [
     },
     components: { Panel: AgentsPanel },
   }),
-  createChromeStatusFeedsExtension(StatusFeedsInjection),
   createDetachedAgentsBrowserExtension(WorkbenchAgents),
   createDetachedFilesBrowserExtension(WorkbenchFiles),
+  studioAgentsPageExtension,
+  filesExplorerPanelExtension,
   // MainArea body when app mode is 'ai' (plugin-launcher / catalog view);
   // sidebar agents list + workbench corner agent picker are ai-workbench UI —
   // interface (L1) only owns the slots.

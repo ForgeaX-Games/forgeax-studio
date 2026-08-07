@@ -32,6 +32,7 @@ import {
   subscribeDaemonTick,
   fetchSessionList,
   createSession,
+  ensureSession,
   deleteSession,
   emitForgeaXMessage,
   listSessionAgents,
@@ -63,6 +64,7 @@ import { registerKeyboardRouterDeps, type KeyboardRouterDeps } from '@forgeax/in
 // (studio has no DeleteGuardDialog).
 import { buildKeyboardRouterDeps } from '@forgeax/editor/keyboard-router-deps';
 import { studioExtensions } from './panels/editorRenderers';
+import { subscribeEditorFactsPublisher } from './editor-product/editor-facts-publisher';
 // ADR 0025 M1: both mount paths (full shell + detached window) assemble the
 // shell through the AppHost extension channel. Module-scope const so <App>'s
 // overrides prop is referentially stable across re-renders.
@@ -80,6 +82,7 @@ initAegis();
 configureSessionClient({
   fetchSessionList,
   createSession,
+  ensureSession,
   deleteSession,
   emitForgeaXMessage,
   listSessionAgents,
@@ -88,8 +91,8 @@ configureSessionClient({
   onSessionEvent,
 });
 
-// Inject the workbench REST implementation before bootStore() — store.switchGame
-// triggers activateGame() via the workbench client, so it must be wired first.
+// Inject the workbench client before boot so every page observes the same
+// server-authoritative active-game resource.
 configureWorkbenchClient(createRestWorkbenchClient());
 
 const rootEl = document.getElementById('root');
@@ -105,10 +108,8 @@ if (detachedSurface) {
   // Boot splash is keyed off window.__forgeaxBoot; tell it we're done so the
   // splash fades out for the lightweight detached view.
   (window as unknown as { __forgeaxBoot?: { done?: () => void } }).__forgeaxBoot?.done?.();
-  // Detached windows still need the store + live streams: a popped-out plugin
-  // routes chat.post → store.sendMessage into the active session and reads
-  // pinnedSlug for per-game data. Each OS window is its own client; they stay
-  // consistent via the shared backend (/api · /ws). We deliberately skip the
+  // Detached windows still need the store + live streams. Each OS window is a
+  // projection of the shared backend authority. We deliberately skip the
   // window-close→redock listener here (that's the main window's job).
   bootStore();
   // Detached windows assemble the same extension set as the full shell, then
@@ -130,15 +131,14 @@ if (detachedSurface) {
     );
   });
 } else {
-  // Restore UI layout prefs from server snapshot (export/import migration path).
-  void syncBrowserPrefsFromServer().finally(() => {
-    // Re-init locale: the restored snapshot may carry an explicit language choice
-    // that should win over the first-paint system detection above.
+  void (async () => {
+    try { await syncBrowserPrefsFromServer(); } catch { /* local prefs remain usable */ }
     initI18n();
     startBrowserPrefsSync();
-  });
-  bootStageEntry();
-  bootFullShell(rootEl);
+    try { await useShellStore.getState().initActiveGame(); } catch { /* initSessions retries */ }
+    bootStageEntry();
+    bootFullShell(rootEl);
+  })();
 }
 
 // Shared store/stream bootstrap. Order matters: subscribeSessionStream must
@@ -160,6 +160,10 @@ function bootStore() {
   subscribeFileActivityStream();
   subscribePermissionStream(); // 权限审批卡订阅(此前 studio bootStore 漏挂 → 默认内核 ask 卡从不渲染)
   subscribePerceptionStream();
+  // Footer Events/Diagnostics data plane: studio polls the editor transport and
+  // republishes gateway runs + engine/scene/asset facts onto the bus (retain).
+  // App-lifetime; interface footer panels subscribe via useGatewayRuns/useEditorFacts.
+  subscribeEditorFactsPublisher();
   bootUiBridge(); // UI 语义操作层(ActionRegistry + lease + ui_* 应答;方案:产品AI化-语义操作层)
   void useShellStore.getState().initSessions();
 }

@@ -44,7 +44,10 @@ if (!chrome) {
 }
 
 mkdirSync(profile, { recursive: true });
-console.log(`[web] launching Chrome (WebGPU forced) → ${url}`);
+// Do not echo `url` in this successful auto-launch path. Terminal hosts that
+// open URLs automatically would otherwise create a second Studio tab alongside
+// the Chrome process spawned below.
+console.log('[web] launching Chrome (WebGPU forced)');
 console.log('[web]   flags: --enable-unsafe-webgpu --ignore-gpu-blocklist');
 console.log("[web] If the viewport shows 'no usable backend': check chrome://gpu, or use bun fx start desktop.");
 

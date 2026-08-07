@@ -15,11 +15,10 @@ mock.module('react/jsx-runtime', () => ({ jsx: () => null, jsxs: () => null, Fra
 mock.module('react-dom/client', () => ({ createRoot: () => ({ render: () => undefined, unmount: () => undefined }) }));
 mock.module('@forgeax/interface/store', () => ({ useShellStore: () => null }));
 mock.module('@forgeax/interface/i18n', () => ({ useTranslation: () => ({ i18n: { language: 'en' } }) }));
-mock.module('@forgeax/interface/components/DockShell/panelRenderers', () => ({}));
-mock.module('@forgeax/interface/components/StatusBar/feeds/PulseFeeds', () => ({ PulseFeeds: () => null }));
-mock.module('@forgeax/interface/components/StatusBar/VersionBadge', () => ({ VersionBadge: () => null }));
+mock.module('@forgeax/interface/components/DockShell/panelRenderers', () => ({ usePanelRenderers: () => ({}) }));
 mock.module('@forgeax/editor/bridge', () => ({
   createEditorPanelContributionsExtension: () => ({}),
+  createEditorPageExtension: () => ({}),
   installInterfaceBridge: () => undefined,
   setContextMenuRenderer: () => undefined,
   panelBridge: { on: () => () => undefined },
@@ -35,18 +34,36 @@ mock.module('@forgeax/dashboard', () => ({ Dashboard: () => null }));
 mock.module('@forgeax/settings', () => ({ SettingsPanel: () => null, SettingsSectionsRegister: () => null }));
 mock.module('@forgeax/ai-workbench', () => ({
   WorkbenchMode: {}, WorkbenchModeDefault: () => null, AgentsMainArea: () => null,
-  AgentsPanel: () => null, WorkbenchAgentPicker: () => null,
+  AgentsPanel: () => null, WorkbenchAgentPicker: () => null, activateFile: () => undefined,
 }));
 mock.module('@forgeax/host-sdk', () => ({ createExtensionPort: () => undefined, createWindowTransport: () => undefined }));
 mock.module('@forgeax/interface/core/app-shell/types', () => ({}));
 mock.module('@forgeax/interface/core/extensions/panels-editor', () => ({ createPanelsEditorExtension: () => ({}) }));
 mock.module('@forgeax/interface/core/app-shell/manifest-adapter', () => ({ appExtensionFromManifest: () => ({}) }));
-mock.module('@forgeax/interface/core/extensions/chrome-status-feeds', () => ({ createChromeStatusFeedsExtension: () => ({}) }));
 mock.module('@forgeax/interface/core/extensions/detached-agents-browser', () => ({ createDetachedAgentsBrowserExtension: () => ({}) }));
 mock.module('@forgeax/interface/core/extensions/detached-files-browser', () => ({ createDetachedFilesBrowserExtension: () => ({}) }));
 mock.module('@forgeax/interface/core/extensions/panels-workbench-plugins', () => ({ createPanelsWorkbenchInlineExtension: () => ({}) }));
 
-const { projectEditorRenderFacts } = await import('./editorRenderers');
+const { projectEditorRenderFacts, singlePanelPageLayout } = await import('./editorRenderers');
+
+test('single-panel Page layouts keep Dockview required branch roots', () => {
+  const layout = singlePanelPageLayout('example-placement', 'Example');
+  expect('grid' in layout).toBe(true);
+  if (!('grid' in layout)) throw new Error('expected serialized Dockview layout');
+
+  expect(layout.grid.root).toMatchObject({
+    type: 'branch',
+    data: [{
+      type: 'leaf',
+      data: { views: ['example-placement'], activeView: 'example-placement' },
+    }],
+  });
+  expect(layout.panels['example-placement']).toMatchObject({
+    id: 'example-placement',
+    contentComponent: 'example-placement',
+    title: 'Example',
+  });
+});
 
 function result(value: unknown, runId?: string): TransportResponse {
   return {
@@ -59,17 +76,14 @@ function result(value: unknown, runId?: string): TransportResponse {
   };
 }
 
-test('projects canonical document, asset, run, and runtime facts while preserving UI transient state', () => {
+test('projects canonical document, asset, run, and Gateway operation facts while preserving UI transient state', () => {
   const projection = projectEditorRenderFacts({
     discover: result({
-      runtime: {
-        version: 'game-runtime/v1',
-        host: 'transport',
-        blocking: false,
-        capabilities: {
-          query: { available: true, code: 'runtime-ready' },
-          play: { available: true, code: 'runtime-ready' },
-        },
+      capabilityManifest: {
+        capabilities: [
+          { id: 'editor.query', verb: 'query' },
+          { id: 'editor.play', verb: 'play' },
+        ],
       },
     }),
     document: result({ revision: 'document:r1', content: 'edited' }),
@@ -93,10 +107,7 @@ test('projects canonical document, asset, run, and runtime facts while preservin
       importedSubjectIds: ['asset:hero'],
     },
     run: { id: 'run-1', status: 'succeeded', revision: 'document:r1' },
-    runtime: {
-      version: 'game-runtime/v1',
-      capabilities: { query: { available: true }, play: { available: true } },
-    },
+    gatewayOperations: ['query', 'play'],
     transient: {
       panelId: 'assets',
       layoutId: 'scene',
@@ -106,9 +117,23 @@ test('projects canonical document, asset, run, and runtime facts while preservin
   });
 });
 
+test('projects the live transport document envelope returned by the Studio carrier', () => {
+  const projection = projectEditorRenderFacts({
+    discover: result({ capabilityManifest: { capabilities: [] } }),
+    document: result({
+      document: { revision: 'scene:scene:1', content: '{"gameId":"spin-cube"}' },
+      selection: { primary: null, ids: [] },
+      dirty: false,
+    }),
+    assets: result({ resourceRevision: 'assets:r1', subjects: [] }),
+  });
+
+  expect(projection.document).toEqual({ revision: 'scene:scene:1', content: '{"gameId":"spin-cube"}' });
+});
+
 test('session transient changes never mutate canonical Editor facts', () => {
   const input = {
-    discover: result({ runtime: { version: 'game-runtime/v1', capabilities: { query: { available: true } } } }),
+    discover: result({ capabilityManifest: { capabilities: [{ id: 'editor.query', verb: 'query' }] } }),
     document: result({ revision: 'document:r1', content: 'edited' }),
     assets: result({ resourceRevision: 'assets:r1', subjects: [{ id: 'asset:hero' }] }),
     run: result({ runId: 'run-1', status: 'succeeded', revision: 'document:r1' }, 'run-1'),
@@ -125,19 +150,19 @@ test('session transient changes never mutate canonical Editor facts', () => {
   expect(second.document).toEqual(first.document);
   expect(second.assets).toEqual(first.assets);
   expect(second.run).toEqual(first.run);
-  expect(second.runtime).toEqual(first.runtime);
+  expect(second.gatewayOperations).toEqual(first.gatewayOperations);
   expect(second.transient).not.toEqual(first.transient);
 });
 
 test('projection parity rejects an old document revision or missing imported asset', () => {
   const canonical = projectEditorRenderFacts({
-    discover: result({ runtime: { capabilities: {} } }),
+    discover: result({ capabilityManifest: { capabilities: [] } }),
     document: result({ revision: 'document:r1', content: 'edited' }),
     assets: result({ resourceRevision: 'assets:r1', subjects: [{ id: 'asset:hero' }] }),
     transient: { panelId: 'assets', layoutId: 'scene', timerPending: false, hmrActive: false },
   });
   const stale = projectEditorRenderFacts({
-    discover: result({ runtime: { capabilities: {} } }),
+    discover: result({ capabilityManifest: { capabilities: [] } }),
     document: result({ revision: 'document:r0', content: 'initial' }),
     assets: result({ resourceRevision: 'assets:r0', subjects: [] }),
     transient: { panelId: 'assets', layoutId: 'scene', timerPending: false, hmrActive: false },

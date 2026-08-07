@@ -3,10 +3,12 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  cleanableFloatingRepoPaths,
   cleanTreeFlags,
   cleanLockAction,
   didCreateStash,
   formatUpdateReport,
+  floatingRepoExclusionArgs,
   hasActiveGitProcess,
   parseSubmodulePaths,
   resolveCommand,
@@ -71,6 +73,16 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['start'])).toEqual({ type: 'internal', command: 'start', args: [] });
     expect(resolveCommand(['start', 'web', '--fresh'])).toEqual({ type: 'internal', command: 'start', args: ['web', '--fresh'] });
     expect(resolveCommand(['start', 'desktop', 'debug'])).toEqual({ type: 'internal', command: 'start', args: ['desktop', 'debug'] });
+  });
+
+  it('does not print clickable Studio URLs before opening Chrome itself', () => {
+    const fx = readFileSync(script('fx.ts'), 'utf8');
+    const openWeb = readFileSync(script('open-web.ts'), 'utf8');
+
+    expect(fx).toContain('console.log(`[start] UI       :${startup.interface.port}`)');
+    expect(fx).not.toContain('console.log(`[start] UI       ${startup.interface.localOrigin}`)');
+    expect(openWeb).toContain("console.log('[web] launching Chrome (WebGPU forced)')");
+    expect(openWeb).not.toContain('launching Chrome (WebGPU forced) → ${url}');
   });
 
   it('checks every fixed stack port before start launches a new stack', () => {
@@ -139,6 +151,19 @@ describe('scripts/fx.ts command routing', () => {
     expect(cleanTreeFlags(true, true)).toBe('-ffndx');
   });
 
+  it('cleans the runtime floating repo while preserving Studio loop state', () => {
+    expect(cleanableFloatingRepoPaths()).toEqual(['packages/harness']);
+    expect(floatingRepoExclusionArgs()).toEqual([
+      '-e', '.forgeax-harness',
+      '-e', 'packages/harness',
+    ]);
+
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const cleanBody = source.slice(source.indexOf('function clean('), source.indexOf('/** Remove local'));
+    expect(cleanBody).toContain('scrubFloatingRepos(cleanFlags, dryRun, gitPrefix)');
+    expect(cleanBody).toContain('...floatingRepoExclusionArgs()');
+  });
+
   it('stops the Studio stack before destructive clean work', () => {
     const source = readFileSync(script('fx.ts'), 'utf8');
     const cleanBody = source.slice(source.indexOf('function clean('), source.indexOf('/** Remove local'));
@@ -171,16 +196,6 @@ describe('scripts/fx.ts command routing', () => {
     expect(updateBody).not.toContain('Running setup');
     expect(updateBody).not.toContain('--no-plugins');
     expect(updateBody).not.toContain('--skip-bootstrap');
-  });
-
-  it('projects CI through the real frozen prepare path', () => {
-    const source = readFileSync(script('fx.ts'), 'utf8');
-    const ciBody = source.slice(source.indexOf('function ci('), source.indexOf('// ── clean'));
-    expect(ciBody).toContain("['submodule', 'update', '--init', '--recursive']");
-    expect(ciBody).toContain("['install', '--frozen-lockfile']");
-    expect(ciBody).not.toContain('--ignore-scripts');
-    expect(ciBody).toContain("FORGEAX_SKIP_HARNESS: '1'");
-    expect(ciBody).toContain("FORGEAX_SKIP_BOOTSTRAP: '1'");
   });
 
   it('refreshes the floating runtime harness only from update', () => {

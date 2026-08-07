@@ -66,9 +66,9 @@ test('carries the public typed envelope through discover, preflight, dispatch, a
     expect(request).toMatchObject({
       jsonrpc: '2.0',
       version: 'editor-transport/v1',
+      scope: 'game:demo',
       correlationId: expect.stringMatching(/^correlation-/),
       params: {
-        scope: 'game:demo',
         actor: { id: 'studio-ui', kind: 'human' },
         sessionId: 'studio-session',
         idempotencyKey: expect.any(String),
@@ -115,7 +115,7 @@ test('returns structured transport errors without parsing their message text', a
     sessionId: 'studio-session',
   });
 
-  const result = await client.dispatch('runtime.play', {}, 'play-once');
+  const result = await client.dispatch('play', {}, 'play-once');
 
   expect(result).toMatchObject({
     error: {
@@ -126,4 +126,27 @@ test('returns structured transport errors without parsing their message text', a
       recoveryActions: ['runtime.acquire', 'request.retry'],
     },
   });
+});
+
+test('marks passive transport clients as connected-only', async () => {
+  let provisioningHeader: string | null = null;
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    provisioningHeader = new Headers(init?.headers).get('x-forgeax-editor-carrier-provisioning');
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify(response({}, String(body.id), String(body.correlationId))), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const client = createEditorTransportClient({
+    fetch: fetchImpl,
+    allowCarrierProvisioning: false,
+    scope: 'game:demo',
+    actor: { id: 'studio-footer', kind: 'human' },
+    sessionId: 'studio-footer:demo',
+  });
+
+  await client.discover();
+
+  expect(provisioningHeader).toBe('0');
 });

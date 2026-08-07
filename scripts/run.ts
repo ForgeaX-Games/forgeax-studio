@@ -32,6 +32,7 @@ import {
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ENGINE_ENTRY_OUTPUTS, isEngineEntryDistFresh } from './lib/engine-entry-freshness.ts';
 import { loadDotenv } from './lib/env.ts';
 import {
   type SpawnOpts,
@@ -275,9 +276,19 @@ console.log('[workspace] @forgeax/* linked');
 
 // ── 2.x engine dist precondition + freshness ─────────────────────────────────
 const enginePkgDir = join(ROOT, 'packages/editor/packages/engine/packages');
-const engineEntryPkgs = ['app', 'runtime', 'ecs', 'assets-runtime', 'vite-plugin-pack', 'vite-plugin-shader'];
-const engineEntryOutputs = ['index.mjs', 'index.d.ts'];
-const missing = engineEntryPkgs.flatMap((p) => engineEntryOutputs
+const engineEntryPkgs = [
+  'app',
+  'runtime',
+  'ecs',
+  'assets-runtime',
+  'vfx',
+  'vfx-compiler',
+  'vfx-render',
+  'vite-plugin-pack',
+  'vite-plugin-shader',
+];
+const engineDeclarationSentinel = join(ROOT, '.forgeax/sentinels/engine-declarations.built');
+const missing = engineEntryPkgs.flatMap((p) => ENGINE_ENTRY_OUTPUTS
   .filter((name) => !existsSync(join(enginePkgDir, p, 'dist', name)))
   .map((name) => `${p}/dist/${name}`));
 if (missing.length > 0) {
@@ -289,12 +300,8 @@ if (missing.length > 0) {
 console.log(`[engine] entry artifacts found for packages: ${engineEntryPkgs.join(' ')}`);
 
 if (process.env.FORGEAX_SKIP_ENGINE_DIST_FRESHNESS !== '1') {
-  const stale = engineEntryPkgs.filter((p) => {
-    const pdir = join(enginePkgDir, p);
-    const outputs = engineEntryOutputs.map((name) => join(pdir, 'dist', name));
-    const oldestOutputMs = Math.min(...outputs.map((output) => statSync(output).mtimeMs));
-    return existsSync(join(pdir, 'src')) && anyNewerThan(join(pdir, 'src'), oldestOutputMs);
-  });
+  const stale = engineEntryPkgs.filter((p) =>
+    !isEngineEntryDistFresh(join(enginePkgDir, p), engineDeclarationSentinel));
   if (stale.length > 0) {
     if (process.env.FORGEAX_AUTO_DEPLOY === '1') {
       console.error(`[engine] dist STALE for: ${stale.join(' ')} — FORGEAX_AUTO_DEPLOY=1, rebuilding…`);

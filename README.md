@@ -42,7 +42,7 @@ drop into a visual editor to tweak the scene directly at any time.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
-## 🆕 What's new in v0.3.23
+## 🆕 What's new in v0.3.24
 
 - **Asset Canvas workflow** — shared Workbench Host integration unifies asset orchestration, model services, and media adapters.
 - **Stronger scene authoring** — scene creation, duplication, deletion, default scenes, and field editing now have clearer, safer boundaries.

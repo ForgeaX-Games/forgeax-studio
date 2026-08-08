@@ -199,16 +199,11 @@ if (SKIP_FRONTEND) {
   run('bun', ['x', 'vite', 'build'], IFACE);
   log('1.5/7 building editor edit/play runtimes…');
   run('bun', ['x', 'vite', 'build'], join(ROOT, 'packages/editor/packages/edit-runtime'));
-  // play-runtime holds ZERO on-disk layout convention — the HOST injects it.
-  // Pre-import the bundled games (packages/games) at build time and bake the
-  // client URL-space prefix so the frozen .app serves games under .forgeax/games
-  // (lib.rs symlinks the runtime games there). Both must agree. (run() inherits
-  // process.env; set for this one build then restore.)
-  process.env.FORGEAX_PREVIEW_GAMES_DIR = join(ROOT, 'packages/games');
-  process.env.FORGEAX_GAMES_URL_PREFIX = '.forgeax/games';
+  // Build a generic Play shell. Asset ownership is established at runtime by
+  // the server's authenticated exact-game bind; this build must not scan or
+  // union the bundled sibling games. A shipping `--game` build is handled by
+  // the explicit static-game inputs in packages/editor/scripts/fx.ts.
   run('bun', ['x', 'vite', 'build'], join(ROOT, 'packages/editor/packages/play-runtime'));
-  delete process.env.FORGEAX_PREVIEW_GAMES_DIR;
-  delete process.env.FORGEAX_GAMES_URL_PREFIX;
 }
 
 // ── 2 reset payload ─────────────────────────────────────────────────────────

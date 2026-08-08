@@ -205,7 +205,7 @@ export function connectStudioEditorTransport(
   let disposed = false;
   let socket: EditorTransportSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-  let registered = false;
+  let publishedGameplay: boolean | undefined;
   let markReady: () => void = () => undefined;
   const ready = new Promise<void>((resolve) => { markReady = resolve; });
 
@@ -213,24 +213,32 @@ export function connectStudioEditorTransport(
     if (target.readyState === 1) target.send(JSON.stringify(value));
   };
 
-  const presence = () => ({
-    visibility: typeof document === 'undefined' || document.visibilityState === 'visible' ? 'visible' as const : 'hidden' as const,
-    focused: typeof document === 'undefined' || document.hasFocus(),
-    engaged: typeof navigator === 'undefined'
-      || (navigator as Navigator & { userActivation?: { hasBeenActive?: boolean } }).userActivation?.hasBeenActive === true,
-  });
+  const presence = () => {
+    const host = globalThis as typeof globalThis & {
+      __forgeax_editor_gameplay?: unknown;
+    };
+    return {
+      visibility: typeof document === 'undefined' || document.visibilityState === 'visible' ? 'visible' as const : 'hidden' as const,
+      focused: typeof document === 'undefined' || document.hasFocus(),
+      capabilities: { gameplay: host.__forgeax_editor_gameplay != null },
+    };
+  };
 
   const publishPresence = (): void => {
-    if (socket === null || !registered) return;
-    send(socket, { type: 'editor-transport/presence', ...presence() });
+    if (socket === null || publishedGameplay === undefined) return;
+    const current = presence();
+    publishedGameplay = current.capabilities.gameplay;
+    send(socket, { type: 'editor-transport/presence', ...current });
   };
+
+  const capabilityTimer = setInterval(() => {
+    if (publishedGameplay !== undefined && presence().capabilities.gameplay !== publishedGameplay) publishPresence();
+  }, 100);
 
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', publishPresence);
   if (typeof window !== 'undefined') {
     window.addEventListener('focus', publishPresence);
     window.addEventListener('blur', publishPresence);
-    window.addEventListener('pointerdown', publishPresence, true);
-    window.addEventListener('keydown', publishPresence, true);
   }
 
   const connect = (): void => {
@@ -243,7 +251,7 @@ export function connectStudioEditorTransport(
     socket = next;
     next.addEventListener('close', () => {
       if (disposed || socket !== next) return;
-      registered = false;
+      publishedGameplay = undefined;
       socket = null;
       reconnectTimer = setTimeout(connect, reconnectDelayMs);
     });
@@ -254,14 +262,15 @@ export function connectStudioEditorTransport(
       if (!value || typeof value !== 'object' || Array.isArray(value)) return;
       const message = value as Record<string, unknown>;
       if (message.type === 'editor-transport/hello') {
+        const currentPresence = presence();
         send(next, {
           type: 'editor-transport/ready',
           version: TRANSPORT_PROTOCOL_VERSION,
           role: options.role ?? 'interactive',
           scope: `game:${slug}`,
-          ...presence(),
+          ...currentPresence,
         });
-        registered = true;
+        publishedGameplay = currentPresence.capabilities.gameplay;
         markReady();
         return;
       }
@@ -297,12 +306,11 @@ export function connectStudioEditorTransport(
       if (disposed) return;
       disposed = true;
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+      clearInterval(capabilityTimer);
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', publishPresence);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', publishPresence);
         window.removeEventListener('blur', publishPresence);
-        window.removeEventListener('pointerdown', publishPresence, true);
-        window.removeEventListener('keydown', publishPresence, true);
       }
       socket?.close();
       socket = null;

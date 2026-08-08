@@ -14,6 +14,7 @@
 // real platform forks left live in lib/proc.ts (kill / port discovery).
 
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -401,6 +402,11 @@ if (seedSouls.status !== 0) {
 
 process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
 process.env.FORGEAX_HOST_PACKAGE_ROOT = ROOT;
+// The server is the active-game authority. It uses this loopback-only secret
+// to bind the Play sidecar to one exact game directory after both services are
+// up; the secret is never sent to the browser.
+const runtimeScopeSecret = process.env.FORGEAX_RUNTIME_SCOPE_SECRET ?? randomUUID();
+process.env.FORGEAX_RUNTIME_SCOPE_SECRET = runtimeScopeSecret;
 
 // ── 3.5 per-stack agent-host socket ──────────────────────────────────────────
 // The forgeax-core kernel runs inside a persistent `agent-host` sidecar the
@@ -534,7 +540,7 @@ console.log(
 if (narrativeWillStart()) console.log(`[run] + narrative API :${PORT_NARRATIVE} (wb-narrative standalone)`);
 if (rhiDebug) console.log(`[run] + RHI reviewer :${RHI_REVIEWER_PORT} (pnpm @forgeax/engine-rhi-debug-viewer vite)`);
 console.log(`[run] open http://localhost:${PORT_INTERFACE} to use the Studio UI`);
-console.log('[run]   Browser (WebGPU): bun fx start   ·   Desktop App: bun fx start desktop');
+console.log('[run]   Open browser: bun fx open   ·   Desktop App: bun fx start desktop');
 
 const launch = (
   name: string,
@@ -583,23 +589,24 @@ const ui = launch('interface', 'bun', ['x', 'vite'], {
     ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
   },
 }, true);
-// play-runtime holds ZERO on-disk layout convention now — the HOST injects it.
-// Studio's layout is `<engineSrcDir>/.forgeax/games` (via the junction above),
-// served under the vite root as the URL prefix `.forgeax/games`. Both must agree.
+// play-runtime holds ZERO on-disk layout convention now — the server injects
+// one exact game directory through the authenticated runtime-scope command.
+// `host-games` is only the URL mount name for that exact directory; it is not a
+// parent-games asset input.
 const en = launch('engine', 'bun', ['x', 'vite'], {
   cwd: engineSrcDir,
   env: {
     ...process.env,
     FORGEAX_HOST_PACKAGE_ROOT: ROOT,
+    FORGEAX_RUNTIME_SCOPE_SECRET: runtimeScopeSecret,
+    FORGEAX_GAMES_URL_PREFIX: 'host-games',
     ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
-    FORGEAX_PREVIEW_GAMES_DIR: join(engineSrcDir, '.forgeax/games'),
-    FORGEAX_GAMES_URL_PREFIX: '.forgeax/games',
   },
 }, true);
 // Single-realm (feat-20260703): the editor engine boots IN-PROCESS in the
 // interface(studio) vite at :18920 — no separate edit-runtime vite service. The
 // former `editor` (:15280) launch is gone; the play/preview engine (:15173) stays
-// (Play iframe + the in-process editor's per-game pack catalog fallback use it).
+// (Play iframe + the in-process editor's scoped runtime binding use it).
 let reviewer = 0;
 if (rhiDebug) {
   reviewer = launch(

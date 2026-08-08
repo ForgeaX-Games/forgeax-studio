@@ -35,7 +35,7 @@
   几秒就活。
 - **一份代码,Web 与桌面通吃。** 同一个 UI 既跑浏览器,也通过 Tauri 2 作为原生桌面应用运行。
 
-## 🆕 v0.3.24 更新
+## 🆕 v0.3.23 更新
 
 - **Asset Canvas 工作流** —— 集成共享 Workbench Host,统一资产编排、模型服务和媒体适配能力。
 - **场景创作增强** —— 场景创建、复制、删除、默认场景和字段编辑拥有更清晰、更安全的边界。
@@ -59,8 +59,8 @@
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
 bun install         # 装依赖 + 构建引擎/wasm;生成 .env(填 ANTHROPIC_API_KEY)
-bun fx start         # 启动 Studio 并打开默认 Web 客户端
-# 打开 http://localhost:18920,告诉 Forge 你想做什么
+bun fx start         # 启动 Studio 服务
+bun fx open          # 在常用 Chrome 中聚焦/打开 Studio
 ```
 
 本超级仓以 git submodule 形式把引擎、server、UI、编辑器、市场与游戏挂在 `packages/` 下。每个

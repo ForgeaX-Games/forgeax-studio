@@ -88,6 +88,7 @@ const script = (name: string): string => resolve(ROOT, 'scripts', name);
 const SCRIPT_COMMANDS = new Map<string, string>([
   // dev lifecycle
   ['stop', 'stop.ts'],
+  ['open', 'open-web.ts'],
 
   // build / metadata helpers
   ['build:plugins', 'build-extensions.ts'],
@@ -160,11 +161,12 @@ Common commands:
                         Gitignored products are kept unless --deep. --dry-run/-n
                         previews. Keeps .forgeax-harness.
                         Stops the Studio stack first; missing git-lfs uses pointer-only checkout.
-  start [web|app|local] Start Studio and open the selected client (default: web)
+  start [web|app|local] Start Studio services (default: web); does not open a browser
                         local = 127.0.0.1-only on a third port band (:38920) — use
                         when default and dev-local ports are both taken.
                         Add --rhi-debug to enable editor RHI capture; use
                         --skip-setup-check only to bypass a stale setup snapshot.
+  open [--managed]      Focus/open Studio in your Chrome; --managed isolates + forces WebGPU
   stop                  Stop web-dev stack
   restart               Stop then start web-dev stack
   status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)
@@ -180,6 +182,7 @@ Common commands:
 Examples:
   bun install
   bun fx start
+  bun fx open
   bun fx update
   bun fx start desktop debug
   bun fx sync --dry-run
@@ -465,15 +468,17 @@ function startStudio(args: string[]): never {
   }
 
   const runArgs = maybeMode === 'web' ? rest : startArgs;
-  // Floating on purpose: startWeb awaits unified HTTP readiness, then exits
-  // through open-web / no-open / error.
+  // Floating on purpose: startWeb awaits unified HTTP readiness, then exits.
   void startWeb(runArgs);
 }
 
 async function startWeb(runArgs: string[]): Promise<never> {
   const ensure = runArgs.includes('--ensure');
-  const noOpen = runArgs.includes('--no-open');
-  const launcherArgs = runArgs.filter((arg) => arg !== '--ensure' && arg !== '--no-open');
+  if (runArgs.includes('--no-open')) {
+    console.error('[start] --no-open was removed because start never opens a browser; use bun fx open explicitly.');
+    process.exit(2);
+  }
+  const launcherArgs = runArgs.filter((arg) => arg !== '--ensure');
   let startup: ReturnType<typeof resolveStartupEnvironment>;
   try {
     const result = await startSourceRuntime({
@@ -486,23 +491,21 @@ async function startWeb(runArgs: string[]): Promise<never> {
     console.log(
       `[start] ${result.reused ? 'reusing' : 'started'} ${startup.profile} launcher pid=${result.launcherPid || '?'}`,
     );
-    // Avoid clickable URLs here because open-web.ts owns browser launch.
-    // Terminal URL detection racing that launch creates duplicate Studio tabs.
-    console.log(`[start] server   :${startup.server.port}`);
-    console.log(`[start] UI       :${startup.interface.port}`);
-    console.log(`[start] engine   :${startup.engine.port}`);
+    console.log(`[start] server   http://127.0.0.1:${startup.server.port}`);
+    console.log(`[start] UI       ${startup.interface.localOrigin}`);
+    console.log(`[start] engine   http://127.0.0.1:${startup.engine.port}`);
   } catch (error) {
     console.error(`[start] ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
-  // Optional upstream sidecars: only report services that actually listened.
+  // Optional upstream sidecars: only advertise when actually listening so the
+  // IDE doesn't try to forward ports that were never bound this run.
   const narrativePort = 8900;
   const faceMaskPort = 18930;
-  if (portOwner(narrativePort)) console.log(`[start] narrative :${narrativePort}`);
-  if (portOwner(faceMaskPort)) console.log(`[start] face-mask :${faceMaskPort}`);
+  if (portOwner(narrativePort)) console.log(`[start] narrative http://localhost:${narrativePort}`);
+  if (portOwner(faceMaskPort)) console.log(`[start] face-mask http://localhost:${faceMaskPort}`);
 
-  if (noOpen) process.exit(0);
-  runScript(script('open-web.ts'), []);
+  process.exit(0);
 }
 
 function sourceProfileFromEnvironment(): Exclude<StartupProfile, 'desktop-prod'> {

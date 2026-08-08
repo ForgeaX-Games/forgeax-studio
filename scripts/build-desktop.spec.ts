@@ -7,15 +7,16 @@ import { desktopServerEntryAdapter } from './lib/server-role.ts';
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 describe('desktop build pack scan scope', () => {
-  it('builds play-runtime against the bundled games scope, not local .forgeax/games', () => {
+  it('builds a generic play shell without a sibling-games asset producer', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
     const playRuntimeViteConfig = readFileSync(
       join(root, 'packages/editor/packages/play-runtime/vite.config.ts'),
       'utf8',
     );
 
-    expect(playRuntimeViteConfig).toContain('FORGEAX_PREVIEW_GAMES_DIR');
-    expect(buildScript).toContain("process.env.FORGEAX_PREVIEW_GAMES_DIR = join(ROOT, 'packages/games')");
+    expect(playRuntimeViteConfig).not.toContain('FORGEAX_PREVIEW_GAMES_DIR');
+    expect(buildScript).not.toContain('FORGEAX_PREVIEW_GAMES_DIR');
+    expect(buildScript).toContain('generic Play shell');
     expect(buildScript).toContain("run('bun', ['x', 'vite', 'build']");
   });
 

@@ -15,7 +15,6 @@ const ENGINE_ROOT_FILES = [
   'index.html',
   'vite.config.ts',
   'package.json',
-  'pack-catalog.ts',
   'tsconfig.json',
   'rhi-debug-config.ts',
 ] as const;

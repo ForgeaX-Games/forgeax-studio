@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import './ci/workflow-admission.spec';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -10,11 +11,14 @@ const boundaries = read('.github/workflows/boundaries.yml');
 const pins = read('.github/workflows/submodule-pins.yml');
 const mirror = read('.github/workflows/mirror-multi.yml');
 const mirrorTemplate = read('scripts/mirror/ci/mirror-multi.yml');
+const mirrorPublishDryrun = read('.github/workflows/mirror-publish-dryrun.yml');
+const mirrorPublishDryrunTemplate = read('scripts/mirror/ci/mirror-publish-dryrun.yml');
 const postMergeWorkflow = read('.github/workflows/post-merge-gate.yml');
 const postMergeMonitor = read('.github/workflows/post-merge-monitor.yml');
 const postMergeScript = read('scripts/ci/post-merge-gate.sh');
 const pinChangeScript = read('scripts/ci/submodule-pin-change.sh');
 const tokenAccessScript = read('scripts/ci/check-internal-token-access.sh');
+const nightly = read('.github/workflows/nightly-e2e.yml');
 
 const jobBlock = (workflow: string, name: string): string => {
   const marker = `\n  ${name}:\n`;
@@ -61,6 +65,16 @@ describe('CI workflow orchestration', () => {
       expect(workflow).toContain("|| 'publish'");
       expect(workflow).not.toContain('|| github.run_id');
       expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
+    }
+    for (const workflow of [mirrorPublishDryrun, mirrorPublishDryrunTemplate]) {
+      expect(workflow).toContain("format('pr-{0}', github.event.pull_request.number)");
+      expect(workflow).toContain("|| 'manual'");
+      expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}");
+
+      const mergeCheckout = workflow.indexOf('name: Checkout PR merge tree without submodules');
+      const prHeadCheckout = workflow.indexOf('name: Checkout PR-head workflow definitions');
+      expect(mergeCheckout).toBeGreaterThanOrEqual(0);
+      expect(prHeadCheckout).toBeGreaterThan(mergeCheckout);
     }
   });
 
@@ -152,11 +166,36 @@ describe('CI workflow orchestration', () => {
       expect(workflowPublish).toContain('name: Verify INTERNAL_TOKEN access to top-level submodules');
       expect(workflowPublish).toContain('GH_TOKEN: ${{ secrets.INTERNAL_TOKEN }}');
       expect(workflowPublish).toContain('run: bash scripts/ci/check-internal-token-access.sh');
+      expect(workflowPublish).toContain('name: Mirror install smoke (assemble + recursive-clone layout + bun install)');
+      expect(workflowPublish).toContain('run: bash scripts/mirror/smoke-install.sh');
     }
 
     expect(tokenAccessScript).toContain("git config -f \"$modules_file\"");
     expect(tokenAccessScript).toContain('gh api "repos/$repo" --silent');
     expect(tokenAccessScript).toContain('INTERNAL_TOKEN cannot read $repo');
+  });
+
+  it('replays the post-merge mirror publisher during PR validation without mutation', () => {
+    for (const workflow of [mirrorPublishDryrun, mirrorPublishDryrunTemplate]) {
+      expect(workflow).toContain('pull_request_target:');
+      expect(workflow).toContain('name: mirror publish dry-run (external push)');
+      expect(workflow).toContain('github.event.pull_request.merge_commit_sha');
+      expect(workflow).toContain('ref: ${{ github.event_name == \'workflow_dispatch\' && github.ref || github.event.pull_request.base.sha }}');
+      expect(workflow).toContain('MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}');
+      expect(workflow).toContain('name: Verify INTERNAL_TOKEN access to top-level submodules');
+      expect(workflow).toContain('run: bash .trusted-base/scripts/ci/check-internal-token-access.sh');
+      expect(workflow).toContain('name: Mirror install smoke (assemble + recursive-clone layout + bun install)');
+      expect(workflow).toContain('MIRROR_DRY_RUN=1 bash .trusted-base/scripts/mirror/publish-multi.sh push');
+      expect(workflow).toContain('MIRROR_LIB: ${{ github.workspace }}/.trusted-base/scripts/mirror/lib.sh');
+    }
+    const publish = read('scripts/mirror/publish-multi.sh');
+    expect(publish).toContain('check_mirror_token');
+    expect(publish).toContain('MIRROR_DRY_RUN=1');
+    expect(publish).toContain('git push -q "${options[@]}"');
+    expect(publish).toContain('dry-run: skip opening the mirror superproject PR');
+    const smoke = read('scripts/mirror/smoke-install.sh');
+    expect(smoke).toContain('MIRROR_ROOT');
+    expect(smoke).toContain('MIRROR_PUBLISHER');
   });
 
   it('monitors every main validation and scopes recovery to the failed workflow', () => {
@@ -168,6 +207,18 @@ describe('CI workflow orchestration', () => {
     expect(postMergeMonitor).toContain('**workflow**: `');
     expect(postMergeMonitor).toContain("core.setOutput('workflowIssues'");
     expect(postMergeMonitor).not.toContain("core.setOutput('allOpenIssues'");
+  });
+
+  it('derives nightly contract admission from the package owner registry', () => {
+    expect(nightly).toContain('bun scripts/ci/nightly-contract-roster.ts');
+    expect(nightly).toContain('nightly contract owner roster');
+    expect(nightly).toContain('bun scripts/build-extensions.ts --only @forgeax-extension/wb-game-video --fail-on-error');
+    expect(nightly).toContain('bunx playwright install chromium');
+    expect(nightly).not.toContain('packages/types');
+    expect(nightly).not.toContain('working-directory: packages/host-sdk');
+    expect(nightly).not.toContain('name: server - install + full test suite');
+    expect(nightly).not.toContain('name: contract-error-modes (canonical doc-to-test pin)');
+    expect(nightly).not.toContain('continue-on-error');
   });
 
 });

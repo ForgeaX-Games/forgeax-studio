@@ -69,20 +69,17 @@ describe('scripts/fx.ts command routing', () => {
     });
   });
 
-  it('keeps start as the single client-launching lifecycle command', () => {
+  it('separates service startup from explicit web-client opening', () => {
     expect(resolveCommand(['start'])).toEqual({ type: 'internal', command: 'start', args: [] });
     expect(resolveCommand(['start', 'web', '--fresh'])).toEqual({ type: 'internal', command: 'start', args: ['web', '--fresh'] });
     expect(resolveCommand(['start', 'desktop', 'debug'])).toEqual({ type: 'internal', command: 'start', args: ['desktop', 'debug'] });
-  });
+    expect(resolveCommand(['open'])).toEqual({ type: 'script', script: script('open-web.ts'), args: [] });
+    expect(resolveCommand(['open', '--managed'])).toEqual({ type: 'script', script: script('open-web.ts'), args: ['--managed'] });
 
-  it('does not print clickable Studio URLs before opening Chrome itself', () => {
-    const fx = readFileSync(script('fx.ts'), 'utf8');
-    const openWeb = readFileSync(script('open-web.ts'), 'utf8');
-
-    expect(fx).toContain('console.log(`[start] UI       :${startup.interface.port}`)');
-    expect(fx).not.toContain('console.log(`[start] UI       ${startup.interface.localOrigin}`)');
-    expect(openWeb).toContain("console.log('[web] launching Chrome (WebGPU forced)')");
-    expect(openWeb).not.toContain('launching Chrome (WebGPU forced) → ${url}');
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const startWebBody = source.slice(source.indexOf('async function startWeb('), source.indexOf('function sourceProfileFromEnvironment'));
+    expect(startWebBody).not.toContain("runScript(script('open-web.ts')");
+    expect(startWebBody).toContain('--no-open was removed because start never opens a browser');
   });
 
   it('checks every fixed stack port before start launches a new stack', () => {

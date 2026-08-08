@@ -1630,8 +1630,8 @@
   },
   "wb-game-video": {
     "slug": "wb-game-video",
-    "id": "@forgeax/wb-game-video",
-    "version": "0.1.5",
+    "id": "@forgeax-extension/wb-game-video",
+    "version": "0.3.1",
     "kind": "workbench",
     "kindLabel": {
       "zh": "工作台",
@@ -1663,7 +1663,7 @@
       "skillTriggers": [
         "/wb-game-video"
       ],
-      "tools": 11,
+      "tools": 12,
       "toolSample": [
         "wb-game-video:get-graph",
         "wb-game-video:save-graph",
@@ -1674,7 +1674,7 @@
       ]
     },
     "created": "2026-07-14",
-    "updated": "2026-07-31",
+    "updated": "2026-08-06",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-game-video"
   },
   "wb-gen3d": {

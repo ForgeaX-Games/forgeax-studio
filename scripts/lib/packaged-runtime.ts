@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { materializePackagedEngineWorkspace } from './engine-workspace.ts';
@@ -47,9 +48,11 @@ export async function runPackagedRuntime(startup: StartupEnvironment): Promise<n
     process.once('SIGINT', () => shutdown(130));
     process.once('SIGTERM', () => shutdown(143));
 
+    const runtimeScopeSecret = process.env.FORGEAX_RUNTIME_SCOPE_SECRET ?? randomUUID();
     const baseEnv = startupProcessEnv(startup, {
       ...process.env,
       NODE_ENV: 'production',
+      FORGEAX_RUNTIME_SCOPE_SECRET: runtimeScopeSecret,
     });
     const agentHostSocket = join(homedir(), '.forgeax', `agent-host-${startup.server.port}.sock`);
     const serverEntry = join(startup.resourceRoot, 'server', 'src', 'main.ts');
@@ -82,8 +85,7 @@ export async function runPackagedRuntime(startup: StartupEnvironment): Promise<n
         env: {
           ...baseEnv,
           FORGEAX_INTERFACE_PORT: String(startup.interface.port),
-          FORGEAX_PREVIEW_GAMES_DIR: join(engineWork, '.forgeax', 'games'),
-          FORGEAX_GAMES_URL_PREFIX: '.forgeax/games',
+          FORGEAX_GAMES_URL_PREFIX: 'host-games',
         },
       },
       required: true,

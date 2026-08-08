@@ -1,19 +1,19 @@
 #!/usr/bin/env bun
-// scripts/open-web.ts — open Studio in Chrome with WebGPU reliably enabled.
-// Replaces open-web.sh (`bun fx start` opens this after the stack is ready).
+// scripts/open-web.ts — focus Studio in the user's Chrome, with an explicit
+// isolated forced-WebGPU mode for diagnosis.
+// Invoked explicitly by `bun fx open` after the stack is ready.
 //
-// The engine renders the viewport via WebGPU; on a browser where it isn't
-// enabled-by-default (or the GPU is blocklisted) createApp fails with "no usable
-// backend". Chrome also ignores flags when an instance for that profile already
-// runs. So we launch Chrome on a DEDICATED persistent profile (flags always
-// apply) with --enable-unsafe-webgpu --ignore-gpu-blocklist. The desktop app
-// (bun fx start desktop, WebKit/Metal) already has WebGPU and is unaffected.
+// Default mode preserves the person's account, extensions, cookies, and tabs.
+// `--managed` uses a dedicated persistent profile so forced WebGPU flags always
+// apply when diagnosing a blocked backend. The desktop app (WebKit/Metal) is
+// unaffected.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadDotenv } from './lib/env.ts';
+import { managedChromeProfile, reuseManagedChrome, wantsManagedChrome } from './lib/managed-chrome.ts';
 import { isPortBusy } from './lib/proc.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,7 +21,8 @@ if (existsSync(join(ROOT, '.env'))) loadDotenv(join(ROOT, '.env'));
 
 const port = Number.parseInt(process.env.FORGEAX_INTERFACE_PORT ?? '18920', 10);
 const url = `http://localhost:${port}`;
-const profile = join(ROOT, '.forgeax/chrome-webgpu-profile'); // .forgeax/ is gitignored
+const profile = managedChromeProfile();
+const managed = wantsManagedChrome(process.argv.slice(2));
 
 // 1. stack must be running (this opens a client; it doesn't boot the server).
 if (!isPortBusy(port)) {
@@ -34,20 +35,31 @@ if (!isPortBusy(port)) {
 const chrome = findChrome();
 if (!chrome) {
   // headless Linux server / minimal container: Chrome-not-installed is a valid
-  // deployment shape, not a startup failure — the stack is already up (fx.ts
-  // waits on the UI port before invoking us). Print the URL so the operator
-  // can browse in from another machine, and exit 0 so `bun fx start` succeeds.
+  // deployment shape, not a command failure. Print the URL so the operator can
+  // browse in from another machine.
   console.log(`[web] Studio UI ready at ${url}`);
   console.log('[web] no local Chrome/Chromium found — open the URL from a WebGPU-capable browser');
-  console.log('[web] (or use the desktop app on macOS/Windows: bun fx start app)');
+  console.log('[web] (or use the desktop app on macOS/Windows: bun fx start desktop)');
+  process.exit(0);
+}
+
+if (!managed) {
+  openUserChrome(chrome, url);
   process.exit(0);
 }
 
 mkdirSync(profile, { recursive: true });
-// Do not echo `url` in this successful auto-launch path. Terminal hosts that
-// open URLs automatically would otherwise create a second Studio tab alongside
-// the Chrome process spawned below.
-console.log('[web] launching Chrome (WebGPU forced)');
+const reuse = await reuseManagedChrome(profile, url);
+if (reuse === 'focused') {
+  console.log(`[web] focused existing Studio tab → ${url}`);
+  process.exit(0);
+}
+if (reuse === 'opened-tab') {
+  console.log(`[web] opened Studio in the managed Chrome → ${url}`);
+  process.exit(0);
+}
+
+console.log(`[web] launching Chrome (WebGPU forced) → ${url}`);
 console.log('[web]   flags: --enable-unsafe-webgpu --ignore-gpu-blocklist');
 console.log("[web] If the viewport shows 'no usable backend': check chrome://gpu, or use bun fx start desktop.");
 
@@ -59,6 +71,7 @@ const child = spawn(
     `--user-data-dir=${profile}`,
     '--enable-unsafe-webgpu',
     '--ignore-gpu-blocklist',
+    '--remote-debugging-port=0',
     '--no-first-run',
     '--no-default-browser-check',
     url,
@@ -66,7 +79,7 @@ const child = spawn(
   { stdio: 'ignore', detached: true, windowsHide: true },
 );
 child.unref();
-console.log(`[web] Chrome launched (pid ${child.pid}).`);
+console.log(`[web] managed Chrome launch requested (pid ${child.pid}, profile ${profile}).`);
 
 /** Find a Chrome executable across macOS / Windows / Linux. */
 function findChrome(): string | null {
@@ -81,4 +94,38 @@ function findChrome(): string | null {
           ]
         : ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
   return candidates.find((c) => c && existsSync(c)) ?? null;
+}
+
+/** Reuse the person's normal Chrome profile; on macOS focus an existing Studio tab. */
+function openUserChrome(chrome: string, requestedUrl: string): void {
+  if (process.platform === 'darwin') {
+    const script = `
+on run argv
+  set targetUrl to item 1 of argv
+  tell application "Google Chrome"
+    repeat with w in windows
+      repeat with i from 1 to count of tabs of w
+        if URL of tab i of w is targetUrl or URL of tab i of w is targetUrl & "/" then
+          set active tab index of w to i
+          set index of w to 1
+          activate
+          return "focused"
+        end if
+      end repeat
+    end repeat
+    open location targetUrl
+    activate
+    return "opened"
+  end tell
+end run`;
+    const result = spawnSync('osascript', ['-e', script, requestedUrl], { encoding: 'utf8' });
+    if (result.status === 0) {
+      console.log(`[web] ${result.stdout.trim() || 'opened'} Studio in your Chrome → ${requestedUrl}`);
+      return;
+    }
+  }
+
+  const child = spawn(chrome, [requestedUrl], { stdio: 'ignore', detached: true, windowsHide: true });
+  child.unref();
+  console.log(`[web] opened Studio in your Chrome → ${requestedUrl}`);
 }

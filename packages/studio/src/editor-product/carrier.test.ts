@@ -104,6 +104,24 @@ test('Studio editor carrier answers typed requests on the registered socket', as
   expect(socket.readyState).toBe(3);
 });
 
+test('Studio editor carrier publishes gameplay bridge readiness transitions', async () => {
+  const host = globalThis as typeof globalThis & { __forgeax_editor_gameplay?: unknown };
+  const previousGameplay = host.__forgeax_editor_gameplay; host.__forgeax_editor_gameplay = undefined;
+  const socket = new FakeSocket();
+  const carrier = connectStudioEditorTransport('spin-cube', { url: 'ws://studio.test/ws/editor/transport', socketFactory: () => socket, service: { handle: async (value) => value as never } });
+  try {
+    await socket.receive({ type: 'editor-transport/hello', version: TRANSPORT_PROTOCOL_VERSION });
+    expect(JSON.parse(socket.sent.at(-1) ?? '{}')).toMatchObject({ type: 'editor-transport/ready', capabilities: { gameplay: false } });
+    for (const gameplay of [true, false]) {
+      host.__forgeax_editor_gameplay = gameplay ? {} : undefined;
+      await Bun.sleep(110);
+      expect(JSON.parse(socket.sent.at(-1) ?? '{}')).toMatchObject({ type: 'editor-transport/presence', capabilities: { gameplay } });
+    }
+  } finally {
+    carrier.dispose(); host.__forgeax_editor_gameplay = previousGameplay;
+  }
+});
+
 test('Studio editor carrier reconnects after the server socket closes', async () => {
   const sockets: FakeSocket[] = [];
   const carrier = connectStudioEditorTransport('spin-cube', {

@@ -1,0 +1,232 @@
+[
+  {
+    "id": "engine.parser-before-reporter-workflow-admission",
+    "source": "engine",
+    "decision": "adapt",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260722-135208-audit-admission-malformed-workflow/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.github/workflows/required-ci-checks.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml"
+    ],
+    "originalFalsifier": "A deliberately malformed workflow must return non-zero and prevent the later synthetic reporter from emitting success.",
+    "studioDelta": "Studio has ordinary pull_request workflows plus trusted-base mirror sources and five required aggregate contexts; this round is a collector and does not install the parser gate.",
+    "focusedTransferProof": "The collector parses every selected Studio workflow source and rejects the malformed workflow fixture before graph or history output is emitted."
+  },
+  {
+    "id": "engine.derived-control-plane-graph",
+    "source": "engine",
+    "decision": "adapt",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260723-005121-architecture-control-plane-audit-5/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:scripts/ci/required-ci-checks.json",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/post-merge-monitor.yml"
+    ],
+    "originalFalsifier": "A graph probe must expose duplicated concepts or unsafe barriers before any timing or concurrency change is attempted; a stable derived graph justifies no-change.",
+    "studioDelta": "Studio is a recursive private superrepo with local, mirror, nightly, release, and monitor workflow surfaces rather than the engine roster.",
+    "focusedTransferProof": "The output has producer-owned workflow records and explicit jobs, needs, runner, timeout, context, event, and trust edge sets; no engine job names are embedded."
+  },
+  {
+    "id": "engine.comparable-cost-critical-path-facts",
+    "source": "engine",
+    "decision": "adapt",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260723-003553-audit-comparable-main-slo-window/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:scripts/ci/collect-ci-cost-facts.mjs",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:scripts/ci/__tests__/collect-ci-cost-facts.test.mjs"
+    ],
+    "originalFalsifier": "Zero-job, nonterminal, mixed roster/runner/event/attempt, or fewer-than-20 populations must remain no-claim; queue and active execution cannot be collapsed into one wall-clock scalar.",
+    "studioDelta": "Studio uses ci.yml PR history, self-hosted Linux labels, optional artifacts, and repeated recursive setup across trust surfaces.",
+    "focusedTransferProof": "Synthetic 21-member same-topology input yields separated admission, queue proxy, active, artifact-ready, and failure fields while mixed inputs are excluded with no-claim reasons."
+  },
+  {
+    "id": "engine.single-work-artifact-contract",
+    "source": "engine",
+    "decision": "defer",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260722-160558-audit-shared-input-bundle/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:scripts/ci/build-artifact-contract.json",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml"
+    ],
+    "originalFalsifier": "Cold/warm corruption, stale source, wrong attempt, or unchecked archive must fail provenance verification.",
+    "studioDelta": "Studio has multiple legal trust boundaries and no single recursive-input producer yet; sfc-05 owns the migration.",
+    "focusedTransferProof": "This collector records artifact IDs, sizes, timestamps, and producer-facing job facts but never treats an absent artifact as ready or claims single-work reuse."
+  },
+  {
+    "id": "engine.cache-and-artifact-roi",
+    "source": "engine",
+    "decision": "defer",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260720-141217-audit-cache-action-roi/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:scripts/ci/audit-ci-cache.mjs",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml"
+    ],
+    "originalFalsifier": "A cache change is inadmissible without owner, hit/miss, byte, transfer, corruption, and positive critical-path or runner-cost evidence.",
+    "studioDelta": "This task collects raw artifact facts only; cache lifecycle ownership and return belong to sfc-05 and sfc-09.",
+    "focusedTransferProof": "The zero-artifact live control remains artifact-ready no-claim and the collector makes no cache mutation or optimization claim."
+  },
+  {
+    "id": "engine.bounded-failure-class-retry",
+    "source": "engine",
+    "decision": "defer",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260720-014418-reconcile-main-cost-status/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:scripts/ci/download-artifact-with-retry.mjs",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/actions/fetch-submodules/action.yml"
+    ],
+    "originalFalsifier": "Only evidenced transient transport classes may retry; the first failure and selected attempt must remain visible.",
+    "studioDelta": "Studio's recursive checkout and monitor retries are separate owners and no retry policy should be changed by a census collector.",
+    "focusedTransferProof": "Failed or mixed fixture facts retain first failed step details and no retry or rerun field is synthesized."
+  },
+  {
+    "id": "engine.test-tail-and-unique-falsification",
+    "source": "engine",
+    "decision": "defer",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260721-212706-audit-vitest-browser-hmr-tail/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260723-172526-audit-test-tail-distribution-13/REPORT.md",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:docs/testing.md"
+    ],
+    "originalFalsifier": "A proposed consolidation or shard is rejected when it duplicates setup without preserving the behavior uniquely falsified by the moved test.",
+    "studioDelta": "Studio's browser, Gateway, and recursive leaf contracts are not being reassigned in sfc-02.",
+    "focusedTransferProof": "The collector retains job and step identity for later unique-falsification work and does not move, skip, shard, or retime tests."
+  },
+  {
+    "id": "engine.required-ruleset-drift-audit",
+    "source": "engine",
+    "decision": "adapt",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260722-140409-audit-required-ruleset-admission-guard/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:scripts/ci/audit-required-checks-ruleset.mjs",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml"
+    ],
+    "originalFalsifier": "Missing or extra required contexts must fail before a synthetic success can be reported.",
+    "studioDelta": "Studio's live ruleset names five aggregate contexts across ordinary and trusted-base workflows; sfc-11 owns active drift admission.",
+    "focusedTransferProof": "The collector records ruleset contexts and marks each parsed job context required or not-required without mutating governance or declaring drift green."
+  },
+  {
+    "id": "engine.payload-sha-post-merge-attribution",
+    "source": "engine",
+    "decision": "adapt",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260723-220945-audit-post-merge-monitor-api-failure-64/REPORT.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.github/workflows/post-merge-monitor.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/post-merge-monitor.yml"
+    ],
+    "originalFalsifier": "Monitor-run SHA attribution, auth retries, or generic issue identity must fail; incidents bind to workflow payload SHA and source URL.",
+    "studioDelta": "Studio has four fixed monitored workflows plus an outside nightly surface; this round records event and trust edges without expanding monitor ownership.",
+    "focusedTransferProof": "Run facts preserve head SHA, event, attempt, source URLs, and first-failure identity separately from monitor workflow metadata."
+  },
+  {
+    "id": "engine.scheduled-portability",
+    "source": "engine",
+    "decision": "defer",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.github/workflows/nightly.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/nightly-e2e.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/desktop-build.yml"
+    ],
+    "originalFalsifier": "Missing platform tools or app boot must fail on the named platform; Linux cannot prove Windows or macOS.",
+    "studioDelta": "Studio's desktop and recursive portability matrix is a later closed-loop owner; sfc-02 only records event, runner, and trust declarations.",
+    "focusedTransferProof": "Platform expressions and Linux labels are preserved as runner edges, while no platform pass is claimed from this Linux collector."
+  },
+  {
+    "id": "engine.evidence-backed-no-change",
+    "source": "engine",
+    "decision": "reuse",
+    "evidence": [
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/PROGRESS.md",
+      "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260723-005121-architecture-control-plane-audit-5/REPORT.md",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml"
+    ],
+    "originalFalsifier": "Stable topology, incomparable evidence, or external queue incidents must preserve a no-change decision instead of manufacturing YAML churn.",
+    "studioDelta": "Studio must retain no-claim reasons for zero artifacts, missing ownership, and mixed topology while still landing a reusable evidence packet.",
+    "focusedTransferProof": "Every rejected run receives an explicit no-claim code and the output remains valid without a timing claim."
+  },
+  {
+    "id": "studio.fail-closed-docs-only-aggregate-contexts",
+    "source": "studio",
+    "decision": "reuse",
+    "evidence": [
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/boundaries.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/submodule-pins.yml"
+    ],
+    "originalFalsifier": "A docs-only predicate or aggregate gate that reports success while its required producer is absent must fail closed.",
+    "studioDelta": "The collector observes the existing aggregate contexts rather than creating a second predicate or changing required names.",
+    "focusedTransferProof": "The live ruleset context census is compared to parsed workflow job contexts and missing/extra contexts remain visible in the packet."
+  },
+  {
+    "id": "studio.retry-hardened-recursive-private-checkout",
+    "source": "studio",
+    "decision": "adapt",
+    "evidence": [
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/actions/fetch-submodules/action.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:scripts/check-submodule-pins.ts"
+    ],
+    "originalFalsifier": "Trusted-token isolation, exact recursive pins, bounded fallback, and credential cleanup must remain intact across retries.",
+    "studioDelta": "Private submodules can be unmaterialized or locally modified in a worktree, so the census records both desired gitlink and materialization marker.",
+    "focusedTransferProof": "The fixed-head packet includes every recursive pin and owner-manifest availability without rewriting or normalizing away `+` or `-` status markers."
+  },
+  {
+    "id": "studio.validated-pr-merge-tree-reuse",
+    "source": "studio",
+    "decision": "adapt",
+    "evidence": [
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/post-merge-gate.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:scripts/ci/post-merge-gate.sh"
+    ],
+    "originalFalsifier": "A merge-tree skip is legal only when the exact validated PR tree and required contract are attributable; branch names or latest-green status are insufficient.",
+    "studioDelta": "The collector treats post-merge gate as a workflow/trust edge and never uses it to add a comparable PR history sample.",
+    "focusedTransferProof": "A skipped post-merge job is retained in the run roster and cannot be silently removed from topology admission."
+  },
+  {
+    "id": "studio.trusted-base-mirror-publisher",
+    "source": "studio",
+    "decision": "adapt",
+    "evidence": [
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/mirror-publish-dryrun.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:scripts/mirror/ci/mirror-publish-dryrun.yml"
+    ],
+    "originalFalsifier": "PR-controlled executable publisher code must not receive write tokens; trusted-base dry-run must retain least privilege and source separation.",
+    "studioDelta": "The workflow event is pull_request_target and the mirror source is a second trust surface; both are collected as separate workflow and trust edges.",
+    "focusedTransferProof": "The graph classifies pull_request_target as trusted-base and preserves its permissions/secrets summary without treating ordinary pull_request jobs as trusted."
+  },
+  {
+    "id": "studio.payload-sha-post-merge-monitor",
+    "source": "studio",
+    "decision": "adapt",
+    "evidence": [
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/post-merge-monitor.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:docs/conventions.md"
+    ],
+    "originalFalsifier": "A monitor run or delivery SHA must not replace the workflow_run payload SHA used for incident identity.",
+    "studioDelta": "The monitor observes only four named workflows today; the collector exposes current workflow/event coverage without changing monitor behavior.",
+    "focusedTransferProof": "Run facts retain head SHA and event independently, and workflow_run is classified as post-merge-observer rather than comparable PR admission."
+  },
+  {
+    "id": "studio.remote-main-submodule-ancestry-gate",
+    "source": "studio",
+    "decision": "adapt",
+    "evidence": [
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/submodule-pins.yml",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:scripts/check-submodule-pins.ts"
+    ],
+    "originalFalsifier": "A local off-main pin or unreachable SHA must not be accepted as remote-main evidence.",
+    "studioDelta": "This round's collector records local gitlink and remote-main provenance but the ship proof remains a separate merge gate.",
+    "focusedTransferProof": "The output carries exact Studio HEAD, origin/main, and remote-main refs plus every recursive gitlink; unavailable remote facts remain null."
+  },
+  {
+    "id": "studio.owner-derived-scheduled-contract-roster",
+    "source": "studio",
+    "decision": "adapt",
+    "evidence": [
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:scripts/ci/nightly-contract-roster.ts",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:package.json",
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/nightly-e2e.yml"
+    ],
+    "originalFalsifier": "A missing or moved owner package must fail admission rather than being silently skipped or represented by a copied path list.",
+    "studioDelta": "The collector derives workspace-owner entries from root workspaces and reports unavailable submodule manifests instead of inventing package names.",
+    "focusedTransferProof": "The workspace census includes each declared pattern, resolved manifest owner, and explicit unavailable status for unmaterialized private submodules."
+  }
+]

@@ -21,7 +21,7 @@ import { vitePluginBrand } from './vite-plugin-brand';
 // chain's extensionless relative imports (ERR_MODULE_NOT_FOUND). The relative
 // path keeps the preset INSIDE the esbuild config bundle, which handles TS +
 // extensionless fine. Runtime source imports must still use the facade.
-import { engineVitePreset } from '../editor/packages/edit-runtime/src/viewport/runtime-vite-preset';
+import { engineVitePreset } from '../editor/engine-vite-preset';
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT_ENV = resolve(PACKAGE_DIR, '../../.env');
@@ -40,12 +40,11 @@ const REEL = process.env.FORGEAX_REEL_URL ?? 'http://127.0.0.1:15175';
 const STANDALONE_PROXY_ENABLED = process.env.FORGEAX_STANDALONE_PROXY === '1';
 
 // Single-realm engine serve fragment. base '/' — studio's own origin serves both
-// the SPA and the engine modules, so shader/pack routes arrive un-prefixed (no
-// base-strip). gameDirAbs:null — studio is MULTI-game (slug switches at runtime,
-// not fixed at boot), so the in-process engine takes its per-game pack catalog
-// from the play engine (:15173) via the existing /preview + /__import proxies
-// (ViewportComponent fallback: /preview/pack-index/<slug>.json); the preset then
-// only serves /shaders/manifest.json (forgeaxShader). preserveSymlinks:false —
+// the SPA and the engine modules, so shader routes arrive un-prefixed (no
+// base-strip). gameDirAbs:null means this host has no fixed asset producer: the
+// in-process editor consumes the server-confirmed single-game binding through
+// the scoped /preview proxy. The preset only serves /shaders/manifest.json
+// (forgeaxShader). preserveSymlinks:false —
 // studio pulls dockview/@radix through packages/interface/node_modules; realpath
 // dedupe (resolve.dedupe) collapses the @forgeax family to one instance so the
 // in-process engine + editor + interface share ONE editor-shared store.
@@ -229,20 +228,14 @@ export default defineConfig(() => ({
     ...enginePreset.plugins,
     ...(HTTPS_ENABLED && !useCustomCert ? [basicSsl()] : []),
   ],
-  // Expose the game slug + abs dir to the client bundle. Studio is multi-game, so
-  // both are null at build time (the active game is resolved at runtime by
-  // useActiveSlug and passed to ViewportComponent as props in EditRealm). Null on
-  // __FORGEAX_GAME_DIR_ABS__ selects the in-process engine's multi-game fallback
-  // paths (/preview/pack-index/<slug>.json, root /__import).
+  // Studio has no fixed game at build time. The active game and every asset URL
+  // arrive at runtime as one server-confirmed binding.
   define: {
     __FORGEAX_GAME_SLUG__: JSON.stringify(null),
     __FORGEAX_GAME_DIR_ABS__: JSON.stringify(null),
-    // Multi-game host: no single package.json#forgeax.assets.roots at build time
-    // (active slug switches at runtime). Inject the default local `assets` root
-    // so Content Browser's catalogPathToRoot slug-fallback can keep
-    // `.forgeax/games/<slug>/assets/...` rows (editor #230). Without this the
-    // injected roots stay [] and every catalog entry is filtered out → empty
-    // Assets panel. Standalone --game injects enginePreset.catalogRoots instead.
+    // Content Browser path projection remains a Studio concern; it is not an
+    // engine asset-producer input. Runtime identity still comes only from the
+    // active binding passed to ViewportComponent.
     __FORGEAX_CATALOG_ASSET_ROOTS__: JSON.stringify([
       { root: 'assets', catalogPrefix: 'assets' },
     ]),
@@ -305,6 +298,14 @@ export default defineConfig(() => ({
       '@forgeax/design': resolve(PACKAGE_DIR, '../interface/packages/design/index.ts'),
       '@forgeax/types': resolve(PACKAGE_DIR, '../contracts/types/src/index.ts'),
       '@forgeax/host-sdk': resolve(PACKAGE_DIR, '../host-sdk/src/index.ts'),
+      // The in-process viewport is bundled from the editor facade's source
+      // graph, but Studio does not install editor-core as a direct dependency.
+      // Resolve its public source barrel explicitly so Vite does not fall back
+      // to a nonexistent Studio-local node_modules entry. Downstream
+      // @forgeax/* imports remain on the editor package graph and are still
+      // deduped by enginePreset.
+      '@forgeax/editor-core/': `${resolve(PACKAGE_DIR, '../editor/packages/core/src')}/`,
+      '@forgeax/editor-core': resolve(PACKAGE_DIR, '../editor/packages/core/src/index.ts'),
     },
   },
   server: {
@@ -357,31 +358,20 @@ export default defineConfig(() => ({
     proxy: {
       '/api': { target: SERVER, changeOrigin: true, ws: true },
       '/ws': { target: SERVER_WS, ws: true, changeOrigin: true },
+      // Shared Workbench Host: Catalog, package/version APIs, trusted runtime
+      // assets and extension-owned routes all stay same-origin to the browser.
+      '/__workbench__': { target: SERVER, changeOrigin: true },
       // Engine vite has `base: '/preview/'`, so ALL its asset/dep URLs are
       // already prefixed. One proxy catches everything (forgeax/engine/*,
       // games/*, node_modules/.vite/deps/*, @vite, @id, @fs) and the
       // interface's own /node_modules deps stay un-proxied — no collision.
       '/preview': { target: ENGINE, changeOrigin: true, ws: true },
-      // createDevImportTransport (engine runtime) POSTs a root-absolute
-      // `/__import/<guid>` on a loadByGuid miss to lazily cook a sub-asset
-      // (texture cube, gltf scene/skin/animation-clip, …) into the runtime POD.
-      // It is NOT under /preview, so route it to the Play engine explicitly.
-      // Without this proxy the studio SPA-falls back to index.html and the
-      // engine returns 404 for every dev import — every .glb-backed game
-      // (witch hellforge, future skinned characters) silently fails to load.
-      '/__import': { target: ENGINE, changeOrigin: true },
-      // After /__import returns a row, the runtime fetches the pack body at
-      // its returned `relativeUrl` — for gltf imports this is
-      // `/__forgeax-ddc/<glb-bytes-guid>.pack.json` (vite-plugin-pack DDC seam).
-      // It is also outside /preview, so it must be proxied explicitly or the
-      // studio SPA falls back to index.html and the runtime parses HTML as JSON.
-      '/__forgeax-ddc': { target: ENGINE, changeOrigin: true },
       // NOTE: the `/editor` -> :15280 proxy is DELETED (single-realm,
       // feat-20260703). The editor engine now boots IN-PROCESS in this :18920
       // host window; there is no edit-runtime iframe to proxy to. The shader
-      // manifest is served locally by enginePreset.plugins; the per-game pack
-      // catalog + __import come from the play engine (:15173) via /preview +
-      // /__import above (ViewportComponent multi-game fallback).
+      // manifest is served locally by enginePreset.plugins. The active-game
+      // binding and all scoped catalog/import/package requests
+      // come from the play engine (:15173) through /preview.
       // Plugin iframe assets — the studio server's serveStatic mounts each
       // plugin's vite build dist under /extensions/<plugin-id>/*. Without this
       // proxy the interface dev server SPA-falls back to its own index.html

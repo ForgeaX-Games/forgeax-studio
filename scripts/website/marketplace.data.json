@@ -3,10 +3,10 @@
     "slug": "admin",
     "id": "@forgeax-extension/admin",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -20,15 +20,15 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "admin",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
       "tools": 0,
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/admin"
   },
   "agent-ai-asset": {
@@ -60,7 +60,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-ai-asset"
   },
   "agent-animator-2d": {
@@ -92,7 +92,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-animator-2d"
   },
   "agent-arin": {
@@ -124,7 +124,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-arin"
   },
   "agent-cc-coder": {
@@ -156,7 +156,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-cc-coder"
   },
   "agent-character-designer-2d": {
@@ -188,7 +188,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-character-designer-2d"
   },
   "agent-claude-code-default": {
@@ -220,7 +220,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-claude-code-default"
   },
   "agent-codex-default": {
@@ -252,7 +252,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-codex-default"
   },
   "agent-cursor-default": {
@@ -284,7 +284,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-cursor-default"
   },
   "agent-director": {
@@ -316,7 +316,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-director"
   },
   "agent-forgeax-default": {
@@ -348,7 +348,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-forgeax-default"
   },
   "agent-gen3d": {
@@ -380,7 +380,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-gen3d"
   },
   "agent-iori": {
@@ -412,7 +412,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-iori"
   },
   "agent-iro": {
@@ -444,7 +444,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-iro"
   },
   "agent-kaede": {
@@ -476,7 +476,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-kaede"
   },
   "agent-kotone": {
@@ -508,7 +508,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-kotone"
   },
   "agent-kumo": {
@@ -540,7 +540,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-kumo"
   },
   "agent-lock": {
@@ -572,7 +572,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-lock"
   },
   "agent-lowpoly": {
@@ -604,7 +604,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-lowpoly"
   },
   "agent-mira": {
@@ -636,7 +636,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-mira"
   },
   "agent-mochi": {
@@ -668,7 +668,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-mochi"
   },
   "agent-nodia": {
@@ -700,7 +700,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-29",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-nodia"
   },
   "agent-rin": {
@@ -732,7 +732,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-rin"
   },
   "agent-sakura": {
@@ -764,7 +764,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-sakura"
   },
   "agent-sino": {
@@ -796,7 +796,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-sino"
   },
   "agent-suzu": {
@@ -828,7 +828,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-suzu"
   },
   "agent-tsumugi": {
@@ -860,7 +860,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-tsumugi"
   },
   "agent-ui-designer": {
@@ -892,7 +892,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-ui-designer"
   },
   "agent-vfx-artist-3d": {
@@ -924,7 +924,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-vfx-artist-3d"
   },
   "agent-yevi": {
@@ -956,7 +956,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/agent-yevi"
   },
   "cli-claude-code": {
@@ -1156,7 +1156,7 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/skill-author-plugin"
   },
   "skill-make-game-design": {
@@ -1231,10 +1231,10 @@
     "slug": "wb-2d-scene-asset-generator",
     "id": "@forgeax-plugin/wb-2d-scene-asset-generator",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1248,22 +1248,12 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "wb-2d-scene-asset-generator",
+      "workbench": null,
       "lens": null,
-      "skills": 2,
-      "skillTriggers": [
-        "/wb-2d-scene-asset-generator",
-        "/generate-2d-asset"
-      ],
-      "tools": 27,
-      "toolSample": [
-        "asset2d:projects.list",
-        "asset2d:projects.create",
-        "asset2d:projects.open",
-        "asset2d:projects.close",
-        "asset2d:projects.remove",
-        "asset2d:batteries.list"
-      ]
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
     "updated": "2026-07-15",
@@ -1273,10 +1263,10 @@
     "slug": "wb-3d-lowpoly",
     "id": "@forgeax-plugin/wb-3d-lowpoly",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1290,22 +1280,12 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "wb-3d-lowpoly",
+      "workbench": null,
       "lens": null,
-      "skills": 2,
-      "skillTriggers": [
-        "/wb-3d-lowpoly",
-        "/compose-lowpoly"
-      ],
-      "tools": 22,
-      "toolSample": [
-        "lowpoly:projects.list",
-        "lowpoly:projects.create",
-        "lowpoly:projects.open",
-        "lowpoly:projects.close",
-        "lowpoly:projects.remove",
-        "lowpoly:batteries.list"
-      ]
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
     "updated": "2026-07-15",
@@ -1315,10 +1295,10 @@
     "slug": "wb-agent-persona",
     "id": "@forgeax-extension/wb-agent-persona",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1337,7 +1317,7 @@
       "prompt"
     ],
     "caps": {
-      "workbench": "wb-agent-persona",
+      "workbench": null,
       "lens": null,
       "skills": 0,
       "skillTriggers": [],
@@ -1345,17 +1325,17 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-agent-persona"
   },
   "wb-ai-asset": {
     "slug": "wb-ai-asset",
     "id": "@forgeax-extension/wb-ai-asset",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1378,32 +1358,25 @@
       "generation"
     ],
     "caps": {
-      "workbench": "wb-ai-asset",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
-      "tools": 13,
-      "toolSample": [
-        "aiasset:provider-status",
-        "aiasset:text-to-3d",
-        "aiasset:image-to-3d",
-        "aiasset:multi-image-to-3d",
-        "aiasset:refine",
-        "aiasset:retexture"
-      ]
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-28",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-ai-asset"
   },
   "wb-anim": {
     "slug": "wb-anim",
     "id": "@forgeax-extension/wb-anim",
     "version": "0.1.31",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1417,32 +1390,25 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "anim",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
-      "tools": 6,
-      "toolSample": [
-        "anim:generate-pixel",
-        "anim:generate-sprite-sheet",
-        "anim:generate-vehicle",
-        "anim:generate-monster",
-        "anim:generate-spine",
-        "anim:generate-video"
-      ]
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-27",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-anim"
   },
   "wb-balance": {
     "slug": "wb-balance",
     "id": "@forgeax-extension/wb-balance",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1456,25 +1422,25 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "balance",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
       "tools": 0,
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-balance"
   },
   "wb-bgm": {
     "slug": "wb-bgm",
     "id": "@forgeax-extension/wb-bgm",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1482,8 +1448,8 @@
       "en": "BGM & SFX"
     },
     "desc": {
-      "zh": "BGM / 音效工作台 · 搜索 + 试听音频素材库,一键配入游戏:下载到 .forgeax/games/<slug>/audio/ 并写入 audio/manifest.json,供引擎按 manifest 播放。",
-      "en": "BGM & SFX workbench — search and preview an audio asset library, then attach to a game in one click: downloads into .forgeax/games/<slug>/audio/ and upserts audio/manifest.json for the engine to play."
+      "zh": "BGM / 音效工作台 · 搜索 + 试听打包的本地音频素材库,一键复制到 .forgeax/games/<slug>/audio/ 并写入 audio/manifest.json,供引擎按 manifest 播放。",
+      "en": "BGM & SFX workbench — search and preview the packaged local library, then copy audio into .forgeax/games/<slug>/audio/ and upsert audio/manifest.json for the engine to play."
     },
     "author": "forgeax",
     "keywords": [
@@ -1495,30 +1461,25 @@
       "asset-library"
     ],
     "caps": {
-      "workbench": "bgm",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
-      "tools": 4,
-      "toolSample": [
-        "search-audio",
-        "attach-audio",
-        "list-audio",
-        "bgm:backend"
-      ]
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-27",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-bgm"
   },
   "wb-character": {
     "slug": "wb-character",
     "id": "@forgeax-extension/wb-character",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1538,34 +1499,25 @@
       "image-gen"
     ],
     "caps": {
-      "workbench": "wb-character",
-      "lens": "by-category",
-      "skills": 1,
-      "skillTriggers": [
-        "/character"
-      ],
-      "tools": 10,
-      "toolSample": [
-        "character:generate-portrait",
-        "character:generate-turnaround",
-        "character:list",
-        "character:get",
-        "character:rename",
-        "character:save-render-config"
-      ]
+      "workbench": null,
+      "lens": null,
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-28",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-character"
   },
   "wb-code": {
     "slug": "wb-code",
     "id": "@forgeax-extension/wb-code",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1579,25 +1531,25 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "code",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
       "tools": 0,
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-code"
   },
   "wb-diffusion-renderer": {
     "slug": "wb-diffusion-renderer",
     "id": "@forgeax-extension/wb-diffusion-renderer",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1617,7 +1569,7 @@
       "lingbot"
     ],
     "caps": {
-      "workbench": "wb-diffusion-renderer",
+      "workbench": null,
       "lens": null,
       "skills": 0,
       "skillTriggers": [],
@@ -1625,13 +1577,13 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-17",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-diffusion-renderer"
   },
   "wb-game-video": {
     "slug": "wb-game-video",
-    "id": "@forgeax/wb-game-video",
-    "version": "0.1.5",
+    "id": "@forgeax-extension/wb-game-video",
+    "version": "0.7.6",
     "kind": "workbench",
     "kindLabel": {
       "zh": "工作台",
@@ -1663,28 +1615,28 @@
       "skillTriggers": [
         "/wb-game-video"
       ],
-      "tools": 11,
+      "tools": 15,
       "toolSample": [
         "wb-game-video:get-graph",
         "wb-game-video:save-graph",
+        "wb-game-video:patch-graph",
         "wb-game-video:list-videos",
         "wb-game-video:generate-shot-script",
-        "wb-game-video:generate-keyframe",
-        "wb-game-video:generate-video"
+        "wb-game-video:generate-keyframe"
       ]
     },
     "created": "2026-07-14",
-    "updated": "2026-07-31",
+    "updated": "2026-08-09",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-wb-game-video"
   },
   "wb-gen3d": {
     "slug": "wb-gen3d",
     "id": "@forgeax-extension/wb-gen3d",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1705,32 +1657,25 @@
       "glb"
     ],
     "caps": {
-      "workbench": "wb-gen3d",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
-      "tools": 25,
-      "toolSample": [
-        "gen3d:provider-status",
-        "gen3d:list-assets",
-        "gen3d:delete-asset",
-        "gen3d:generate-meshy-text-mock",
-        "gen3d:text-to-3d",
-        "gen3d:image-to-3d"
-      ]
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-31",
+    "updated": "2026-08-04",
     "repoUrl": null
   },
   "wb-items": {
     "slug": "wb-items",
     "id": "@forgeax-extension/wb-items",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1751,34 +1696,25 @@
       "items.json"
     ],
     "caps": {
-      "workbench": "items",
-      "lens": "by-category",
-      "skills": 1,
-      "skillTriggers": [
-        "/items-workshop"
-      ],
-      "tools": 10,
-      "toolSample": [
-        "items:list",
-        "items:save-document",
-        "items:upsert-item",
-        "items:delete-item",
-        "items:normalize-sources",
-        "items:generate-style-plan"
-      ]
+      "workbench": null,
+      "lens": null,
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-27",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-items"
   },
   "wb-look": {
     "slug": "wb-look",
     "id": "@forgeax-extension/wb-look",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1792,25 +1728,25 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "look",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
       "tools": 0,
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-look"
   },
   "wb-lowpoly-obj": {
     "slug": "wb-lowpoly-obj",
     "id": "@forgeax-extension/wb-lowpoly-obj",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1834,32 +1770,25 @@
       "blender"
     ],
     "caps": {
-      "workbench": "wb-lowpoly-obj",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
-      "tools": 10,
-      "toolSample": [
-        "lowpoly:list-characters",
-        "lowpoly:get-character",
-        "lowpoly:save-character",
-        "lowpoly:rename-character",
-        "lowpoly:vibe-author",
-        "lowpoly:vibe-edit"
-      ]
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-28",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-lowpoly-obj"
   },
   "wb-narrative": {
     "slug": "wb-narrative",
     "id": "@forgeax-extension/wb-narrative",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1873,34 +1802,25 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "narrative",
-      "lens": "by-category",
-      "skills": 1,
-      "skillTriggers": [
-        "/narrative"
-      ],
-      "tools": 30,
-      "toolSample": [
-        "narrative:start-pipeline",
-        "narrative:get-run-status",
-        "narrative:list-runs",
-        "narrative:export-result",
-        "narrative:cancel-run",
-        "narrative:regenerate-step"
-      ]
+      "workbench": null,
+      "lens": null,
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-28",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-narrative"
   },
   "wb-observatory": {
     "slug": "wb-observatory",
     "id": "@forgeax-extension/wb-observatory",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1923,7 +1843,7 @@
       "system-prompt"
     ],
     "caps": {
-      "workbench": "wb-observatory",
+      "workbench": null,
       "lens": null,
       "skills": 0,
       "skillTriggers": [],
@@ -1931,17 +1851,17 @@
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-28",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-observatory"
   },
   "wb-plugin-author": {
     "slug": "wb-plugin-author",
     "id": "@forgeax-extension/wb-plugin-author",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1955,25 +1875,25 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "plugin-author",
-      "lens": "by-author",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
       "tools": 0,
       "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-15",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-plugin-author"
   },
   "wb-reel": {
     "slug": "wb-reel",
     "id": "@forgeax-extension/wb-reel",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -1996,34 +1916,25 @@
       "seedance"
     ],
     "caps": {
-      "workbench": "reel",
-      "lens": "by-category",
-      "skills": 1,
-      "skillTriggers": [
-        "/reel"
-      ],
-      "tools": 23,
-      "toolSample": [
-        "reel:list-scenarios",
-        "reel:get-scenario",
-        "reel:save-scenario",
-        "reel:get-scene-timeline",
-        "reel:update-shot",
-        "reel:edit-dialogue"
-      ]
+      "workbench": null,
+      "lens": null,
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-21",
+    "updated": "2026-08-07",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-reel"
   },
   "wb-scene-generator": {
     "slug": "wb-scene-generator",
     "id": "@forgeax-plugin/wb-scene-generator",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -2037,24 +1948,12 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "wb-scene-generator",
+      "workbench": null,
       "lens": null,
-      "skills": 5,
-      "skillTriggers": [
-        "/wb-scene-generator",
-        "/compose-scene-pipeline",
-        "/compose-sino-scene",
-        "/design-scene-brief"
-      ],
-      "tools": 32,
-      "toolSample": [
-        "scene:projects.list",
-        "scene:projects.create",
-        "scene:projects.open",
-        "scene:projects.close",
-        "scene:projects.heartbeat",
-        "scene:projects.queue.status"
-      ]
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
     "updated": "2026-07-15",
@@ -2064,10 +1963,10 @@
     "slug": "wb-skill",
     "id": "@forgeax-extension/wb-skill",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -2081,17 +1980,15 @@
     "author": "ForgeaX",
     "keywords": [],
     "caps": {
-      "workbench": "skill",
-      "lens": "by-category",
+      "workbench": null,
+      "lens": null,
       "skills": 0,
       "skillTriggers": [],
-      "tools": 1,
-      "toolSample": [
-        "skill:generate-vfx"
-      ]
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-27",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-skill"
   },
   "wb-team-forge": {
@@ -2133,10 +2030,10 @@
     "slug": "wb-ui",
     "id": "@forgeax-extension/wb-ui",
     "version": "0.1.0",
-    "kind": "workbench",
+    "kind": "plugin",
     "kindLabel": {
-      "zh": "工作台",
-      "en": "Workbench"
+      "zh": "插件",
+      "en": "plugin"
     },
     "experimental": true,
     "name": {
@@ -2157,19 +2054,15 @@
       "game-ui"
     ],
     "caps": {
-      "workbench": "ui",
-      "lens": "by-category",
-      "skills": 1,
-      "skillTriggers": [
-        "/ui-workshop"
-      ],
-      "tools": 1,
-      "toolSample": [
-        "ui-design:generate-assets"
-      ]
+      "workbench": null,
+      "lens": null,
+      "skills": 0,
+      "skillTriggers": [],
+      "tools": 0,
+      "toolSample": []
     },
     "created": "2026-07-14",
-    "updated": "2026-07-27",
+    "updated": "2026-08-04",
     "repoUrl": "https://github.com/ForgeaX-Games/forgeax-marketplace/tree/main/extensions/wb-ui"
   }
 }

@@ -146,8 +146,8 @@ describe('scripts/prepare.ts contracts', () => {
   it('does not require Git metadata when preparing the public distribution', () => {
     const src = prepareSource();
     expect(src).toContain('if (publicDistribution)');
-    expect(src).toContain('setup version snapshot skipped (public distribution has no Git metadata)');
-    expect(src.indexOf('setup version snapshot skipped')).toBeLessThan(src.indexOf('writeSetupSnapshot(ROOT)'));
+    expect(src).toContain('recursive input result skipped (public distribution has no Git metadata)');
+    expect(src.indexOf('recursive input result skipped')).toBeLessThan(src.indexOf('writeRecursiveInputResult(ROOT)'));
   });
   it('scaffolds .env silently without readline key prompt', () => {
     const src = prepareSource();

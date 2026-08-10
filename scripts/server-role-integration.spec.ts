@@ -26,13 +26,13 @@ describe('server role script integration', () => {
     expect(text).toContain('cwd: activeServer.packageDir');
   });
 
-  it('stop delegates active server orphan matching to the tested signature helper', () => {
+  it('stop feeds active server selection into the current-instance ownership scope', () => {
     const text = source('stop.ts');
 
-    expect(text).toContain('activeServerSignature');
-    expect(text).toContain('serverRuntimeInvocation(activeServer).orphanSignature');
-    expect(text).toContain('serverOrphanNeedles(ROOT, activeServer)');
-    expect(text).not.toContain('FX_ROOT_WIN');
+    expect(text).toContain('runtimeStateBelongsToInstance(instance, runtimeState)');
+    expect(text).toContain('resolveInstanceStopScope(instance, runtimeState, { activeServer, interfaceDir })');
+    expect(text).toContain('runtimeProcessBelongsToInstance');
+    expect(text).not.toContain('activeServerSignature');
   });
 
   it('desktop build takes package metadata and copied server files from the active package', () => {
@@ -45,13 +45,15 @@ describe('server role script integration', () => {
     expect(text).toContain('desktopServerEntryAdapter(activeServer.entry)');
   });
 
-  it('CI smoke keeps auto server profile resolution', () => {
+  it('CI smoke uses the canonical fx startup path and keeps auto server profile resolution', () => {
     const text = workflow('ci.yml');
     const smokeStep = text.match(
-      /      - name: Smoke — bun scripts\/run\.ts \+ probe ports\n[\s\S]*?(?=\n      - name:)/,
+      /      - name: Smoke — bun fx start web \+ probe ports\n[\s\S]*?(?=\n      - name:)/,
     )?.[0];
 
     expect(smokeStep).toBeDefined();
+    expect(smokeStep).toContain('nohup bun fx start web --skip-setup-check');
+    expect(smokeStep).not.toContain('scripts/run.ts');
     expect(smokeStep).not.toContain('FORGEAX_SERVER_PROFILE: base');
   });
 });

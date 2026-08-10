@@ -1,0 +1,55 @@
+{
+  "name": "@forgeax/game",
+  "version": "0.1.1",
+  "private": false,
+  "type": "module",
+  "description": "@forgeax/game \u2014 ForgeaX game development as a plugin for MCP-capable agent CLIs (Codex, the reference agent CLI, Cursor, Trae, OpenCode, WorkBuddy). Single binary, dual mode: no args = stdio MCP server, subcommand = CLI.",
+  "main": "./dist/main.js",
+  "bin": {
+    "forgeax-game": "dist/main.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build.mjs",
+    "runtime:build": "bun scripts/build-runtime-artifact.ts",
+    "build:release": "bun scripts/build-runtime-artifact.ts --build-plugin",
+    "release:check": "bun scripts/check-package-artifact.ts",
+    "acceptance": "bun scripts/accept-packed-consumer.ts",
+    "prepack": "bun build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test/*.test.ts",
+    "runtime:manifest": "bun scripts/build-runtime-manifest.ts",
+    "start": "bun src/main.ts",
+    "mcp:inspect": "npx @modelcontextprotocol/inspector node dist/main.js"
+  },
+  "keywords": [
+    "forgeax",
+    "mcp",
+    "model-context-protocol",
+    "game-development",
+    "codex",
+    "claude-code"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.9.2"
+  }
+}

@@ -10,9 +10,10 @@
 // in-process React components, NOT a /editor iframe. Studio's vite.config.ts
 // head comment locks this in ("editor viewport + ep:* panels are now in-process
 // React components ... not a /editor iframe"); this file is the concrete wiring.
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useShellStore } from '@forgeax/interface/store';
+import type { RuntimeAssetBinding, RuntimeScopeState } from '@forgeax/interface/store';
 import { useTranslation } from '@forgeax/interface/i18n';
 import type { PanelRenderers, PanelDescriptor } from '@forgeax/interface/components/DockShell/panelRenderers';
 import {
@@ -25,7 +26,7 @@ import {
   hasPendingDiskSave,
 } from '@forgeax/editor/bridge';
 import { DEFAULT_EDITOR_DOCK_LAYOUT } from '@forgeax/editor/default-dock-layout';
-// ViewportComponent (the in-process edit surface) + resetEditRealm (cross-game
+// ViewportComponent (the in-process edit surface) + resetEditRealm (active-game
 // teardown) come from the editor facade's ./viewport subpath; EDITOR_PANEL_COMPONENTS
 // maps ep:<id> → the panel's React component. Mirrors packages/editor/
 // standalone/main.tsx (the standalone editor shell that first landed this).
@@ -40,8 +41,7 @@ import { ChatPanel } from '@forgeax/chat';
 // stays dashboard/settings-agnostic; studio injects the overlay bodies here via
 // the overlays.Dashboard / overlays.Settings slots, exactly like chat/edit/preview.
 import { Dashboard } from '@forgeax/dashboard';
-import { SettingsPanel, SettingsSectionsRegister, useSettingsSection } from '@forgeax/settings';
-import { SlidersHorizontal } from 'lucide-react';
+import { SettingsPanel, SettingsSectionsRegister } from '@forgeax/settings';
 // studio→workbench is a legal aggregation edge. interface stays workbench-UI
 // agnostic (the plugin-host runtime stays L1); studio injects the workbench
 // main-area body here via slots.MainAreaBody + detached.AgentsBrowser/FilesBrowser.
@@ -368,6 +368,13 @@ function dispatchEditorViewportRuntime(operation: 'play' | 'stop' | 'show-scene'
 // but is a no-op — the in-process component always renders the full surface.
 function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   const slug = useActiveSlug();
+  const runtimeState = useShellStore((s) => s.activeGameRuntime);
+  const runtimeBinding: RuntimeAssetBinding | undefined = (
+    runtimeState.status === 'ready' || runtimeState.status === 'degraded'
+  ) ? runtimeState.binding : undefined;
+  const realmKey = slug !== null && runtimeBinding !== undefined
+    ? `${slug}:${runtimeBinding.scopeId}:${runtimeBinding.generation}`
+    : null;
   const transportRole = studioEditorTransportRole(window.location.search);
   const [carrierReadySlug, setCarrierReadySlug] = useState<string | null>(null);
 
@@ -384,7 +391,7 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   // effects run before parent effects, so mounting it eagerly would issue four
   // requests before this carrier exists (eight under development StrictMode).
   useEffect(() => {
-    if (!slug) {
+    if (!slug || runtimeBinding === undefined) {
       setCarrierReadySlug(null);
       return undefined;
     }
@@ -398,11 +405,11 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
       active = false;
       carrier.dispose();
     };
-  }, [slug, transportRole]);
+  }, [slug, runtimeBinding?.scopeId, runtimeBinding?.generation, transportRole]);
 
-  // `bootedSlug` is the game the currently-mounted engine booted. null until
-  // the first game mounts. When slug !== bootedSlug we do a teardown+remount.
-  const [bootedSlug, setBootedSlug] = useState<string | null>(null);
+  // `bootedRealmKey` is the exact slug+scope+generation currently mounted.
+  // A slug alone is not an asset identity and can never authorize a remount.
+  const [bootedRealmKey, setBootedRealmKey] = useState<string | null>(null);
 
   /**
    * EditRealm classification for the M4 projection boundary:
@@ -428,19 +435,18 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   const displayRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
-    if (!slug) return;
-    if (bootedSlug === slug) return;
-    // Cross-game switch (or first boot). On a real switch, destroy the previous
+    if (bootedRealmKey === realmKey) return;
+    // Active-game switch (or first boot). On a real switch, destroy the previous
     // engine realm BEFORE remounting, so the old WebGPU device is released and the
     // boot latch is clear for the new game. First boot (null) has nothing to tear
     // down.
-    if (bootedSlug !== null) {
+    if (bootedRealmKey !== null) {
       pendingAssetReload.current = null;
       assetReloadToken.current += 1;
       resetEditRealm();
     }
-    setBootedSlug(slug);
-  }, [slug, bootedSlug]);
+    setBootedRealmKey(realmKey);
+  }, [bootedRealmKey, realmKey]);
 
   useEffect(() => {
     if (!slug || !import.meta.hot) return;
@@ -553,18 +559,28 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
   // mounted engine boots + streams the game's assets — we overlay a loading
   // surface so a heavy game (e.g. hellforge, ~1.3GB of meshes) never presents as
   // a silent blank viewport with "所有接口 pending 但页面没提示" (the bug this fixes).
-  const mounted = !!slug && bootedSlug === slug;
+  const mounted = realmKey !== null && bootedRealmKey === realmKey;
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#16161a' }}>
       <EditorCanonicalProjection slug={carrierReadySlug === slug ? slug : null} />
       {mounted && (
-        // key={slug} forces a fresh mount per game; the pre-mount resetEditRealm
+        // key={realmKey} forces a fresh mount per binding; the pre-mount resetEditRealm
         // above guarantees the latch is clear so ViewportComponent actually re-boots.
-        // The game is passed as props — the engine boot reads it there, not from the URL.
-        <ViewportComponent key={`${slug}:${viewportEpoch}`} gameSlug={slug} gameRoot={studioGameRoot(slug)} />
+        // The game and scoped URLs are passed as props — the engine boot reads
+        // them there, not from a slug-selected URL.
+        <ViewportComponent
+          key={`${realmKey}:${viewportEpoch}`}
+          gameSlug={slug!}
+          gameRoot={studioGameRoot(slug!)}
+          runtimeBinding={runtimeBinding}
+        />
       )}
       {/* Keyed by slug/epoch so it resets boot-progress on game switches and asset-driven remounts. */}
-      <ViewportBootOverlay key={`overlay:${slug ?? '_none'}:${viewportEpoch}`} slug={slug} />
+      <ViewportBootOverlay
+        key={`overlay:${realmKey ?? '_unbound'}:${viewportEpoch}`}
+        slug={slug}
+        runtimeState={runtimeState}
+      />
     </div>
   );
 }
@@ -592,7 +608,7 @@ function EditRealm(_props: { viewportOnly?: boolean } = {}) {
 //
 // Purely presentational — it reads editor boot breadcrumbs off the in-process
 // panelBridge (editorHealth), never mutating state.
-function ViewportBootOverlay({ slug }: { slug: string | null }): ReactNode {
+function ViewportBootOverlay({ slug, runtimeState }: { slug: string | null; runtimeState: RuntimeScopeState }): ReactNode {
   const { i18n } = useTranslation();
   const zh = i18n.language === 'zh';
   const [visible, setVisible] = useState(true);
@@ -643,7 +659,11 @@ function ViewportBootOverlay({ slug }: { slug: string | null }): ReactNode {
         }}
       />
       <div style={{ fontSize: 14, color: '#e7e7ef' }}>
-        {slug
+        {runtimeState.status === 'unavailable'
+          ? (zh ? '当前游戏运行时不可用' : 'The active game runtime is unavailable')
+          : runtimeState.status === 'unbound' || runtimeState.status === 'transitioning'
+            ? (zh ? '正在绑定当前游戏运行时…' : 'Binding the active game runtime…')
+            : slug
           ? (zh ? `正在加载游戏 “${slug}”…` : `Loading game “${slug}”…`)
           : (zh ? '加载中…' : 'Loading…')}
       </div>
@@ -716,69 +736,9 @@ function SettingsInjection(): ReactNode {
   return (
     <>
       <SettingsSectionsRegister />
-      <EditorSettingsSectionRegister />
       <SettingsPanel />
     </>
   );
-}
-
-// ── Editor section — projects the editor's dockable Settings panel into the
-// studio settings overlay (interim OOS-11 projection). The panel itself
-// (viewport preferences) is owned by @forgeax/editor-panels and stays the
-// SSOT; here it is only embedded as a section body.
-//
-// Loaded dynamically with a graceful fallback: studio consumes the editor
-// through the packages/editor submodule, which can lag the panel's
-// introduction — an old submodule renders an upgrade hint instead of
-// breaking the overlay (a static import of the missing export would fail
-// the studio build).
-function EditorSettingsBody(): ReactNode {
-  const [Panel, setPanel] = useState<ComponentType | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    void import('@forgeax/editor/panels')
-      .then((mod) => {
-        if (cancelled) return;
-        const C = (mod as unknown as { SettingsPanel?: ComponentType }).SettingsPanel;
-        if (C) setPanel(() => C);
-        else setUnavailable(true);
-      })
-      .catch(() => { if (!cancelled) setUnavailable(true); });
-    return () => { cancelled = true; };
-  }, []);
-  if (!Panel) {
-    return (
-      <div className="settings-info">
-        <div className="dim">
-          {unavailable
-            ? 'This build embeds an editor without the Settings panel — sync the packages/editor submodule to a build that ships it.'
-            : 'Loading…'}
-        </div>
-      </div>
-    );
-  }
-  // The panel themes off edit-runtime tokens (theme.css :root); pin surface
-  // tokens on the wrapper so it also reads correctly if it ever mounts
-  // before the editor runtime stylesheet is in the document.
-  return (
-    <div style={{ background: 'var(--bg-1)', color: 'var(--text)' }}>
-      <Panel />
-    </div>
-  );
-}
-
-function EditorSettingsSectionRegister(): ReactNode {
-  useSettingsSection({
-    id: 'editor',
-    label: 'Editor',
-    description: 'Viewport interaction, flight and camera preferences.',
-    priority: 68,
-    group: 'system',
-    icon: SlidersHorizontal,
-    node: <EditorSettingsBody />,
-  });
-  return null;
 }
 
 function WorkbenchAgents(): ReactNode {
@@ -1024,7 +984,7 @@ export const studioExtensions: readonly AppExtension[] = [
       displayName: { zh: 'ForgeaX CLI', en: 'ForgeaX CLI' },
       description: { zh: 'ForgeaX CLI(D4 第二批 manifest 化)', en: 'ForgeaX CLI (D4 batch 2, manifest-declared)' },
       author: { name: 'forgeax', email: 'dev@forgeax.local' },
-      provides: { workbench: { id: 'chat', position: 10 } },
+      provides: { workbench: { id: 'chat', position: 10, singleTab: 'hideTitle' } },
     },
     components: { Panel: ChatPanel },
   }),

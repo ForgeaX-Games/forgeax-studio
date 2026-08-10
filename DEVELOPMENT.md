@@ -48,6 +48,52 @@ Two mode caveats worth internalizing:
   **pnpm** (the engine is a pnpm monorepo), and a wasm toolchain (the WebGPU
   module is compiled from Rust). macOS for a `.app`/`.dmg`.
 
+## Worktree — isolated local runtime
+
+一个物理 Git worktree 对应一个 RuntimeInstance：一个 config、一个 id、一个
+slot。`RuntimeInstance` 是端口、project root、runtime state/log、socket 与可选
+user root 的唯一执行真源；本文只描述流程，不能替代 `bun fx instance show` 的
+实际输出。
+
+```bash
+# 1. 用户创建 worktree；不要在主 checkout 切分支。
+git worktree add .worktrees/my-change -b my-change
+cd .worktrees/my-change
+
+# 2. 每个 worktree 分别安装依赖；根 prepare 会同步准备所需 submodule。
+bun install      # runs package.json prepare → scripts/prepare.ts
+
+# 3. 选择未被其他 worktree 使用的 slot（worktree 通常使用 1..4）。
+bun fx instance init --slot 1 --isolate-user --env-file /path/to/local.env
+
+# 4. 日常生命周期。
+bun fx instance show
+bun fx start
+bun fx status
+bun fx open
+bun fx stop
+```
+
+slot `0` 保留为未配置 checkout 的兼容默认值；并行 worktree 应从 `1..4` 选择。
+同一 slot 会派生相同的 OS 监听端口，因此即使是不同 worktree 也会冲突，必须分配
+不同 slot。派生规则是每个 slot 相对基础端口带加 `10,000` 的偏移；完整的当前端口、
+origin、路径和实例 id 请以 `bun fx instance show` 为准，而不要复制或手改端口表。
+
+`--isolate-user` 会将用户数据 root 也放在该 worktree 的 `.forgeax/user`。无论是否
+隔离用户，`.forgeax`、`node_modules`、project/state/log 都必须是各 worktree 自己的
+目录；agent-host socket 则由 instance server port 派生为短 user-local 路径，按 slot
+隔离，以避开 macOS Unix socket 的路径长度限制。`--env-file` 只在 config 中保存 env
+文件的**路径**，不会复制或打印 secret；请把该文件置于各自安全的位置。
+
+不要裸起 Vite，也不要手写 `FORGEAX_*` 端口变量来拼另一套运行时。旧的
+`scripts/dev-local.ts` / `scripts/dev-local2.ts` 只保留为 deprecated 兼容入口：它们在
+无 config 时分别安全初始化 slot 1 / 2，已有不同 slot 时拒绝覆盖；迁移后直接使用
+`bun fx instance` 与 `bun fx start`。
+
+`bun fx stop` 只会处理当前 instance state 能证明归属的进程和资源；归属无法证明时会
+fail closed。遇到 stale lock，不要删除 state 或猜测 PID：运行 `bun fx stop`，让它通过
+cleanup lease 恢复可验证的状态后再启动。
+
 ## Web — run locally
 
 ```bash

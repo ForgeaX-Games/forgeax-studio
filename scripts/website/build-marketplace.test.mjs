@@ -249,6 +249,17 @@ test(
     }
 
     const wbGameVideo = JSON.parse(first.toString("utf8"))["wb-game-video"];
+    const wbGameVideoManifest = JSON.parse(
+      await readFile(
+        path.join(
+          MARKETPLACE_DIR,
+          "extensions",
+          "wb-game-video",
+          "forgeax-extension.json",
+        ),
+        "utf8",
+      ),
+    );
     assert.deepEqual(
       {
         version: wbGameVideo.version,
@@ -258,10 +269,10 @@ test(
           : {}),
       },
       {
-        version: "0.1.5",
+        version: wbGameVideoManifest.version,
         repoUrl: "https://github.com/ForgeaX-Games/forgeax-wb-game-video",
         ...(hasFullHistory
-          ? { created: "2026-07-14", updated: "2026-07-31" }
+          ? { created: "2026-07-14", updated: "2026-08-09" }
           : {}),
       },
     );

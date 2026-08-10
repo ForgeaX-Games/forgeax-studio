@@ -6,9 +6,9 @@
 // native Windows processes — running under Bun, `taskkill /T /F` and `kill` are
 // both reachable directly, so the split collapses.
 //
-// Discovery is port-first (lsof on POSIX / netstat -ano on Windows, in proc.ts),
-// then layered fallbacks: dev-stack.env pids, .forgeax/run pidfiles, command-line
-// signature match (pgrep / PowerShell CIM), to catch orphans whose port drifted.
+// Discovery is limited to the current RuntimeInstance. A valid RuntimeState
+// supplies its complete managed PID/port contract; missing or invalid state
+// falls back only to this instance's derived, typed service ports.
 //
 // Default escalation: SIGTERM → 4s grace → SIGKILL. --no-force warns + exits 1
 // instead. After kills, poll each port up to ~5s for the socket to release
@@ -17,10 +17,15 @@
 // Exit codes: 0 clean · 1 stragglers/ports-still-bound · 2 bad args.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FIXED_PORTS, FIXED_SVCS } from './lib/ports.ts';
+import { resolveRuntimeInstance } from './lib/runtime-instance.ts';
+import {
+  cleanupStopArtifacts,
+  resolveInstanceStopScope,
+} from './lib/stop-scope.ts';
+import { readRuntimeProcessSnapshot, runtimeProcessBelongsToInstance } from './lib/runtime-process-owner.ts';
+import { canFinalizeStop, discoverStopTargets } from './lib/stop-execution.ts';
 import {
   clearPidfiles,
   IS_WIN,
@@ -28,39 +33,34 @@ import {
   isPortBusy,
   killTree,
   listenPids,
-  readPidfilePid,
-  runDir,
   selfAndAncestors,
   sleep,
 } from './lib/proc.ts';
-import {
-  resolveActiveServerRole,
-  serverOrphanNeedles,
-  serverRuntimeInvocation,
-} from './lib/server-role.ts';
-import { readRuntimeState } from './lib/runtime-state.ts';
-import { STARTUP_PROFILES } from './lib/startup-environment.ts';
+import { resolveActiveServerRole } from './lib/server-role.ts';
+import { readRuntimeState, runtimeStateBelongsToInstance } from './lib/runtime-state.ts';
 import { vitePurgeAll } from './lib/vite-cache.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const instance = resolveRuntimeInstance({ root: ROOT });
+const runtimeState = readRuntimeState(instance.stateFile);
 let activeServer = {
   packageDir: join(ROOT, 'packages/server'),
   entry: 'src/main.ts',
   packageName: '@forgeax/server',
   priority: 0,
 };
-try {
-  activeServer = resolveActiveServerRole({
-    root: ROOT,
-    profile: process.env.FORGEAX_SERVER_PROFILE,
-  });
-} catch (error) {
-  console.error(
-    `[stop] WARNING: server role resolution failed; retaining the base orphan signature (${(error as Error).message})`,
-  );
+if (!runtimeStateBelongsToInstance(instance, runtimeState)) {
+  try {
+    activeServer = resolveActiveServerRole({
+      root: ROOT,
+      profile: process.env.FORGEAX_SERVER_PROFILE,
+    });
+  } catch (error) {
+    console.error(
+      `[stop] WARNING: server role resolution failed; retaining the base orphan signature (${(error as Error).message})`,
+    );
+  }
 }
-const activeServerSignature = serverRuntimeInvocation(activeServer).orphanSignature;
-const activeServerNeedles = serverOrphanNeedles(ROOT, activeServer);
 
 // ── args ──────────────────────────────────────────────────────────────────
 let force = true;
@@ -80,47 +80,17 @@ for (const a of process.argv.slice(2)) {
   }
 }
 
-const runStackFile = join(ROOT, '.forgeax', 'dev-stack.env');
-const extensionDevPortsJson = join(ROOT, '.forgeax', 'extension-dev-ports.json');
-
-// ── gather dynamic ports + pids from prior run's state ──────────────────────
-const stackEnv = parseEnvFile(runStackFile);
-const runtimeStateFiles = new Set([
-  stackEnv.FORGEAX_RUNTIME_STATE_FILE,
-  process.env.FORGEAX_RUNTIME_STATE_FILE,
-  ...STARTUP_PROFILES
-    .filter((profile) => profile !== 'desktop-prod')
-    .map((profile) => join(process.env.FORGEAX_PROJECT_ROOT ?? ROOT, '.forgeax', 'runtime', `${profile}.json`)),
-].filter((file): file is string => Boolean(file)));
-const runtimeStates = [...runtimeStateFiles]
-  .map((file) => readRuntimeState(file))
-  .filter((state) => state !== null);
-const runPids = [
-  ...(stackEnv.FORGEAX_RUN_PIDS ?? '').split(/\s+/).map(Number).filter(Boolean),
-  ...runtimeStates.flatMap((state) => [
-    state.launcherPid,
-    ...Object.values(state.servicePids),
-  ]),
-];
-const runPorts = (stackEnv.FORGEAX_RUN_PORTS ?? '').split(/\s+/).map(Number).filter(Boolean);
-const dynamicExtensionPorts = readExtensionDevPorts(extensionDevPortsJson);
+// ── resolve this instance's state (fail closed on copied/cross-root state) ──
+const interfaceDir = join(instance.root, 'packages', process.env.STUDIO === '0' ? 'interface' : 'studio');
+const scoped = resolveInstanceStopScope(instance, runtimeState, { activeServer, interfaceDir });
+if (scoped.lockConflict) {
+  console.error('[stop] runtime state and run.lock name different launchers; refusing to kill or clean up during a possible handoff.');
+  process.exit(1);
+}
 
 // ── port → service map ──────────────────────────────────────────────────────
-const ports: number[] = [...FIXED_PORTS];
-const svcs: string[] = [...FIXED_SVCS];
-const appendPort = (p: number) => {
-  if (p && !ports.includes(p)) {
-    ports.push(p);
-    svcs.push('runtime    (run-managed dynamic service)');
-  }
-};
-for (const p of [...runPorts, ...dynamicExtensionPorts]) appendPort(p);
-for (const state of runtimeStates) {
-  appendPort(state.startup.server.port);
-  appendPort(state.startup.interface.port);
-  appendPort(state.startup.engine.port);
-  if (state.startup.gatewayBridge.enabled) appendPort(state.startup.gatewayBridge.port);
-}
+const ports: number[] = scoped.ports.map(({ port }) => port);
+const svcs: string[] = scoped.ports.map(({ service }) => service);
 
 const startTs = performance.now();
 
@@ -128,7 +98,7 @@ console.log(`[stop] scanning forgeax-studio dev stack (${IS_WIN ? 'netstat' : 'l
 for (let i = 0; i < ports.length; i++) console.log(`  :${String(ports[i]).padEnd(5)}  ${svcs[i]}`);
 console.log();
 
-// ── discover pids: ports → dev-stack.env pids → pidfiles → signature match ──
+// ── discover owned pids from this instance's typed resource scope ──
 // Never reap our own launcher chain (e.g. `bun fx start desktop` → desktop.ts → stop.ts):
 // those ancestors carry the repo path on their command line and would otherwise
 // be caught by the signature scan, killing the very command doing the reaping.
@@ -138,26 +108,25 @@ const note = (pid: number, src: string) => {
   if (pid && !protectedPids.has(pid) && !found.has(pid)) found.set(pid, src);
 };
 
-for (const port of ports) for (const pid of listenPids(port)) note(pid, `:${port}`);
-for (const pid of runPids) if (isAlive(pid)) note(pid, 'dev-stack.env');
-
-// Layer 1: pidfiles recorded by run.ts as each service started.
-const rdir = runDir(ROOT);
-if (existsSync(rdir)) {
-  for (const f of readdirSync(rdir)) {
-    if (!f.endsWith('.pid')) continue;
-    const pid = readPidfilePid(join(rdir, f));
-    if (pid && isAlive(pid)) note(pid, `pidfile:${f.replace(/\.pid$/, '')}`);
-  }
-}
-
-// Layer 2: command-line signature match for orphans whose port drifted.
-for (const pid of signatureMatchPids(ROOT)) if (isAlive(pid)) note(pid, 'signature');
+const discovery = discoverStopTargets(scoped, { listenPids, readSnapshot: readRuntimeProcessSnapshot, owns: runtimeProcessBelongsToInstance, isAlive, isPortBusy, protectedPids });
+for (const [pid, key] of discovery.found) note(pid, key);
+for (const port of discovery.refusedPorts) console.warn(`[stop] refusing listener(s) on :${port}: ownership is unproven`);
 
 if (found.size === 0) {
+  if (
+    discovery.blocked
+    || ports.some((port) => isPortBusy(port))
+    || !canFinalizeStop(scoped, { ...discovery, found }, { isAlive, isPortBusy })
+  ) {
+    console.error('[stop] scoped resource remains busy, protected, or unproven; refusing cleanup.');
+    process.exit(1);
+  }
   console.log('[stop] nothing to kill — all ports already free.');
-  cleanupStateFiles();
-  if (purgeVite) vitePurgeAll(ROOT);
+  if (!(await cleanupStateFiles())) {
+    console.error('[stop] a run.lock owner appeared or survived during final cleanup; retaining recovery files.');
+    process.exit(1);
+  }
+  if (purgeVite) vitePurgeAll(instance.projectRoot);
   process.exit(0);
 }
 
@@ -223,106 +192,31 @@ for (let i = 0; i < ports.length; i++) {
 }
 
 const elapsed = Math.round((performance.now() - startTs) / 1000);
-if (anyBusy) {
-  console.error(`[stop] done in ${elapsed}s — but some ports remain bound (see above)`);
+if (anyBusy || !canFinalizeStop(scoped, { ...discovery, found }, { isAlive, isPortBusy })) {
+  console.error(`[stop] done in ${elapsed}s — a scoped port, PID, or declared resource survived; refusing cleanup`);
   process.exit(1);
 }
-cleanupStateFiles();
+if (!(await cleanupStateFiles())) {
+  console.error('[stop] a run.lock owner appeared or survived during final cleanup; retaining recovery files.');
+  process.exit(1);
+}
 if (purgeVite) {
   console.log('[stop] --purge-vite: clearing all vite optimizeDeps caches');
-  vitePurgeAll(ROOT);
+  vitePurgeAll(instance.projectRoot);
 }
 console.log(`[stop] done in ${elapsed}s — stack is down, safe to run: bun fx start`);
 
 // ── helpers ───────────────────────────────────────────────────────────────
 
-function cleanupStateFiles(): void {
-  rmSync(runStackFile, { force: true });
-  rmSync(extensionDevPortsJson, { force: true });
-  if (process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE) rmSync(process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE, { force: true });
-  for (const file of runtimeStateFiles) rmSync(file, { force: true });
-  clearPidfiles(ROOT);
-  rmSync(join(ROOT, '.forgeax', 'run.lock'), { recursive: true, force: true });
-}
-
-/** Parse a `KEY=value` env file into a record (ignores comments/blank lines). */
-function parseEnvFile(file: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!existsSync(file)) return out;
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
-    if (m) out[m[1] as string] = (m[2] as string).replace(/^["']|["']$/g, '').trim();
+async function cleanupStateFiles(): Promise<boolean> {
+  const result = await cleanupStopArtifacts(instance, {
+    clearPidfiles,
+    canFinalize: () => canFinalizeStop(scoped, { ...discovery, found }, { isAlive, isPortBusy }),
+  });
+  if (!result.ok) {
+    console.error(`[stop] cleanup lease was not acquired or final verification changed: ${result.error instanceof Error ? result.error.message : String(result.error)}`);
   }
-  return out;
-}
-
-/** Read frontend+backend ports from extension-dev-ports.json. */
-function readExtensionDevPorts(file: string): number[] {
-  if (!existsSync(file)) return [];
-  try {
-    const j = JSON.parse(readFileSync(file, 'utf8')) as {
-      plugins?: Record<string, { frontendPort?: number; backendPort?: number }>;
-    };
-    const out: number[] = [];
-    for (const p of Object.values(j.plugins ?? {})) {
-      if (p.frontendPort) out.push(p.frontendPort);
-      if (p.backendPort) out.push(p.backendPort);
-    }
-    return out;
-  } catch {
-    return [];
-  }
-}
-
-/** Match orphaned stack processes by command-line referencing this working tree. */
-function signatureMatchPids(root: string): number[] {
-  if (IS_WIN) {
-    // Exact launcher/active-entry needles only. Other services are covered by
-    // ports, dev-stack.env and pidfiles; matching the whole root kills unrelated
-    // test/build commands from the same checkout.
-    const ps = [
-      '$needles = @(ConvertFrom-Json $env:FX_ORPHAN_NEEDLES);',
-      'Get-CimInstance Win32_Process |',
-      'Where-Object {',
-      '  $cmd = $_.CommandLine;',
-      '  $_.Name -eq "bun.exe" -and $cmd -and',
-      '    @($needles | Where-Object { $cmd.IndexOf([string]$_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0',
-      '} |',
-      'ForEach-Object { $_.ProcessId }',
-    ].join(' ');
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], {
-      encoding: 'utf8',
-      env: { ...process.env, FX_ORPHAN_NEEDLES: JSON.stringify(activeServerNeedles) },
-      windowsHide: true,
-    });
-    return (r.stdout ?? '')
-      .split('\n')
-      .map((s) => Number.parseInt(s.trim(), 10))
-      .filter((p) => p > 0 && p !== process.pid);
-  }
-  // POSIX: pgrep -f for known stack signatures under this tree.
-  // `scripts/run.ts` is the launcher itself — it holds no port and records no
-  // pidfile for itself, so without this it survives `bun fx stop` as an idle
-  // orphan (defense-in-depth alongside listing its pid in dev-stack.env).
-  // Do not match every Vite process under the checkout: packages/editor is a
-  // separately managed standalone stack and may be running on :15290/:15280/
-  // :15273 at the same time. Root-owned services are already covered by their
-  // fixed ports, recorded PIDs, and the active server signature below.
-  const sigs = [
-    `${root}/scripts/run.ts`,
-    activeServerSignature,
-    `${root}/packages/marketplace/extensions/.*vite`,
-    `${root}/packages/marketplace/extensions/.*headless-renderer.mjs`,
-  ];
-  const pids = new Set<number>();
-  for (const sig of sigs) {
-    const r = spawnSync('pgrep', ['-f', sig], { encoding: 'utf8' });
-    for (const line of (r.stdout ?? '').split('\n')) {
-      const pid = Number.parseInt(line.trim(), 10);
-      if (pid > 0 && pid !== process.pid) pids.add(pid);
-    }
-  }
-  return [...pids];
+  return result.ok;
 }
 
 /** Human-readable command for a pid (cosmetic). */

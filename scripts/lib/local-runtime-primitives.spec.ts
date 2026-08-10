@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { materializePackagedEngineWorkspace } from './engine-workspace.ts';
-import { runPackagedRuntime } from './packaged-runtime.ts';
+import { packagedRuntimeServiceEnv, runPackagedRuntime } from './packaged-runtime.ts';
 import { readRuntimeState } from './runtime-state.ts';
 import { seedSharedGames } from './seed-games.ts';
 import { ServiceSupervisor, type ServiceEvent } from './service-supervisor.ts';
@@ -48,6 +48,40 @@ describe('shared game seeding', () => {
 });
 
 describe('packaged engine workspace', () => {
+  test('projects the StartupEnvironment socket for repeated packaged service launches without touching resources', () => {
+    const root = temporaryRoot();
+    const resources = join(root, 'read-only-resources');
+    const projects = join(root, 'projects');
+    mkdirSync(resources, { recursive: true });
+    const startup = resolveStartupEnvironment({
+      root,
+      homeDir: root,
+      profile: 'desktop-prod',
+      env: {
+        FORGEAX_RESOURCE_ROOT: resources,
+        FORGEAX_PROJECT_ROOT: projects,
+        FORGEAX_AGENT_HOST_SOCK: '/explicit/desktop-agent.sock',
+      },
+    });
+    const before = readdirSync(resources);
+
+    const first = packagedRuntimeServiceEnv(startup, { FORGEAX_AGENT_HOST_SOCK: '/wrong-parent.sock' });
+    const second = packagedRuntimeServiceEnv(startup, {});
+
+    expect(first.FORGEAX_AGENT_HOST_SOCK).toBe('/explicit/desktop-agent.sock');
+    expect(second.FORGEAX_AGENT_HOST_SOCK).toBe('/explicit/desktop-agent.sock');
+    expect(first.FORGEAX_PROJECT_ROOT).toBe(projects);
+    expect(readdirSync(resources)).toEqual(before);
+  });
+
+  test('keeps source StartLock out of desktop-prod local-runtime control flow', () => {
+    const source = readFileSync(join(import.meta.dir, '..', 'local-runtime.ts'), 'utf8');
+
+    expect(source).toContain("profile === 'desktop-prod'\n    ? null");
+    expect(source).toContain('lock?.release()');
+    expect(source).not.toContain("const lock = handoffToken ? StartLock.adopt");
+  });
+
   test('materializes writable sources and points runtime-owned trees at their authorities', () => {
     const root = temporaryRoot();
     const resources = join(root, 'resources');

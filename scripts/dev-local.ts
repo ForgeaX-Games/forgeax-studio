@@ -1,60 +1,58 @@
 #!/usr/bin/env bun
-// scripts/dev-local.ts — local-only launcher: run the studio stack on a port
-// block that won't clash with another forgeax-studio on the default ports, bound
-// to 127.0.0.1 only. Replaces dev-local.sh; retained as a lower-level launcher
-// and intentionally not exposed as a top-level `bun fx` command.
-//
-// Plugin dev ports are seeded from each plugin manifest's sa.port (shared across
-// stacks); FORGEAX_PLUGIN_PORT_OFFSET=10000 moves this stack's whole plugin band
-// deterministically so two stacks starting near-simultaneously don't race.
+// Deprecated compatibility entry for the former second local port band.
+// Runtime ports and paths belong exclusively to RuntimeInstance.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveRuntimeInstance } from './lib/runtime-instance.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const e = (k: string, v: string) => {
-  process.env[k] = process.env[k] ?? v;
-};
+const SLOT = 1;
 
-e('FORGEAX_SERVER_PORT', '28900');
-e('FORGEAX_INTERFACE_PORT', '28920');
-e('FORGEAX_ENGINE_PORT', '25173');
-// No editor port — the Edit engine boots in-process in the interface vite.
-e('NARRATIVE_PORT', '28930');
-e('FACE_MASK_PORT', '28931');
-e('FORGEAX_PLUGIN_PORT_OFFSET', '10000');
-const offset = Number.parseInt(process.env.FORGEAX_PLUGIN_PORT_OFFSET as string, 10);
-// interface vite reverse-proxies /__reel__ to wb-reel's front vite (default
-// 127.0.0.1:15175); after the offset it moves to 15175+offset — keep them in sync.
-e('FORGEAX_REEL_URL', `http://127.0.0.1:${15175 + offset}`);
+function usage(): void {
+  console.log(`Deprecated: scripts/dev-local.ts
 
-// Bind local-only + point the interface vite proxies at THIS stack's ports.
-e('FORGEAX_SERVER_HOST', '127.0.0.1');
-e('FORGEAX_SERVER_URL', `http://127.0.0.1:${process.env.FORGEAX_SERVER_PORT}`);
-e('FORGEAX_ENGINE_URL', `http://127.0.0.1:${process.env.FORGEAX_ENGINE_PORT}`);
+This compatibility wrapper starts this worktree through the RuntimeInstance API.
+It uses slot ${SLOT} only when this worktree has no instance configuration.
 
-// .env port-override detection — run.ts loads .env, an uncommented port line wins.
-const envFile = join(ROOT, '.env');
-if (existsSync(envFile) && /^\s*FORGEAX_(SERVER|INTERFACE|ENGINE)_PORT=/m.test(readFileSync(envFile, 'utf8'))) {
-  console.error(`  ⚠ ${envFile} has an uncommented FORGEAX_*_PORT — it overrides this script's ports.`);
+Migration:
+  bun fx instance init --slot ${SLOT}
+  bun fx start [web|desktop]
+
+If this worktree already has a different slot, this wrapper refuses to replace it.
+Use \`bun fx instance show\` to inspect the current contract.`);
 }
 
-console.log('──────────────────────────────────────────────────────────────');
-console.log('  forgeax-studio · local ports (localhost only)');
-console.log(`    server     http://127.0.0.1:${process.env.FORGEAX_SERVER_PORT}`);
-console.log(`    interface  http://127.0.0.1:${process.env.FORGEAX_INTERFACE_PORT}   ← open this`);
-console.log(`    engine     http://127.0.0.1:${process.env.FORGEAX_ENGINE_PORT}`);
-console.log(`    plugins    seed+${offset}`);
-console.log('──────────────────────────────────────────────────────────────');
+function runFx(args: readonly string[]): number {
+  const result = spawnSync(process.execPath, [resolve(ROOT, 'scripts/fx.ts'), ...args], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  return result.status ?? 1;
+}
 
-// NB: pass env explicitly — under Bun, spawnSync does NOT inherit the parent's
-// (runtime-mutated) process.env when `env` is omitted, so the port overrides set
-// above would be silently dropped and run.ts would fall back to the default ports.
-const r = spawnSync(process.execPath, [join(ROOT, 'scripts/run.ts'), ...process.argv.slice(2)], {
-  stdio: 'inherit',
-  cwd: ROOT,
-  env: process.env,
-});
-process.exit(r.status ?? 0);
+function main(argv: readonly string[]): number {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    usage();
+    return 0;
+  }
+
+  const instance = resolveRuntimeInstance({ root: ROOT });
+  console.warn('[deprecated] scripts/dev-local.ts now delegates to `bun fx instance` and `bun fx start`.');
+  console.warn(`[deprecated] migrate with: bun fx instance init --slot ${SLOT}`);
+  if (instance.config === null) {
+    console.log(`[deprecated] no instance config found; initializing this worktree with slot ${SLOT}.`);
+    const initialized = runFx(['instance', 'init', '--slot', String(SLOT)]);
+    if (initialized !== 0) return initialized;
+  } else if (instance.slot !== SLOT) {
+    console.error(
+      `[deprecated] this worktree is configured for slot ${instance.slot}; refusing to replace it with slot ${SLOT}. Use \`bun fx start\` directly.`,
+    );
+    return 2;
+  }
+  return runFx(['start', ...argv]);
+}
+
+process.exit(main(process.argv.slice(2)));

@@ -3,7 +3,7 @@ import {
   existsSync,
   mkdirSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { materializePackagedEngineWorkspace } from './engine-workspace.ts';
 import { readinessSummary, waitForRuntime } from './runtime-readiness.ts';
@@ -47,11 +47,11 @@ export async function runPackagedRuntime(startup: StartupEnvironment): Promise<n
     process.once('SIGINT', () => shutdown(130));
     process.once('SIGTERM', () => shutdown(143));
 
-    const baseEnv = startupProcessEnv(startup, {
+    const runtimeScopeSecret = process.env.FORGEAX_RUNTIME_SCOPE_SECRET ?? randomUUID();
+    const baseEnv = packagedRuntimeServiceEnv(startup, {
       ...process.env,
-      NODE_ENV: 'production',
+      FORGEAX_RUNTIME_SCOPE_SECRET: runtimeScopeSecret,
     });
-    const agentHostSocket = join(homedir(), '.forgeax', `agent-host-${startup.server.port}.sock`);
     const serverEntry = join(startup.resourceRoot, 'server', 'src', 'main.ts');
     if (!existsSync(serverEntry)) throw new Error(`packaged server entry is missing: ${serverEntry}`);
     supervisor.launch({
@@ -60,10 +60,7 @@ export async function runPackagedRuntime(startup: StartupEnvironment): Promise<n
       args: ['run', serverEntry],
       spawn: {
         cwd: join(startup.resourceRoot, 'server'),
-        env: {
-          ...baseEnv,
-          FORGEAX_AGENT_HOST_SOCK: agentHostSocket,
-        },
+        env: baseEnv,
       },
       required: true,
       restartPolicy: startup.supervision.restartPolicy,
@@ -82,8 +79,7 @@ export async function runPackagedRuntime(startup: StartupEnvironment): Promise<n
         env: {
           ...baseEnv,
           FORGEAX_INTERFACE_PORT: String(startup.interface.port),
-          FORGEAX_PREVIEW_GAMES_DIR: join(engineWork, '.forgeax', 'games'),
-          FORGEAX_GAMES_URL_PREFIX: '.forgeax/games',
+          FORGEAX_GAMES_URL_PREFIX: 'host-games',
         },
       },
       required: true,
@@ -120,6 +116,18 @@ export async function runPackagedRuntime(startup: StartupEnvironment): Promise<n
     supervisor?.shutdown(true);
     throw resolved;
   }
+}
+
+/** Single service projection for the packaged runtime; StartupEnvironment owns the socket. */
+export function packagedRuntimeServiceEnv(
+  startup: StartupEnvironment,
+  base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return startupProcessEnv(startup, {
+    ...base,
+    NODE_ENV: 'production',
+    FORGEAX_AGENT_HOST_SOCK: startup.agentHostSocket,
+  });
 }
 
 function preparePackagedProject(startup: StartupEnvironment): void {

@@ -1,4 +1,4 @@
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 export const STARTUP_PROFILES = [
@@ -41,6 +41,18 @@ export interface StartupEnvironment {
     readonly publicOrigin: string;
   };
   readonly hmrClientPort: number;
+  /** Source-runtime-only ports and URLs projected from the current instance. */
+  readonly optional: {
+    readonly narrativePort: number;
+    readonly faceMaskPort: number;
+    readonly rhiReviewerPort: number;
+    readonly reelUrl: string;
+    readonly pluginPortOffset: number;
+  };
+  /** The actual UI origin plus every loopback spelling accepted by Play assets. */
+  readonly assetCorsOrigins: readonly string[];
+  /** Explicit override wins; source defaults remain scoped to the project runtime. */
+  readonly agentHostSocket: string;
   readonly standaloneProxy: boolean;
   readonly allowedHosts?: string;
   readonly supervision: {
@@ -95,11 +107,11 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
   const envFile = resolve(env.FORGEAX_ENV_FILE ?? join(projectRoot, '.env'));
 
   const serverPort = bundled
-    ? port(env.FORGEAX_DESKTOP_SERVER_PORT, DESKTOP_SERVER_PORT, 'FORGEAX_DESKTOP_SERVER_PORT')
-    : port(env.FORGEAX_SERVER_PORT, SOURCE_SERVER_PORT, 'FORGEAX_SERVER_PORT');
+    ? portFrom(env, ['FORGEAX_DESKTOP_SERVER_PORT', 'FORGEAX_SERVER_PORT'], DESKTOP_SERVER_PORT)
+    : portFrom(env, ['FORGEAX_SERVER_PORT'], SOURCE_SERVER_PORT);
   const enginePort = bundled
-    ? port(env.FORGEAX_DESKTOP_ENGINE_PORT, DESKTOP_ENGINE_PORT, 'FORGEAX_DESKTOP_ENGINE_PORT')
-    : port(env.FORGEAX_ENGINE_PORT, SOURCE_ENGINE_PORT, 'FORGEAX_ENGINE_PORT');
+    ? portFrom(env, ['FORGEAX_DESKTOP_ENGINE_PORT', 'FORGEAX_ENGINE_PORT'], DESKTOP_ENGINE_PORT)
+    : portFrom(env, ['FORGEAX_ENGINE_PORT'], SOURCE_ENGINE_PORT);
   const interfacePort = bundled
     ? serverPort
     : port(env.FORGEAX_INTERFACE_PORT, SOURCE_INTERFACE_PORT, 'FORGEAX_INTERFACE_PORT');
@@ -119,6 +131,46 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
 
   const protocol = !bundled && env.FORGEAX_INTERFACE_HTTPS === '1' ? 'https' : 'http';
   const localOrigin = `${protocol}://127.0.0.1:${interfacePort}`;
+  const publicOrigin = bundled
+    ? localOrigin
+    : env.FORGEAX_PUBLIC_ORIGIN?.trim() || localOrigin;
+  const optional = bundled
+    ? {
+      narrativePort: 8900,
+      faceMaskPort: 18930,
+      rhiReviewerPort: 15274,
+      reelUrl: 'http://127.0.0.1:15175',
+      pluginPortOffset: 0,
+    }
+    : {
+      narrativePort: port(env.NARRATIVE_PORT, 8900, 'NARRATIVE_PORT'),
+      faceMaskPort: port(env.FACE_MASK_PORT, 18930, 'FACE_MASK_PORT'),
+      rhiReviewerPort: port(env.FORGEAX_RHI_REVIEWER_PORT, 15274, 'FORGEAX_RHI_REVIEWER_PORT'),
+      reelUrl: env.FORGEAX_REEL_URL?.trim() || 'http://127.0.0.1:15175',
+      pluginPortOffset: nonNegativeInteger(env.FORGEAX_PLUGIN_PORT_OFFSET, 0, 'FORGEAX_PLUGIN_PORT_OFFSET'),
+    };
+  if (!bundled) {
+    const managedPorts: ReadonlyArray<readonly [name: string, port: number]> = [
+      ['server', serverPort],
+      ['interface', interfacePort],
+      ['engine', enginePort],
+      ...(bridgeEnabled ? [['bridge', bridgePort] as const] : []),
+      ['narrative', optional.narrativePort],
+      ['face-mask', optional.faceMaskPort],
+      ['rhi-reviewer', optional.rhiReviewerPort],
+    ];
+    const duplicates = managedPorts.filter((entry, index) =>
+      managedPorts.findIndex((candidate) => candidate[1] === entry[1]) !== index,
+    );
+    if (duplicates.length > 0) {
+      throw new Error(
+        `startup profile '${profile}' resolves colliding managed ports: ${managedPorts
+          .filter((entry) => duplicates.some((duplicate) => duplicate[1] === entry[1]))
+          .map(([name, port]) => `${name}=${port}`)
+          .join(', ')}`,
+      );
+    }
+  }
   const stateFile = resolve(
     env.FORGEAX_RUNTIME_STATE_FILE
       ?? join(projectRoot, '.forgeax', 'runtime', `${profile}.json`),
@@ -127,7 +179,7 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
     env.FORGEAX_RUNTIME_LOG_FILE
       ?? (bundled
         ? join(projectRoot, '.logs', 'local-runtime.log')
-        : join(tmpdir(), 'forgeax-stack.log')),
+        : join(projectRoot, '.forgeax', 'runtime', 'stack.log')),
   );
 
   return {
@@ -161,15 +213,16 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
       protocol,
       healthPath: '/api/health',
       localOrigin,
-      publicOrigin: bundled
-        ? localOrigin
-        : env.FORGEAX_PUBLIC_ORIGIN?.trim() || localOrigin,
+      publicOrigin,
     },
     hmrClientPort: port(
       env.FORGEAX_HMR_CLIENT_PORT,
       interfacePort,
       'FORGEAX_HMR_CLIENT_PORT',
     ),
+    optional,
+    assetCorsOrigins: assetCorsOrigins(interfacePort, publicOrigin),
+    agentHostSocket: resolve(env.FORGEAX_AGENT_HOST_SOCK ?? join(projectRoot, '.forgeax', 'runtime', 'agent-host.sock')),
     standaloneProxy: env.FORGEAX_STANDALONE_PROXY === '1',
     ...(env.FORGEAX_INTERFACE_ALLOWED_HOSTS === undefined
       ? {}
@@ -189,7 +242,7 @@ export function startupProcessEnv(
   startup: StartupEnvironment,
   base: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  return {
+  const childEnv: NodeJS.ProcessEnv = {
     ...base,
     FORGEAX_STARTUP_PROFILE: startup.profile,
     FORGEAX_RESOURCE_ROOT: startup.resourceRoot,
@@ -203,11 +256,26 @@ export function startupProcessEnv(
     FORGEAX_ENGINE_HOST: startup.engine.host,
     FORGEAX_ENGINE_PORT: String(startup.engine.port),
     FORGEAX_ENGINE_URL: `http://127.0.0.1:${startup.engine.port}`,
-    FORGEAX_BRIDGE_PORT: String(startup.gatewayBridge.port),
+    ...(startup.gatewayBridge.enabled
+      ? { FORGEAX_BRIDGE_PORT: String(startup.gatewayBridge.port) }
+      : startup.sourceLayout === 'source' ? { FORGEAX_BRIDGE: '0' } : {}),
     FORGEAX_INTERFACE_PORT: String(startup.interface.port),
     FORGEAX_HMR_CLIENT_PORT: String(startup.hmrClientPort),
+    ...(startup.sourceLayout === 'source' ? {
+      NARRATIVE_PORT: String(startup.optional.narrativePort),
+      FACE_MASK_PORT: String(startup.optional.faceMaskPort),
+      FORGEAX_RHI_REVIEWER_PORT: String(startup.optional.rhiReviewerPort),
+      FORGEAX_REEL_URL: startup.optional.reelUrl,
+      FORGEAX_PLUGIN_PORT_OFFSET: String(startup.optional.pluginPortOffset),
+      FORGEAX_ASSET_CORS_ORIGINS: startup.assetCorsOrigins.join(','),
+      FORGEAX_AGENT_HOST_SOCK: startup.agentHostSocket,
+    } : {}),
     FORGEAX_SERVE_SPA: startup.interface.runtime === 'server-spa' ? '1' : '0',
   };
+  if (!startup.gatewayBridge.enabled && startup.sourceLayout === 'source') {
+    delete childEnv.FORGEAX_BRIDGE_PORT;
+  }
+  return childEnv;
 }
 
 export function sanitizedStartupEnvironment(startup: StartupEnvironment): StartupEnvironment {
@@ -220,6 +288,22 @@ function port(value: string | undefined, fallback: number, name: string): number
   return resolved;
 }
 
+/**
+ * Read a port from the first variable that is actually set, so a malformed value is
+ * reported against the variable that carried it rather than the preferred one.
+ */
+function portFrom(
+  env: Readonly<Record<string, string | undefined>>,
+  names: readonly string[],
+  fallback: number,
+): number {
+  for (const name of names) {
+    const value = env[name];
+    if (value !== undefined && value.trim() !== '') return port(value, fallback, name);
+  }
+  return fallback;
+}
+
 function positiveInteger(value: string | undefined, fallback: number, name: string): number {
   if (value === undefined || value.trim() === '') return fallback;
   if (!/^\d+$/.test(value.trim())) throw new Error(`${name} must be a positive integer, got '${value}'`);
@@ -228,4 +312,24 @@ function positiveInteger(value: string | undefined, fallback: number, name: stri
     throw new Error(`${name} must be a positive integer, got '${value}'`);
   }
   return resolved;
+}
+
+function nonNegativeInteger(value: string | undefined, fallback: number, name: string): number {
+  if (value === undefined || value.trim() === '') return fallback;
+  if (!/^\d+$/.test(value.trim())) throw new Error(`${name} must be a non-negative integer, got '${value}'`);
+  const resolved = Number(value);
+  if (!Number.isSafeInteger(resolved)) {
+    throw new Error(`${name} must be a non-negative integer, got '${value}'`);
+  }
+  return resolved;
+}
+
+function assetCorsOrigins(interfacePort: number, publicOrigin: string): readonly string[] {
+  return [...new Set([
+    publicOrigin,
+    `http://localhost:${interfacePort}`,
+    `http://127.0.0.1:${interfacePort}`,
+    `https://localhost:${interfacePort}`,
+    `https://127.0.0.1:${interfacePort}`,
+  ])];
 }

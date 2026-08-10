@@ -1,0 +1,95 @@
+{
+  "$id": "urn:forgeax:recursive-input-result:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RecursiveInputResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "content",
+    "provenance",
+    "readiness"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "status": { "type": "string", "enum": ["ready", "non-ready"] },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceIdentity", "recursivePins", "requestedInputClasses", "inputDigest", "digestAlgorithm"],
+      "properties": {
+        "sourceIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "revision"],
+          "properties": { "repository": { "type": "string" }, "revision": { "type": "string" } }
+        },
+        "recursivePins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "pin"],
+            "properties": { "path": { "type": "string" }, "pin": { "type": "string" } }
+          }
+        },
+        "requestedInputClasses": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["source", "dependency-installation", "toolchain", "large-file-storage", "build-output"] },
+          "uniqueItems": true
+        },
+        "inputDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "digestAlgorithm": { "type": "string", "const": "sha256" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer", "job", "attempt", "trustScope", "checkoutIdentity", "credentialCleanup"],
+      "properties": {
+        "producer": { "type": "string" },
+        "job": { "type": "string" },
+        "attempt": { "type": "string" },
+        "trustScope": { "type": "string", "enum": ["local-fixed-worktree", "ordinary-ci", "trusted-base-ci"] },
+        "checkoutIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "revision"],
+          "properties": { "repository": { "type": "string" }, "revision": { "type": "string" } }
+        },
+        "credentialCleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": { "status": { "type": "string", "enum": ["passed", "failed", "unknown"] } }
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "dependency-installation", "toolchain", "large-file-storage", "build-output"],
+      "properties": {
+        "source": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["ready", "not-requested", "unknown", "stale", "partial", "mismatched", "unavailable"] } } },
+        "dependency-installation": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["ready", "not-requested", "unknown", "stale", "partial", "mismatched", "unavailable"] } } },
+        "toolchain": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["ready", "not-requested", "unknown", "stale", "partial", "mismatched", "unavailable"] } } },
+        "large-file-storage": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["ready", "not-requested", "unknown", "stale", "partial", "mismatched", "unavailable"] } } },
+        "build-output": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["ready", "not-requested", "unknown", "stale", "partial", "mismatched", "unavailable"] } } }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "hint", "expected", "actual", "retryable", "recoveryActions"],
+      "properties": {
+        "code": { "type": "string" },
+        "hint": { "type": "string" },
+        "expected": { "type": "string" },
+        "actual": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "recoveryActions": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    }
+  }
+}

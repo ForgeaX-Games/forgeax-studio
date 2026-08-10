@@ -106,6 +106,47 @@ fi
 grep -q 'INTERNAL_TOKEN cannot read ForgeaX-Games/forgeax-games' "$token_error" \
   || fail "token preflight should name the inaccessible repository"
 
+mirror_token_bin="$test_root/mirror-token-bin"
+mkdir -p "$mirror_token_bin"
+cat > "$mirror_token_bin/gh" <<'FAKE_MIRROR_GH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${1:-}" = "api" ] || exit 2
+case "${2:-}" in
+  user) printf 'forgeax\n' ;;
+  repos/ForgeaX-Games/*)
+    repo="${2##*/}"
+    if [ "$repo" = "${FAKE_MIRROR_FAIL_REPO:-}" ]; then
+      printf 'false\tfalse\n'
+    else
+      printf 'true\ttrue\n'
+    fi
+    ;;
+  *) exit 2 ;;
+esac
+FAKE_MIRROR_GH
+chmod +x "$mirror_token_bin/gh"
+
+mirror_token_output="$test_root/mirror-token-output"
+PATH="$mirror_token_bin:$PATH" \
+  MIRROR_TOKEN=test-token \
+  bash "$root/scripts/mirror/publish-multi.sh" preflight > "$mirror_token_output"
+grep -q 'MIRROR_TOKEN can push and administer ForgeaX-Games/forgeax-studio' "$mirror_token_output" \
+  || fail "mirror token preflight should verify studio administration permission"
+grep -q 'MIRROR_TOKEN preflight passed' "$mirror_token_output" \
+  || fail "mirror token preflight should pass when every target is writable"
+
+mirror_token_error="$test_root/mirror-token-error"
+if PATH="$mirror_token_bin:$PATH" \
+  MIRROR_TOKEN=test-token \
+  FAKE_MIRROR_FAIL_REPO=forgeax-engine \
+  bash "$root/scripts/mirror/publish-multi.sh" preflight \
+  >"$mirror_token_error" 2>&1; then
+  fail "mirror token preflight must fail when a mirror target is not writable"
+fi
+grep -q 'MIRROR_TOKEN lacks push permission on ForgeaX-Games/forgeax-engine' "$mirror_token_error" \
+  || fail "mirror token preflight should name the inaccessible mirror target"
+
 gate_repo="$test_root/gate-repo"
 mkdir -p "$gate_repo"
 init_repo "$gate_repo"

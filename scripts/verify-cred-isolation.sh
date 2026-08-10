@@ -38,10 +38,10 @@ hr()   { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 cleanup() {
   if [ "${KEEP:-0}" = "1" ]; then hr "Cleanup"; info "KEEP=1 → leaving stack up (UI :$UI)"; return; fi
   hr "Cleanup"; bun fx stop >/dev/null 2>&1 || true
-  # `bun fx start` forks a run.ts whose pid differs from $RUN, so kill by path —
+  # `bun fx start` forks local-runtime.ts whose pid differs from $RUN, so kill by path —
   # otherwise orphan launchers accumulate across runs and start fighting.
   kill -TERM "${RUN:-0}" 2>/dev/null || true
-  pgrep -f "$ROOT/scripts/run.ts" 2>/dev/null | while read -r p; do kill -TERM "$p" 2>/dev/null || true; done
+  pgrep -f "$ROOT/scripts/local-runtime.ts" 2>/dev/null | while read -r p; do kill -TERM "$p" 2>/dev/null || true; done
   pgrep -f "$ROOT/packages/agent-host/src/main.ts" 2>/dev/null | while read -r p; do kill -TERM "$p" 2>/dev/null || true; done
   info "stack stopped (launchers + agent-hosts reaped)"
 }
@@ -53,9 +53,11 @@ span_count() { grep -c '"name":"kernel.turn"' "$1" 2>/dev/null || echo 0; }
 ah_pid_on() { pgrep -f "agent-host/src/main.ts" 2>/dev/null | while read -r pid; do ps eww "$pid" 2>/dev/null | tr ' ' '\n' | grep -q "FORGEAX_AGENT_HOST_SOCK=$1" && echo "$pid"; done | head -1; }
 
 hr "Phase 0 · preconditions"
-grep -q 'FORGEAX_AGENT_HOST_SOCK ??=' scripts/run.ts \
-  && ok "Plan A present in scripts/run.ts (per-PORT_SERVER socket derivation)" \
-  || { bad "Plan A NOT in scripts/run.ts — isolation depends on it"; exit 1; }
+grep -q 'agent-host-${serverPort}.sock' scripts/lib/runtime-instance.ts \
+  && grep -q 'runtimeInstanceProcessEnv(instance)' scripts/lib/source-runtime-launcher.ts \
+  && grep -q 'parentAgentHostSocket ?? dotenv.FORGEAX_AGENT_HOST_SOCK ?? instance.agentHostSocket' scripts/lib/source-runtime-launcher.ts \
+  && ok "RuntimeInstance socket projection present (parent override retained)" \
+  || { bad "RuntimeInstance socket projection contract is missing"; exit 1; }
 info "stopping any existing studio3 stack + lingering agent-hosts…"
 bun fx stop >/dev/null 2>&1 || true
 pgrep -f "$ROOT/packages/agent-host/src/main.ts" 2>/dev/null | while read -r p; do kill -TERM "$p" 2>/dev/null || true; done

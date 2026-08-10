@@ -1,0 +1,23 @@
+{
+  "specVersion": 1,
+  "parser": {
+    "name": "rhysd/actionlint",
+    "version": "1.7.12",
+    "archive": "actionlint_1.7.12_linux_amd64.tar.gz",
+    "releaseUrl": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
+    "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+    "ignore": [
+      "constant expression \\\"false\\\" in condition"
+    ]
+  },
+  "sourceSet": {
+    "directories": [
+      ".github/workflows",
+      "scripts/mirror/ci"
+    ],
+    "extensions": [
+      ".yml",
+      ".yaml"
+    ]
+  }
+}

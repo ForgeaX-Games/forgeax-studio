@@ -13,7 +13,7 @@
 // FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_BOOTSTRAP · FORGEAX_BOOTSTRAP_YES
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_ENTRY_OUTPUTS, isEngineEntryDistFresh } from './lib/engine-entry-freshness.ts';
@@ -21,9 +21,65 @@ import { has, resolvePython, run } from './lib/sh.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
 import { mapConcurrent, positiveConcurrency, runCommandBuffered } from './lib/process-pool.ts';
 import { ensureWorkspacePackageLink } from './lib/workspace-package-link.ts';
-import { writeSetupSnapshot } from './lib/setup-version.ts';
+import {
+  createRecursiveInputResult,
+  projectGitlinkGraph,
+  readAuthoritativeGitGraph,
+  type InputClass,
+  type RecursiveInputResult,
+} from '../packages/recursive-input-contract/src/index.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+const PREPARE_INPUT_CLASSES: InputClass[] = [
+  'source',
+  'dependency-installation',
+  'toolchain',
+  'large-file-storage',
+];
+
+function recursiveInputResultPath(root: string): string {
+  return join(root, '.forgeax', 'recursive-input-result.json');
+}
+
+function writeRecursiveInputResult(root: string): RecursiveInputResult {
+  const graph = projectGitlinkGraph(readAuthoritativeGitGraph(root));
+  const notReady = prepareResults.some((row) => row.result === 'failed') || graph.unreachablePaths.length > 0;
+  const result = createRecursiveInputResult({
+    graph,
+    producer: 'bun-prepare',
+    job: 'prepare',
+    attempt: `prepare-${Date.now()}`,
+    trustScope: 'local-fixed-worktree',
+    requestedInputClasses: PREPARE_INPUT_CLASSES,
+    readiness: notReady
+      ? {
+          source: { status: graph.unreachablePaths.length > 0 ? 'unavailable' : 'partial' },
+          'dependency-installation': { status: 'partial' },
+          toolchain: { status: 'partial' },
+          'large-file-storage': { status: 'partial' },
+        }
+      : undefined,
+    failure: notReady
+      ? {
+          code: 'recursive-input.materialization-incomplete',
+          hint: 'Discard the partial checkout and retry the complete input request cold.',
+          expected: 'submodules, dependencies, toolchain, and large-file-storage ready',
+          actual: graph.unreachablePaths.length > 0
+            ? `unreachable recursive pins: ${graph.unreachablePaths.join(',')}`
+            : 'prepare reported one or more failed stages',
+          retryable: true,
+          recoveryActions: ['discard-partial-state', 'retry-cold'],
+        }
+      : undefined,
+  });
+  mkdirSync(join(root, '.forgeax'), { recursive: true });
+  const path = recursiveInputResultPath(root);
+  const temporaryPath = `${path}.tmp-${process.pid}`;
+  writeFileSync(temporaryPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+  renameSync(temporaryPath, path);
+  return result;
+}
 
 if (process.env.FORGEAX_SKIP_PREPARE === '1') {
   console.log('[prepare] skipped (FORGEAX_SKIP_PREPARE=1)');
@@ -807,19 +863,19 @@ if (prepareResults.length > 0) {
   bold('[prepare] submodule result report');
   console.log(formatPrepareReport(prepareResults));
 }
+if (publicDistribution) {
+  console.log('[prepare] recursive input result skipped (public distribution has no Git metadata)');
+} else {
+  try {
+    const result = writeRecursiveInputResult(ROOT);
+    console.log(`[prepare] recorded recursive input ${result.status}`);
+  } catch (error) {
+    fail(`could not record recursive input: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 if (prepareFailed) {
   console.error('[prepare] one or more submodules failed to update; see report above');
   process.exit(1);
-}
-if (publicDistribution) {
-  console.log('[prepare] setup version snapshot skipped (public distribution has no Git metadata)');
-} else {
-  try {
-    const snapshot = writeSetupSnapshot(ROOT);
-    console.log(`[prepare] recorded setup version ${snapshot.rootHead.slice(0, 12)} (+${snapshot.submodules.length} submodule pins)`);
-  } catch (error) {
-    fail(`could not record setup version: ${error instanceof Error ? error.message : String(error)}`);
-  }
 }
 console.log('Next:\n  bun fx start');
 console.log('Endpoints once running:\n  http://localhost:18920  Studio UI\n  http://localhost:18900  Server\n  http://localhost:15173  Engine');

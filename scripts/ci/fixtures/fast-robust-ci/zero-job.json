@@ -1,0 +1,35 @@
+{
+  "workflowFiles": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "content": "name: Fixture CI\non: [pull_request]\njobs:\n  check:\n    name: check\n    runs-on: [self-hosted, Linux, X64]\n    timeout-minutes: 10\n"
+    }
+  ],
+  "ruleset": { "requiredContexts": ["check"] },
+  "runRoster": [
+    {
+      "id": 9001,
+      "status": "completed",
+      "conclusion": "success",
+      "event": "pull_request",
+      "run_attempt": 1,
+      "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-08-07T12:00:00Z",
+      "run_started_at": "2026-08-07T12:00:05Z",
+      "updated_at": "2026-08-07T12:00:05Z"
+    }
+  ],
+  "jobsByRun": { "9001": [] },
+  "artifactsByRun": { "9001": [] },
+  "submoduleStatus": " aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa packages/fixture\n",
+  "workspaceManifests": [
+    { "path": "package.json", "data": { "workspaces": ["packages/*"] } },
+    { "path": "packages/fixture/package.json", "data": { "name": "@fixture/pkg" } }
+  ],
+  "source": {
+    "studioSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "studioOriginMainSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "studioRemoteMainSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "engineEvidenceSha": "6c06e414a7f5c5c2dab9facd5919c04513b102ce"
+  }
+}

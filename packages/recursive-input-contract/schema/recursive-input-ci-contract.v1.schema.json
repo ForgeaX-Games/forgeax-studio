@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:forgeax:recursive-input-ci-contract:v1",
+  "title": "ForgeaX recursive input CI contract manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specVersion", "manifestVersion", "outputContractVersion", "scope", "producers", "consumers", "requiredContexts", "governance"],
+  "properties": {
+    "specVersion": { "type": "integer", "const": 1 },
+    "manifestVersion": { "type": "string", "const": "recursive-input-ci.v1" },
+    "outputContractVersion": { "type": "string", "const": "recursive-input-ci-result.v1" },
+    "scope": { "type": "string", "const": "recursive-input-direct-consumers" },
+    "producers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["producerId", "owner", "inputClasses", "trustScopes", "outputContractVersion"],
+        "properties": {
+          "producerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+          "owner": { "type": "string", "minLength": 1 },
+          "inputClasses": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "enum": ["source", "dependency-installation", "toolchain", "large-file-storage", "build-output"] } },
+          "trustScopes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "enum": ["ordinary-ci", "trusted-base-ci"] } },
+          "outputContractVersion": { "type": "string", "const": "recursive-input-ci-result.v1" }
+        }
+      }
+    },
+    "consumers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["consumerId", "producerId", "trustScope", "workflow", "job", "validationBoundary", "sourceWork"],
+        "properties": {
+          "consumerId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+          "producerId": { "type": "string" },
+          "trustScope": { "type": "string", "enum": ["ordinary-ci", "trusted-base-ci"] },
+          "workflow": { "type": "string", "minLength": 1 },
+          "job": { "type": "string", "minLength": 1 },
+          "validationBoundary": { "type": "string", "const": "before first source-owned command" },
+          "sourceWork": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "requiredContexts": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "source", "job", "reporter"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "source": { "type": "string", "minLength": 1 },
+          "job": { "type": "string", "minLength": 1 },
+          "reporter": { "type": "string", "enum": ["thin-reporter", "direct"] }
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "ref", "enforcement", "bypassActors", "currentUserCanBypass"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "ref": { "type": "string", "const": "main" },
+        "enforcement": { "type": "string", "const": "active" },
+        "bypassActors": { "type": "array", "maxItems": 0, "items": { "type": "string" } },
+        "currentUserCanBypass": { "type": "string", "const": "never" }
+      }
+    }
+  }
+}

@@ -4,26 +4,91 @@
 // package.json "prepare" lifecycle after `bun install`).
 // Idempotent — re-running picks up where it left off.
 //
-// Steps: [0] prereq gate · [1] submodule init+floating harness sync · [2] engine pnpm
+// Steps: [0] prereq gate · [1] submodule init+floating consumer sync · [2] engine pnpm
 // build · [2a] wgpu wasm · [2c] fbx wasm · [2d] codec wasm · [3] marketplace
 // plugin install+build · [4] .env scaffold · [5] seed sample games.
 //
 // Env: FORGEAX_SKIP_PREPARE · FORGEAX_FORCE_PREPARE · FORGEAX_SKIP_PLUGINS ·
 // FORGEAX_SKIP_ENGINE_BUILD · FORGEAX_SUBMODULE_FULL · FORGEAX_SKIP_HARNESS_SYNC ·
-// FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_BOOTSTRAP · FORGEAX_BOOTSTRAP_YES
+// FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_GAMES · FORGEAX_SKIP_BOOTSTRAP ·
+// FORGEAX_BOOTSTRAP_YES
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_ENTRY_OUTPUTS, isEngineEntryDistFresh } from './lib/engine-entry-freshness.ts';
+import {
+  extensionPackageManager,
+  extensionPackageManagerFallback,
+} from './lib/extension-build.ts';
 import { has, resolvePython, run } from './lib/sh.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
+import { repairPluginDirectoryLink } from './lib/plugin-directory-links.ts';
 import { mapConcurrent, positiveConcurrency, runCommandBuffered } from './lib/process-pool.ts';
 import { ensureWorkspacePackageLink } from './lib/workspace-package-link.ts';
-import { writeSetupSnapshot } from './lib/setup-version.ts';
+import { buildEnginePackages, PREPARE_ENGINE_BUILD_FILTERS } from './ci/build-engine-packages.ts';
+import { ensureEngineWgpuWasm } from './ci/ensure-engine-wgpu-wasm.ts';
+import {
+  createRecursiveInputResult,
+  projectGitlinkGraph,
+  readAuthoritativeGitGraph,
+  type InputClass,
+  type RecursiveInputResult,
+} from '../packages/recursive-input-contract/src/index.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const PLAYWRIGHT_DOWNLOAD_MIRROR = 'https://cdn.npmmirror.com/binaries/playwright';
+
+const PREPARE_INPUT_CLASSES: InputClass[] = [
+  'source',
+  'dependency-installation',
+  'toolchain',
+  'large-file-storage',
+];
+
+function recursiveInputResultPath(root: string): string {
+  return join(root, '.forgeax', 'recursive-input-result.json');
+}
+
+function writeRecursiveInputResult(root: string): RecursiveInputResult {
+  const graph = projectGitlinkGraph(readAuthoritativeGitGraph(root));
+  const notReady = prepareResults.some((row) => row.result === 'failed') || graph.unreachablePaths.length > 0;
+  const result = createRecursiveInputResult({
+    graph,
+    producer: 'bun-prepare',
+    job: 'prepare',
+    attempt: `prepare-${Date.now()}`,
+    trustScope: 'local-fixed-worktree',
+    requestedInputClasses: PREPARE_INPUT_CLASSES,
+    readiness: notReady
+      ? {
+          source: { status: graph.unreachablePaths.length > 0 ? 'unavailable' : 'partial' },
+          'dependency-installation': { status: 'partial' },
+          toolchain: { status: 'partial' },
+          'large-file-storage': { status: 'partial' },
+        }
+      : undefined,
+    failure: notReady
+      ? {
+          code: 'recursive-input.materialization-incomplete',
+          hint: 'Discard the partial checkout and retry the complete input request cold.',
+          expected: 'submodules, dependencies, toolchain, and large-file-storage ready',
+          actual: graph.unreachablePaths.length > 0
+            ? `unreachable recursive pins: ${graph.unreachablePaths.join(',')}`
+            : 'prepare reported one or more failed stages',
+          retryable: true,
+          recoveryActions: ['discard-partial-state', 'retry-cold'],
+        }
+      : undefined,
+  });
+  mkdirSync(join(root, '.forgeax'), { recursive: true });
+  const path = recursiveInputResultPath(root);
+  const temporaryPath = `${path}.tmp-${process.pid}`;
+  writeFileSync(temporaryPath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+  renameSync(temporaryPath, path);
+  return result;
+}
 
 if (process.env.FORGEAX_SKIP_PREPARE === '1') {
   console.log('[prepare] skipped (FORGEAX_SKIP_PREPARE=1)');
@@ -111,6 +176,7 @@ Env:
   FORGEAX_SUBMODULE_FULL=1     full (non-shallow) submodule clone
   FORGEAX_SKIP_HARNESS_SYNC=1  skip .forgeax-harness floating-clone sync
   FORGEAX_SKIP_HARNESS=1       skip harness sync + skill install entirely (CI)
+  FORGEAX_SKIP_GAMES=1         skip optional forgeax-games checkout + sample seeding (CI)
   FORGEAX_SKIP_BOOTSTRAP=1     skip toolchain provisioning (node/pnpm/rust) — CI
   FORGEAX_BOOTSTRAP_YES=1      auto-accept toolchain installs (non-interactive)
   FORGEAX_PLUGIN_BUILD_CONCURRENCY=N
@@ -167,7 +233,10 @@ const parentOrigin = (spawnSync('git', ['config', '--get', 'remote.origin.url'],
 const cred = publicDistribution
   ? { branch: 'noop-parent-is-not-https' as const, gitConfig: {} }
   : resolveCredentialConfig(parentOrigin, env, probeGitHubSsh);
-const gitEnv: NodeJS.ProcessEnv = { ...hardenedGitEnv(env), ...cred.gitConfig };
+const gitEnv: NodeJS.ProcessEnv = normalizePackageManagerRegistry({
+  ...hardenedGitEnv(env),
+  ...cred.gitConfig,
+});
 const noCredHelper = [...NO_CRED_ARGV];
 if (cred.branch === 'ssh-rewrite' || cred.branch === 'pat-rewrite') ok(cred.message!);
 else if (cred.branch === 'loud-warn-no-cred') warnY(cred.message!);
@@ -290,6 +359,15 @@ if (process.env.FORGEAX_SKIP_HARNESS === '1' || publicDistribution) {
   }
 }
 
+// forgeax-games is an optional consumer checkout. Studio can be installed and
+// can create engine-template games without it; local game-library work opts in
+// through this floating checkout, while CI explicitly disables the network pull.
+if (process.env.FORGEAX_SKIP_GAMES === '1' || publicDistribution) {
+  console.log(`  → games floating checkout skipped (${publicDistribution ? 'public distribution' : 'FORGEAX_SKIP_GAMES=1'})`);
+} else {
+  syncGames();
+}
+
 // ── 3. engine submodule build ────────────────────────────────────────────────
 if (publicDistribution) {
   // The mirrored source ships the engine's emitted dist files but deliberately
@@ -342,6 +420,9 @@ healDanglingEngineSymlinks(engineDir);
 // e.g. fbx's fetch-ufbx hits raw.githubusercontent 429 rate-limits on the 1.2 MB
 // ufbx.c. So for every wasm bundle we `tryFetchWasm()` first and only
 // `build:wasm` on miss (no published asset for this pin, offline, or hash drift).
+// The wgpu fetch/compile/output gate is shared with Runtime release CI in
+// scripts/ci/ensure-engine-wgpu-wasm.ts; fbx and codec keep their package-local
+// provisioning below because they have different native toolchain needs.
 //
 // The engine repo is private, so fetch-wasm needs a GitHub token. Resolve one
 // from the env or the gh CLI once and thread it into each fetch attempt; without
@@ -409,22 +490,18 @@ function buildWgpuWasm(): void {
   if (!force && !wgpuWasmStale()) {
     ok(`wgpu wasm already built and fresh (skip) — ${wasmArtefact}`);
     if (!existsSync(wasmSentinel)) touchSentinel();
-  } else if (tryFetchWasm('@forgeax/engine-wgpu-wasm', 'wgpu wasm')) {
-    touchSentinel();
-  } else if (!has('rustc') || !has('wasm-pack')) {
-    warnY('Rust→wasm toolchain missing — skipping wgpu wasm build.');
-    console.log('    The preview engine + engine-app build will fail until this is built (install rust + wasm-pack, then: pnpm -F @forgeax/engine-wgpu-wasm build:wasm)');
   } else {
-    console.log(existsSync(wasmArtefact) ? '  → wgpu wasm stale — rebuilding' : '  → wgpu wasm missing — building');
-    if (has('rustup')) {
-      const t = spawnSync('rustup', ['target', 'list', '--installed'], { encoding: 'utf8' });
-      if (!(t.stdout ?? '').includes('wasm32-unknown-unknown')) run('rustup', ['target', 'add', 'wasm32-unknown-unknown']);
-    }
-    if (run('pnpm', ['-F', '@forgeax/engine-wgpu-wasm', 'build:wasm'], { cwd: engineDir })) {
+    const stale = force || wgpuWasmStale();
+    const provisioned = ensureEngineWgpuWasm({
+      root: ROOT,
+      engineRoot: engineDir,
+      force: stale,
+      strict: requireCompleteSetup,
+      env,
+    });
+    if (provisioned) {
       touchSentinel();
       ok(`wgpu wasm built — ${wasmArtefact}`);
-    } else {
-      warnY('wgpu wasm build failed — engine-app build + preview engine will not start until fixed.');
     }
   }
 }
@@ -468,35 +545,8 @@ if (skipEngineBuild) {
   if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed.');
   // pkg/wgpu_wasm.js must exist before the engine-app bundle below imports it.
   buildWgpuWasm();
-  const filters = [
-    '@forgeax/engine-app...', '@forgeax/engine-runtime...', '@forgeax/engine-ecs...', '@forgeax/engine-types...',
-    '@forgeax/engine-assets-runtime...',
-    '@forgeax/engine-vfx...', '@forgeax/engine-vfx-compiler...', '@forgeax/engine-vfx-render...',
-    '@forgeax/engine-vite-plugin-shader...', '@forgeax/engine-vite-plugin-pack...', '@forgeax/engine-shader-compiler...',
-    '@forgeax/engine-naga...', '@forgeax/engine-wgpu-wasm...', '@forgeax/engine-gltf...', '@forgeax/engine-image...',
-    '@forgeax/engine-font...', '@forgeax/engine-pack...', '@forgeax/engine-project...',
-    // The game template imports the host-injected NPC adapter. This package
-    // must be emitted even when the engine dist cache is cold or incomplete.
-    '@forgeax/engine-npc...',
-    // engine-fbx: editor-core's fbx-cook imports the ufbx WASM runtime
-    // (initFbxWasm / parseFbx) + the parse-* helpers from it — the engine
-    // collapsed the former engine-fbx-wasm package INTO engine-fbx (#603). Its
-    // tsup dist must exist or the editor iframe 500s at load ("Failed to resolve
-    // entry for package @forgeax/engine-fbx"). The wasm BINARY (pkg/fbx-wasm.
-    // {mjs,wasm}) is built separately in step 2c below.
-    '@forgeax/engine-fbx...',
-    // The default game scaffold imports the public NPC adapter directly. A
-    // cache restored from before this package existed must fall through to a
-    // real build instead of leaving play-runtime with a dangling dist entry.
-    '@forgeax/engine-npc...',
-    // engine-vite-plugin-rhi-debug: the editor's engine-vite-preset (studio's
-    // vite.config imports it) unconditionally imports this plugin (editor #117
-    // opt-in RHI-debug switch). Its exports point at ./dist/index.mjs, so the
-    // dist must exist or the studio vite config load 500s with "Failed to
-    // resolve entry for package @forgeax/engine-vite-plugin-rhi-debug".
-    '@forgeax/engine-vite-plugin-rhi-debug...',
-  ].flatMap((f) => ['--filter', f]);
-  if (!run('pnpm', [...filters, '-r', 'build'], { cwd: engineDir })) fail('engine submodule build failed.');
+  if (!buildEnginePackages({ engineRoot: engineDir, filters: PREPARE_ENGINE_BUILD_FILTERS }))
+    fail('engine submodule build failed.');
   ok('engine packages built');
   // tsc -b emits the engine packages' dist/*.d.ts (the filtered tsup build above
   // is dts:false — declarations come exclusively from the composite tsc graph,
@@ -698,18 +748,20 @@ if (skipPlugins) {
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     if (e.name === '_template') continue;
     const d = join(pluginsDir, e.name);
+    const repairedTarget = repairPluginDirectoryLink(d);
+    if (repairedTarget) console.log(`  → repaired plugin directory link (${e.name} → ${repairedTarget})`);
     if (!existsSync(join(d, 'package.json'))) continue;
-    if (existsSync(join(d, 'pnpm-workspace.yaml'))) {
-      console.log(`  → pnpm install (${e.name} pnpm workspace)`);
-      const installArgs = existsSync(join(d, 'pnpm-lock.yaml'))
-        ? ['install', '--frozen-lockfile']
-        : ['install'];
-      if (!run('pnpm', installArgs, { cwd: d })) fail(`${e.name} dependency install failed`);
+    const pkg = readJson(join(d, 'package.json')) as {
+      packageManager?: string;
+      scripts?: Record<string, string>;
+    } | null;
+    if (resolvePluginPackageManager(d, pkg, e.name) === 'pnpm') {
+      installPnpmDir(d);
     } else {
       installDir(d);
     }
+    ensurePluginPlaywrightBrowsers(d, e.name);
 
-    const pkg = readJson(join(d, 'package.json')) as { scripts?: Record<string, string> } | null;
     if (pkg?.scripts?.build) {
       if (!force && pluginBuildFresh(d)) ok(`${e.name}  build cache fresh, skip`);
       else builds.push({ name: e.name, dir: d });
@@ -778,7 +830,9 @@ bold('[5/5] Seeding sample games to .forgeax/games/');
 const gamesSrc = join(ROOT, 'packages/games');
 const gamesDst = join(ROOT, '.forgeax/games');
 mkdirSync(gamesDst, { recursive: true });
-if (existsSync(gamesSrc) && readdirSync(gamesSrc).length > 0) {
+if (process.env.FORGEAX_SKIP_GAMES === '1') {
+  console.log('  → skipped (FORGEAX_SKIP_GAMES=1)');
+} else if (existsSync(gamesSrc) && readdirSync(gamesSrc).length > 0) {
   const r = spawnSync(process.execPath, [join(ROOT, 'scripts/seed-games.ts')], {
     stdio: 'inherit',
     cwd: ROOT,
@@ -807,19 +861,19 @@ if (prepareResults.length > 0) {
   bold('[prepare] submodule result report');
   console.log(formatPrepareReport(prepareResults));
 }
+if (publicDistribution) {
+  console.log('[prepare] recursive input result skipped (public distribution has no Git metadata)');
+} else {
+  try {
+    const result = writeRecursiveInputResult(ROOT);
+    console.log(`[prepare] recorded recursive input ${result.status}`);
+  } catch (error) {
+    fail(`could not record recursive input: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 if (prepareFailed) {
   console.error('[prepare] one or more submodules failed to update; see report above');
   process.exit(1);
-}
-if (publicDistribution) {
-  console.log('[prepare] setup version snapshot skipped (public distribution has no Git metadata)');
-} else {
-  try {
-    const snapshot = writeSetupSnapshot(ROOT);
-    console.log(`[prepare] recorded setup version ${snapshot.rootHead.slice(0, 12)} (+${snapshot.submodules.length} submodule pins)`);
-  } catch (error) {
-    fail(`could not record setup version: ${error instanceof Error ? error.message : String(error)}`);
-  }
 }
 console.log('Next:\n  bun fx start');
 console.log('Endpoints once running:\n  http://localhost:18920  Studio UI\n  http://localhost:18900  Server\n  http://localhost:15173  Engine');
@@ -832,6 +886,22 @@ function readJson(file: string): unknown {
   } catch {
     return null;
   }
+}
+
+/**
+ * pnpm 9 reads the npm-compatible registry variable while newer pnpm versions
+ * also accept PNPM_CONFIG_REGISTRY. Mirror the configured registry into all
+ * equivalent names before spawning package-manager children.
+ */
+function normalizePackageManagerRegistry(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const registry = base.PNPM_CONFIG_REGISTRY ?? base.NPM_CONFIG_REGISTRY ?? base.npm_config_registry;
+  if (!registry) return base;
+  return {
+    ...base,
+    PNPM_CONFIG_REGISTRY: registry,
+    NPM_CONFIG_REGISTRY: registry,
+    npm_config_registry: registry,
+  };
 }
 
 function syncHarness(cwd: string, label: string): void {
@@ -850,6 +920,17 @@ function syncPackageHarness(): void {
   });
   if ((r.status ?? 1) !== 0) fail('packages/harness floating checkout is unavailable');
   ok('packages/harness floating checkout ready');
+}
+
+function syncGames(): void {
+  console.log('  → node scripts/sync-games.mjs --ensure');
+  const r = spawnSync('node', [join(ROOT, 'scripts/sync-games.mjs'), '--ensure'], {
+    stdio: 'inherit',
+    cwd: ROOT,
+    env: gitEnv,
+  });
+  if ((r.status ?? 1) !== 0) warnY('optional packages/games floating checkout unavailable — continuing without shared games');
+  else ok('packages/games floating checkout ready or absent');
 }
 
 function installHarnessSkills(): void {
@@ -896,6 +977,61 @@ function bunInstallWithRetry(dir: string): boolean {
   warnY(`bun install failed in ${dir}; removing the incomplete node_modules and retrying`);
   rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
   return run('bun', installArgs, { cwd: dir, env: gitEnv });
+}
+
+function resolvePluginPackageManager(
+  dir: string,
+  pkg: { packageManager?: string } | null,
+  label: string,
+): 'bun' | 'pnpm' {
+  const fallback = extensionPackageManagerFallback({
+    bunLock: existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'bun.lockb')),
+    pnpmLock: existsSync(join(dir, 'pnpm-lock.yaml')),
+    pnpmWorkspace: existsSync(join(dir, 'pnpm-workspace.yaml')),
+  });
+  try {
+    return extensionPackageManager(pkg ?? {}, fallback);
+  } catch (error) {
+    fail(`${label} ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function installPnpmDir(dir: string): void {
+  console.log(`  → pnpm install (${dir})`);
+  const installArgs = existsSync(join(dir, 'pnpm-lock.yaml'))
+    ? ['install', '--frozen-lockfile']
+    : ['install'];
+  if (!run('pnpm', installArgs, { cwd: dir, env: gitEnv })) fail(`${dir} dependency install failed`);
+  ok(`${dir}  installed`);
+}
+
+function ensurePluginPlaywrightBrowsers(dir: string, label: string): void {
+  const cli = join(dir, 'node_modules/playwright/cli.js');
+  if (!existsSync(cli)) return;
+  const browserArgs = ['install', 'chromium', 'chromium-headless-shell'];
+  console.log(`  → node ${cli} ${browserArgs.join(' ')} (${label} browser runtime)`);
+  if (run('node', [cli, ...browserArgs], { cwd: dir, env: gitEnv })) {
+    ok(`${label} Playwright browsers ready`);
+    return;
+  }
+
+  const customDownloadHost =
+    gitEnv.PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST ?? gitEnv.PLAYWRIGHT_DOWNLOAD_HOST;
+  if (!customDownloadHost) {
+    warnY(`${label} Playwright CDN unavailable; retrying configured public browser mirror`);
+    if (run('node', [cli, ...browserArgs], {
+      cwd: dir,
+      env: { ...gitEnv, PLAYWRIGHT_DOWNLOAD_HOST: PLAYWRIGHT_DOWNLOAD_MIRROR },
+    })) {
+      ok(`${label} Playwright browsers ready (configured public mirror)`);
+      return;
+    }
+  }
+
+  warnY(
+    `${label} Playwright browsers unavailable; headless renderer will be skipped ` +
+      `until the browser cache is installed`,
+  );
 }
 
 function installDir(dir: string): void {

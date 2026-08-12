@@ -47,6 +47,28 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+/**
+ * The facts publisher is passive: it may observe a carrier, but it must never
+ * create transport failures while the in-process Editor is still booting.
+ */
+export function hasConnectedEditorTransportScope(value: unknown, scope: string): boolean {
+  const health = record(value);
+  return health?.ok === true
+    && health.connected === true
+    && Array.isArray(health.scopes)
+    && health.scopes.includes(scope);
+}
+
+async function hasConnectedEditorTransport(scope: string): Promise<boolean> {
+  try {
+    const response = await fetch('/api/editor/transport/health', { cache: 'no-store' });
+    if (!response.ok) return false;
+    return hasConnectedEditorTransportScope(await response.json(), scope);
+  } catch {
+    return false;
+  }
+}
+
 /** Unwrap `{ ok, value }` envelopes to the payload, mirroring editorRenderers. */
 function resultValue(response: TransportResponse): unknown {
   const result = record(response.result);
@@ -164,6 +186,10 @@ export function subscribeEditorFactsPublisher(): () => void {
     const slug = resolveSlug();
     ensureClient(slug);
     if (!client || !slug) {
+      clearFacts();
+      return;
+    }
+    if (!(await hasConnectedEditorTransport(`game:${slug}`))) {
       clearFacts();
       return;
     }

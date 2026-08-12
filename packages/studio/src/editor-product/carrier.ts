@@ -10,7 +10,7 @@ import {
   type TransportResponse,
   type TransportService,
 } from '@forgeax/editor/product';
-import { createEvalChannel, gateway } from '@forgeax/editor/bridge';
+import { assetIO, createEvalChannel, gateway, resolveGamePath } from '@forgeax/editor/bridge';
 import { executeLiveGameplay } from '@forgeax/editor/gameplay';
 
 export interface EditorTransportSocket {
@@ -26,6 +26,10 @@ export interface StudioEditorTransportCarrierOptions {
   readonly service?: Pick<TransportService, 'handle'>;
   readonly reconnectDelayMs?: number;
   readonly role?: 'interactive' | 'managed';
+}
+
+export interface StudioEditorTransportService extends Pick<TransportService, 'handle'> {
+  readonly dispose: () => void;
 }
 
 export interface StudioEditorTransportCarrier {
@@ -100,11 +104,91 @@ export function executeStudioGameplay(input: unknown): unknown | Promise<unknown
   return executeLiveGameplay(input);
 }
 
+function importSourceFailure(code: string, hint: string, recoveryActions: readonly string[] = ['request.retry']): unknown {
+  return {
+    ok: false,
+    error: {
+      code,
+      hint,
+      retryable: true,
+      recoveryActions,
+    },
+  };
+}
+
+/**
+ * The only Studio-side implementation of the lowpoly direct-import bridge.
+ * It deliberately mirrors Content Browser's proven sequence:
+ *   1. upload source bytes through assetIO;
+ *   2. dispatch the existing importAsset Gateway op with skipUpload;
+ *   3. await the same Gateway-owned OperationRun.
+ *
+ * No importer, cook, sidecar, or catalog logic is duplicated here.
+ */
+export type StudioAssetImportActor = 'human' | 'ai';
+
+/** Execute the canonical GLB source import against the live Editor Gateway. */
+export async function executeStudioAssetImportSource(
+  input: unknown,
+  actor: StudioAssetImportActor,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const value = record(input);
+  const destPath = typeof value.destPath === 'string' ? value.destPath.trim() : '';
+  const sourceName = typeof value.sourceName === 'string' ? value.sourceName.trim() : '';
+  const base64 = typeof value.base64 === 'string' ? value.base64 : '';
+  const requestId = typeof value.requestId === 'string' ? value.requestId.trim() : '';
+  if (!destPath || !sourceName || !base64 || !requestId) {
+    return importSourceFailure('invalid-asset-import-input', 'destPath, sourceName, base64, and requestId are required.', ['transport.describe']);
+  }
+
+  let uploadPath: string;
+  try {
+    uploadPath = resolveGamePath(destPath);
+  } catch (cause) {
+    return importSourceFailure('invalid-asset-import-path', cause instanceof Error ? cause.message : 'The Editor game path could not be resolved.', ['transport.describe']);
+  }
+
+  const uploaded = await assetIO.uploadSourceBytes(uploadPath, base64, signal);
+  if (!uploaded.ok) {
+    return importSourceFailure(
+      'asset-source-upload-failed',
+      uploaded.error.hint,
+      ['request.retry', 'editor.discover'],
+    );
+  }
+
+  const dispatched = gateway.dispatch({
+    kind: 'importAsset',
+    destPath,
+    sourceName,
+    skipUpload: true,
+    requestId,
+  }, actor);
+  if (!dispatched.ok) return dispatched;
+
+  const accepted = record(dispatched.result).operationRun;
+  if (accepted === undefined) {
+    return importSourceFailure('asset-import-run-missing', 'Editor accepted the import without returning its OperationRun.', ['run.get', 'request.retry']);
+  }
+
+  const terminal = await gateway.waitOperationRun(requestId);
+  if (!terminal.ok) return terminal;
+  return {
+    ok: true,
+    requestId,
+    destPath,
+    sourceName,
+    operationRun: terminal.value,
+  };
+}
+
 export function createStudioEditorTransportService(
   scope: string,
-): Pick<TransportService, 'handle'> {
+): StudioEditorTransportService {
   const adapter = createGatewayCapabilityAdapter({
     listOps: () => gateway.listOps(),
+    subscribeOps: (listener) => gateway.subscribeOperationCapabilities(listener),
     dispatch: (command, origin) => gateway.dispatch(command, origin),
     operationRuns: {
       get: (requestId) => gateway.getOperationRunResult(requestId),
@@ -154,8 +238,13 @@ export function createStudioEditorTransportService(
     security: createTransportSecurityPolicy({
       version: TRANSPORT_PROTOCOL_VERSION,
       scopes: [scope],
-      permissions: { 'script.execute': 'execute' },
+      permissions: { 'script.execute': 'execute', 'asset.importSource': 'execute' },
     }),
+    assetImportSource: (input, request, signal) => executeStudioAssetImportSource(
+      input,
+      request.actor.kind === 'human' ? 'human' : 'ai',
+      signal,
+    ),
     evaluate: async (code) => {
       const result = scriptChannel.eval(code);
       if (!result.ok) {
@@ -178,6 +267,7 @@ export function createStudioEditorTransportService(
       syncAssets();
       return service.handle(request);
     },
+    dispose: () => adapter.dispose(),
   };
 }
 
@@ -196,7 +286,7 @@ export function connectStudioEditorTransport(
   const socketFactory = options.socketFactory ?? ((url: string) => new WebSocket(url));
   const socketUrl = options.url ?? editorTransportUrl();
   const reconnectDelayMs = options.reconnectDelayMs ?? 500;
-  let currentService = options.service;
+  let currentService: (Pick<TransportService, 'handle'> & { readonly dispose?: () => void }) | undefined = options.service;
   const serviceForRequest = (): Pick<TransportService, 'handle'> => {
     if (options.service !== undefined) return options.service;
     currentService ??= createStudioEditorTransportService(`game:${slug}`);
@@ -205,7 +295,7 @@ export function connectStudioEditorTransport(
   let disposed = false;
   let socket: EditorTransportSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-  let registered = false;
+  let publishedGameplay: boolean | undefined;
   let markReady: () => void = () => undefined;
   const ready = new Promise<void>((resolve) => { markReady = resolve; });
 
@@ -213,24 +303,32 @@ export function connectStudioEditorTransport(
     if (target.readyState === 1) target.send(JSON.stringify(value));
   };
 
-  const presence = () => ({
-    visibility: typeof document === 'undefined' || document.visibilityState === 'visible' ? 'visible' as const : 'hidden' as const,
-    focused: typeof document === 'undefined' || document.hasFocus(),
-    engaged: typeof navigator === 'undefined'
-      || (navigator as Navigator & { userActivation?: { hasBeenActive?: boolean } }).userActivation?.hasBeenActive === true,
-  });
+  const presence = () => {
+    const host = globalThis as typeof globalThis & {
+      __forgeax_editor_gameplay?: unknown;
+    };
+    return {
+      visibility: typeof document === 'undefined' || document.visibilityState === 'visible' ? 'visible' as const : 'hidden' as const,
+      focused: typeof document === 'undefined' || document.hasFocus(),
+      capabilities: { gameplay: host.__forgeax_editor_gameplay != null },
+    };
+  };
 
   const publishPresence = (): void => {
-    if (socket === null || !registered) return;
-    send(socket, { type: 'editor-transport/presence', ...presence() });
+    if (socket === null || publishedGameplay === undefined) return;
+    const current = presence();
+    publishedGameplay = current.capabilities.gameplay;
+    send(socket, { type: 'editor-transport/presence', ...current });
   };
+
+  const capabilityTimer = setInterval(() => {
+    if (publishedGameplay !== undefined && presence().capabilities.gameplay !== publishedGameplay) publishPresence();
+  }, 100);
 
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', publishPresence);
   if (typeof window !== 'undefined') {
     window.addEventListener('focus', publishPresence);
     window.addEventListener('blur', publishPresence);
-    window.addEventListener('pointerdown', publishPresence, true);
-    window.addEventListener('keydown', publishPresence, true);
   }
 
   const connect = (): void => {
@@ -243,7 +341,7 @@ export function connectStudioEditorTransport(
     socket = next;
     next.addEventListener('close', () => {
       if (disposed || socket !== next) return;
-      registered = false;
+      publishedGameplay = undefined;
       socket = null;
       reconnectTimer = setTimeout(connect, reconnectDelayMs);
     });
@@ -254,14 +352,15 @@ export function connectStudioEditorTransport(
       if (!value || typeof value !== 'object' || Array.isArray(value)) return;
       const message = value as Record<string, unknown>;
       if (message.type === 'editor-transport/hello') {
+        const currentPresence = presence();
         send(next, {
           type: 'editor-transport/ready',
           version: TRANSPORT_PROTOCOL_VERSION,
           role: options.role ?? 'interactive',
           scope: `game:${slug}`,
-          ...presence(),
+          ...currentPresence,
         });
-        registered = true;
+        publishedGameplay = currentPresence.capabilities.gameplay;
         markReady();
         return;
       }
@@ -297,13 +396,13 @@ export function connectStudioEditorTransport(
       if (disposed) return;
       disposed = true;
       if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+      clearInterval(capabilityTimer);
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', publishPresence);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', publishPresence);
         window.removeEventListener('blur', publishPresence);
-        window.removeEventListener('pointerdown', publishPresence, true);
-        window.removeEventListener('keydown', publishPresence, true);
       }
+      if (options.service === undefined) currentService?.dispose?.();
       socket?.close();
       socket = null;
     },

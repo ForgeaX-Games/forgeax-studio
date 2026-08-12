@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, posix, relative, resolve, win32 } from 'node:path';
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, win32 } from 'node:path';
 
 export interface ActiveServerRole {
   packageDir: string;
@@ -16,6 +16,12 @@ export interface ResolveServerRoleOptions {
 export interface ServerRuntimeInvocation {
   entryPath: string;
   orphanSignature: string;
+}
+
+/** Minimal persisted shape consumed by lifecycle state without importing it. */
+export interface PersistedServerRoleIdentity {
+  readonly packageDir: string;
+  readonly entry: string;
 }
 
 const BASE_ENTRY = 'src/main.ts';
@@ -84,6 +90,50 @@ export function resolveActiveServerRole({
     );
   }
   return winners[0] as ActiveServerRole;
+}
+
+/**
+ * Accept only a real server role that this checkout itself declares. Runtime
+ * state is not authority to turn an arbitrary package source file into
+ * a stop target: base is fixed, while overrides must exactly match their
+ * forgeaxStudio metadata and pass the same containment checks as launch.
+ */
+export function isDeclaredServerRole(
+  root: string,
+  identity: PersistedServerRoleIdentity,
+): boolean {
+  try {
+    const packagesDir = join(resolve(root), 'packages');
+    const packagesRealDir = realpathSync(packagesDir);
+    validateEntry(identity.entry, 'persisted server role');
+    const packageDir = resolve(identity.packageDir);
+    const packageRealDir = realpathSync(packageDir);
+    // Resolve the lexical parent separately: a package symlink must not become
+    // a valid identity merely because its target happens to be under packages.
+    const canonicalPackagePath = join(realpathSync(dirname(packageDir)), basename(packageDir));
+    if (packageRealDir !== canonicalPackagePath || dirname(packageRealDir) !== packagesRealDir) return false;
+
+    if (packageRealDir === join(packagesRealDir, 'server')) {
+      return identity.entry === BASE_ENTRY
+        && readRolePackage(packageRealDir, BASE_ENTRY, BASE_PRIORITY, 'persisted base server', packagesRealDir).entry === BASE_ENTRY;
+    }
+
+    const packageJsonPath = join(packageRealDir, 'package.json');
+    const packageJson = readPackageJson(packageJsonPath);
+    const metadata = packageJson.forgeaxStudio;
+    if (!isRecord(metadata) || metadata.runtimeRole !== 'server'
+      || metadata.entry !== identity.entry
+      || typeof metadata.priority !== 'number' || !Number.isFinite(metadata.priority)) return false;
+    return readRolePackage(
+      packageRealDir,
+      identity.entry,
+      metadata.priority,
+      `persisted server role in ${packageJsonPath}`,
+      packagesRealDir,
+    ).entry === identity.entry;
+  } catch {
+    return false;
+  }
 }
 
 function readRolePackage(

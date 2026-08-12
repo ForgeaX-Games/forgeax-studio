@@ -14,29 +14,6 @@
 
 ---
 
-## v0.3.23 — 2026-08-01
-
-**资产画布工作流 + 场景创作边界增强 + 桌面原生能力恢复 + 本地运行链路稳定化**
-
-### Features
-- feat: 集成 Asset Canvas 工作流与共享 Workbench Host，统一资产编排、模型服务和媒体适配能力
-- feat(editor): 增强场景创建、复制、删除、默认场景和字段编辑等创作边界
-- feat(runtime): 增加无头 AI carrier supervisor，并完成 Wave 1 gameplay carrier 兼容链路
-- feat: 游戏成为项目单位，视频游戏和 wb-game-video 工作流进入稳定集成
-
-### Fixes
-- fix(desktop): 恢复打包应用导航到 sidecar HTTP 源后的 Tauri IPC，原生“打开项目”等菜单重新响应
-- fix(interface): “打开项目”支持 gameroot 之外的任意本地目录
-- fix(editor): 修复游戏视口 Play 启动、预览资源路径、WebGL2 FXAA 回退和场景保存相关问题
-- fix(dev): 避免重复打开 Studio 标签页，并加固 AnyDev 冷启动、工作区链接与子模块初始化
-
-### Improvements
-- 编辑器同步最新 authoring boundaries、capability-driven placement 和共享运行时依赖
-- Hellforge 完成技能树、装备制作、加载、导航和视觉质量等垂直切片打磨
-- 本地 runtime 环境、清理流程、子模块 pin 校验与 CI 门禁进一步收敛
-
----
-
 ## v0.3.22 — 2026-07-24
 
 **main 分支合入 + Play 模式冻结修复增强 + 新建游戏白屏彻底修复 + 编辑器面板贡献 + 视频资源管理 + Hellforge 垂直切片**
@@ -332,11 +309,86 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 
 ---
 
-## v0.3.24 — 2026-08-07 · Nightly Release
+## v0.3.26 — 2026-08-10 · Nightly Release
+
+### 新特性
+
+- feat(dock): restore chat as draggable ChatDock column (#824)
+- feat(ci): isolate trusted recursive inputs from PR code (#812)
+- feat(ci): materialize recursive inputs with exact provenance (#810)
+- feat: add ForgeaX game CLI plugin (#675)
+- feat: adopt wb-game-video 0.7.6 (#809)
 
 ### 修复
 
-- fix(stable): pin settings active-game compatibility (#780)
+- fix(mirror): keep trusted inline workspace closure (#811)
+
+### 其他
+
+- chore(deps): bump editor pin to latest main (#822)
+- chore(submodules): bump games → 8509a00 (#97+#98+#99) (#818)
+- docs(hellforge): register N5 cast-feedback next cut (#819)
+- test(ci): capture recursive input baseline evidence (#817)
+- test(ci): cover final recursive input recovery matrix (#816)
+- test(ci): cover deep recursive input graph and Windows adapter (#815)
+- test(ci): add recursive input cross-boundary acceptance matrix (#813)
+
+
+---
+
+
+## v0.3.25 — 2026-08-07 · Nightly Release
+
+### 新特性
+
+- feat: route video generation through Workbench Host (#768)
+
+### 修复
+
+- fix: decouple studio startup from browser launch (#779)
+- fix(ci): validate mirror publish before merge (#774)
+
+### 其他
+
+- docs(ai-native): agent-native exemplar — walking protocol, live trace, team handoffs (#739)
+- docs(skill): clarify game CLI readiness (#784)
+- chore(deps): bump contracts, interface, editor pins for resolver-owned asset opens (#778)
+- chore: pin marketplace to persona refactor (#776)
+- chore(deps): bump editor + interface pins to main (dock tab close/pop-out clicks + React edge pin) (#771)
+- chore(studio): consume merged editor runtime isolation
+- chore: bump workbench npm stack to wb-game-video 0.3.1 (#764)
+- chore(deps): bump interface + editor pins (content browser locate) (#765)
+- chore: pin marketplace to main (#759)
+- chore: bump editor pin to 52d638fd (particle effect editor) (#761)
+- release: v0.3.24 (#746)
+- refactor(studio): unify Play and Edit engine Vite setup (#755)
+
+
+---
+
+
+## v0.3.24 — 2026-08-06 · Nightly Release
+
+### 新特性
+
+- feat(studio): add typed editor script transport (#735)
+- feat(build-game): add runtime evidence tooling (#733)
+
+### 修复
+
+- fix: make engine entry freshness incremental-safe (#731)
+- fix: prevent dirty marketplace state from reaching Studio (#730)
+
+### 其他
+
+- chore(stable): bump interface pin to f1d1dc6 for page-tabs API
+- pin(editor,server): Play bootstrap base fix + scaffold GUID regen fix (#742)
+- chore(stable): bump editor+server pins — play-bootstrap /@fs base probe, meta subAssets GUIDs
+- chore(release): sync stable version to v0.3.23
+- perf(desktop): dedupe packaged node_modules, slim server vendoring
+- pin(editor): f3556b42 — fix nested scene refs tolerance (#512)
+- chore: pin marketplace sidebar fix (#732)
+- chore: pin game creation fixes (#729)
 
 
 ---

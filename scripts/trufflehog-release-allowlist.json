@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "reason": "TruffleHog 3.96.0's Lob detector treats these reviewed test_* Rust function names as credentials; decoder classification can vary with filesystem scan chunking, so the exact package path, line, raw match, and source hash keep the exception fail-closed.",
+  "entries": [
+    {
+      "id": "engine-wgpu-wasm-rhi-test-shader-module",
+      "mode": "package",
+      "path": "assets/engine-sdk/source/wgpu-wasm/src/rhi.rs",
+      "line": 3648,
+      "detector": "Lob",
+      "detectorType": 490,
+      "decoders": ["HTML", "ESCAPED_UNICODE", "PLAIN"],
+      "verified": true,
+      "raw": "test_shader_module_descriptor_round_trip",
+      "sha256": "bc2fd3768130e988c1550a1dc6aa2a6ae60833eb8bf72b526096ed0151bee3c3"
+    },
+    {
+      "id": "engine-wgpu-wasm-rhi-test-pipeline-constants",
+      "mode": "package",
+      "path": "assets/engine-sdk/source/wgpu-wasm/src/rhi.rs",
+      "line": 3760,
+      "detector": "Lob",
+      "detectorType": 490,
+      "decoders": ["HTML", "ESCAPED_UNICODE", "PLAIN"],
+      "verified": true,
+      "raw": "test_parse_pipeline_constants_round_trip",
+      "sha256": "bc2fd3768130e988c1550a1dc6aa2a6ae60833eb8bf72b526096ed0151bee3c3"
+    },
+    {
+      "id": "engine-wgpu-wasm-rhi-test-parse-survival",
+      "mode": "package",
+      "path": "assets/engine-sdk/source/wgpu-wasm/src/rhi.rs",
+      "line": 3801,
+      "detector": "Lob",
+      "detectorType": 490,
+      "decoders": ["PLAIN", "HTML", "ESCAPED_UNICODE"],
+      "verified": true,
+      "raw": "test_instance_survives_parse_err_then_ok",
+      "sha256": "bc2fd3768130e988c1550a1dc6aa2a6ae60833eb8bf72b526096ed0151bee3c3"
+    }
+  ]
+}

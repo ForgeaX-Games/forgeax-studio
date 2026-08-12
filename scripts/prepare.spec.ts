@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { PREPARE_ENGINE_BUILD_FILTERS } from './ci/build-engine-packages';
 
 const ROOT = resolve(import.meta.dir, '..');
 const prepareSource = () => readFileSync(join(ROOT, 'scripts/prepare.ts'), 'utf8');
 const runSource = () => readFileSync(join(ROOT, 'scripts/run.ts'), 'utf8');
+const studioViteSource = () => readFileSync(join(ROOT, 'packages/studio/vite.config.ts'), 'utf8');
 const engineEntryFreshnessSource = () =>
   readFileSync(join(ROOT, 'scripts/lib/engine-entry-freshness.ts'), 'utf8');
 
@@ -25,7 +27,7 @@ describe('scripts/prepare.ts contracts', () => {
     const prepare = prepareSource();
     const run = runSource();
     expect(prepare).toMatch(/const engineEntryPkgs = \[[\s\S]*'assets-runtime'/);
-    expect(prepare).toContain("'@forgeax/engine-assets-runtime...'");
+    expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-assets-runtime...');
     expect(run).toMatch(/const engineEntryPkgs = \[[\s\S]*'assets-runtime'/);
   });
   it('covers every VFX package imported by editor config and runtime entry points', () => {
@@ -34,7 +36,7 @@ describe('scripts/prepare.ts contracts', () => {
     for (const packageName of ['vfx', 'vfx-compiler', 'vfx-render']) {
       expect(prepare).toMatch(new RegExp(`engineEntryPkgs\\s*=\\s*\\[[\\s\\S]*['"]${packageName}['"]`));
       expect(run).toMatch(new RegExp(`engineEntryPkgs\\s*=\\s*\\[[\\s\\S]*['"]${packageName}['"]`));
-      expect(prepare).toContain(`'@forgeax/engine-${packageName}...'`);
+      expect(PREPARE_ENGINE_BUILD_FILTERS).toContain(`@forgeax/engine-${packageName}...`);
     }
   });
   it('requires declaration outputs for engine entry freshness gates', () => {
@@ -75,22 +77,64 @@ describe('scripts/prepare.ts contracts', () => {
   it('preserves prebuilt-release wasm fetch + codec provisioning', () => {
     const src = prepareSource();
     expect(src).toContain('tryFetchWasm');
+    expect(src).toContain('ensureEngineWgpuWasm');
     expect(src).toContain('@forgeax/engine-codec');
     expect(src).toContain('healDanglingEngineSymlinks');
   });
   it('treats the scaffold NPC adapter as a required cached engine entry', () => {
     const src = prepareSource();
     expect(src).toMatch(/engineEntryPkgs\s*=\s*\[[^\]]*['"]npc['"]/);
-    expect(src).toContain("'@forgeax/engine-npc...'");
+    expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-npc...');
   });
-  it('always lets bun verify standalone plugin installs instead of trusting node_modules mtime', () => {
+  it('uses each standalone plugin package manager while preserving Bun retry behavior', () => {
     const src = prepareSource();
     expect(src).not.toMatch(/statSync\(nm\)\.mtimeMs\s*>\s*statSync\(join\(dir,\s*['"]package\.json['"]\)\)\.mtimeMs/);
+    expect(src).toContain('resolvePluginPackageManager(d, pkg, e.name)');
+    expect(src).toContain("extensionPackageManager(pkg ?? {}, fallback)");
+    expect(src).toContain('extensionPackageManagerFallback');
+    expect(src).toContain("join(dir, 'bun.lock')");
+    expect(src).toContain("run('pnpm', installArgs, { cwd: dir, env: gitEnv })");
+    expect(src).toContain('ensurePluginPlaywrightBrowsers(d, e.name)');
+    expect(src).toContain("join(dir, 'node_modules/playwright/cli.js')");
+    expect(src).toContain("['install', 'chromium', 'chromium-headless-shell']");
+    expect(src).toContain('PLAYWRIGHT_DOWNLOAD_MIRROR');
+    expect(src).toContain('PLAYWRIGHT_DOWNLOAD_HOST');
+    expect(src).toContain('configured public browser mirror');
+    expect(src).toContain('normalizePackageManagerRegistry');
+    expect(src).toContain('npm_config_registry');
+    expect(src).toContain('repairPluginDirectoryLink(d)');
     expect(src).toContain('if (bunInstallWithRetry(dir))');
     expect(src).toContain("run('bun', installArgs, { cwd: dir, env: gitEnv })");
     expect(src).toContain("else fail(`${dir} dependency install failed`)");
     expect(src).not.toContain('dependency install failed — continuing');
     expect(src).not.toContain("['install', '--ignore-scripts']");
+  });
+  it('does not retry optional headless renderers when their browser cache is unavailable', () => {
+    const src = runSource();
+    expect(src).toContain('hasPlaywrightHeadlessBrowser(p.dir)');
+    expect(src).toContain('headless renderer skipped: Playwright browser unavailable');
+    expect(src).toContain("chromium.launch({headless:true})");
+  });
+  it('keeps Studio config compatible with the current editor preset and diagnostics facade', () => {
+    const src = studioViteSource();
+    expect(src).toContain("from '../editor/scripts/vite/engine-vite-preset'");
+    expect(src).toContain("'@forgeax/editor-core/diagnostics'");
+    expect(src).toContain("packages/core/src/io/diagnostics.ts");
+  });
+  // Regression: Studio mounted the preview panel shells but never injected the
+  // host preview viewports, so material/mesh/vfx previews rendered the
+  // "not registered by the host" placeholder. The wiring must go through the
+  // @forgeax/editor/previews facade subpath (boundary rule 6), at module scope.
+  it('registers the editor preview viewports through the facade at module scope', () => {
+    const src = readFileSync(join(ROOT, 'packages/studio/src/panels/editorRenderers.tsx'), 'utf8');
+    expect(src).toContain("from '@forgeax/editor/previews'");
+    expect(src).toContain('registerEditorPreviewViewports()');
+    const editorPkg = JSON.parse(
+      readFileSync(join(ROOT, 'packages/editor/package.json'), 'utf8'),
+    ) as { exports?: Record<string, string> };
+    expect(editorPkg.exports?.['./previews']).toBe(
+      './packages/edit-runtime/src/viewport/preview-registrations.ts',
+    );
   });
   it('fails prepare when plugin dependencies, builds, or required runtime artefacts are incomplete', () => {
     const src = prepareSource();
@@ -103,7 +147,7 @@ describe('scripts/prepare.ts contracts', () => {
   it('builds the engine package imported by the new-game NPC template', () => {
     const src = prepareSource();
     expect(src).toContain("'npc'");
-    expect(src).toContain("'@forgeax/engine-npc...'");
+    expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-npc...');
   });
   it('installs plugins before running bounded parallel builds', () => {
     const src = prepareSource();
@@ -146,8 +190,8 @@ describe('scripts/prepare.ts contracts', () => {
   it('does not require Git metadata when preparing the public distribution', () => {
     const src = prepareSource();
     expect(src).toContain('if (publicDistribution)');
-    expect(src).toContain('setup version snapshot skipped (public distribution has no Git metadata)');
-    expect(src.indexOf('setup version snapshot skipped')).toBeLessThan(src.indexOf('writeSetupSnapshot(ROOT)'));
+    expect(src).toContain('recursive input result skipped (public distribution has no Git metadata)');
+    expect(src.indexOf('recursive input result skipped')).toBeLessThan(src.indexOf('writeRecursiveInputResult(ROOT)'));
   });
   it('scaffolds .env silently without readline key prompt', () => {
     const src = prepareSource();

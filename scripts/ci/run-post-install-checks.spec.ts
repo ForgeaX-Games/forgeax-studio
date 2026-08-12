@@ -7,8 +7,6 @@ describe('post-install CI stages', () => {
   it('keeps the independent static contract set complete', () => {
     expect(STATIC_GATES.map((task) => task.name)).toEqual([
       'Test @forgeax/agent-runtime',
-      'Game engine-import resolution gate',
-      'Game input-contract gate',
       'Typecheck @forgeax/platform-io',
       'interface package-boundary guard',
       'interface app-agnostic import guard',

@@ -6,28 +6,42 @@
 //   bun fx <command> [args...]
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSubmodulePaths } from './lib/repos.ts';
 import {
   sourceRuntimePorts,
+  sourceRuntimeStatusPorts,
   startSourceRuntime,
+  liveRuntimeStateForInstance,
 } from './lib/source-runtime-launcher.ts';
 import {
   isStartupProfile,
   resolveStartupEnvironment,
   type StartupProfile,
 } from './lib/startup-environment.ts';
-import { readRuntimeState } from './lib/runtime-state.ts';
+import {
+  resolveRuntimeInstance,
+  runtimeInstanceProcessEnv,
+} from './lib/runtime-instance.ts';
 import {
   missingWorkspacePackageJson,
   readWorkspaceGlobs,
 } from './ensure-workspace-submodules.ts';
 import {
-  checkSetupVersion,
-  writeSetupSnapshot,
-} from './lib/setup-version.ts';
+  createRecursiveInputResult,
+  isRecursiveInputResult,
+  projectGitlinkGraph,
+  readAuthoritativeGitGraph,
+  validateRecursiveInputResult,
+  type InputClass,
+  type RecursiveInputResult,
+} from '../packages/recursive-input-contract/src/index.ts';
+import {
+  createRecursiveInputCliDependencies,
+  executeRecursiveInputCli,
+} from '../packages/recursive-input-contract/src/cli.ts';
 
 
 // Re-exported so existing consumers/specs keep one import site; the
@@ -63,6 +77,7 @@ const BUN = process.execPath;
 const FLOATING_REPOS = {
   studioLoopState: { path: '.forgeax-harness', clean: false },
   runtimeHarness: { path: 'packages/harness', clean: true },
+  runtimeGames: { path: 'packages/games', clean: false },
 } as const;
 
 export function cleanableFloatingRepoPaths(): string[] {
@@ -76,11 +91,29 @@ export function floatingRepoExclusionArgs(): string[] {
 }
 
 function startPorts(): readonly StartPort[] {
+  const instance = resolveRuntimeInstance({ root: ROOT });
   return sourceRuntimePorts(resolveStartupEnvironment({
     root: ROOT,
     profile: sourceProfileFromEnvironment(),
-    env: process.env,
+    env: lifecycleProcessEnv(process.env, instance),
   }));
+}
+
+/**
+ * Projects one source-runtime instance onto a lifecycle child. Runtime paths
+ * and ports always belong to the instance; an externally managed agent-host
+ * socket is the sole explicit override retained from the parent environment.
+ */
+export function lifecycleProcessEnv(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  instance = resolveRuntimeInstance({ root: ROOT }),
+): NodeJS.ProcessEnv {
+  const instanceEnv = runtimeInstanceProcessEnv(instance);
+  return {
+    ...baseEnv,
+    ...instanceEnv,
+    FORGEAX_AGENT_HOST_SOCK: baseEnv.FORGEAX_AGENT_HOST_SOCK ?? instanceEnv.FORGEAX_AGENT_HOST_SOCK,
+  };
 }
 
 const script = (name: string): string => resolve(ROOT, 'scripts', name);
@@ -88,6 +121,8 @@ const script = (name: string): string => resolve(ROOT, 'scripts', name);
 const SCRIPT_COMMANDS = new Map<string, string>([
   // dev lifecycle
   ['stop', 'stop.ts'],
+  ['open', 'open-web.ts'],
+  ['instance', 'instance.ts'],
 
   // build / metadata helpers
   ['build:plugins', 'build-extensions.ts'],
@@ -107,6 +142,7 @@ const BUILTIN_COMMANDS = new Set([
   // git update orchestration
   'update',
   'clean',
+  'ci',
 
   // dev lifecycle orchestration
   'start',
@@ -115,6 +151,7 @@ const BUILTIN_COMMANDS = new Set([
   // diagnostics
   'status',
   'doctor',
+  'recursive-inputs',
 
   // compound aliases
   'build',
@@ -152,7 +189,7 @@ Usage:
 
 Common commands:
   setup                 Equivalent to bun install → prepare; records root + submodule setup pins
-  update                Pull latest root code, sync submodules, and refresh harness if present
+  update                Pull latest root code, sync submodules, and refresh floating repos if present
   sync [--dry-run]      Dev sync: fetch + ff-only each submodule BRANCH (keeps checkouts)
   clean [--deep|-x]     Restore a fully-clean git status across root,
                         submodules, and managed floating checkouts. Discards
@@ -160,18 +197,22 @@ Common commands:
                         Gitignored products are kept unless --deep. --dry-run/-n
                         previews. Keeps .forgeax-harness.
                         Stops the Studio stack first; missing git-lfs uses pointer-only checkout.
-  start [web|app|local] Start Studio and open the selected client (default: web)
-                        local = 127.0.0.1-only on a third port band (:38920) — use
-                        when default and dev-local ports are both taken.
+  instance init --slot N [--isolate-user] [--env-file PATH]
+                        Configure this worktree's isolated source-runtime slot
+  instance show         Show this worktree's derived runtime contract
+  start [web|desktop]   Start Studio services (default: web); does not open a browser
                         Add --rhi-debug to enable editor RHI capture; use
                         --skip-setup-check only to bypass a stale setup snapshot.
+  open [--managed]      Focus/open Studio in your Chrome; --managed isolates + forces WebGPU
   stop                  Stop web-dev stack
   restart               Stop then start web-dev stack
   status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)
   versions              Derived version manifest: pin / branch / nearest tag per submodule
   check [--all]         Run each dirty repo's own gates (lint/test); --all gates everything
+  ci                    Run the local Studio PR CI surface (root + template smoke contracts + editor CI)
   commit -m "msg"       Leaf-first multi-repo commit [path...] [--push] [--dry-run] [--no-verify]
   bump <path...>        Advance a clean submodule (fetch+ff) and stage its new pin in root
+  recursive-inputs      Materialize, verify, inspect, or discover the recursive input contract
   doctor [--fix]        Diagnose common local setup problems
   build plugins         Rebuild missing/broken marketplace plugin dists
   build desktop         Package the desktop app
@@ -180,8 +221,10 @@ Common commands:
 Examples:
   bun install
   bun fx start
+  bun fx open
   bun fx update
   bun fx start desktop debug
+  bun fx ci
   bun fx sync --dry-run
   bun fx commit -m "fix: adjust dock layout" --push
   bun fx status
@@ -197,18 +240,69 @@ function runSetup(args: string[]): never {
   const r = spawnSync(BUN, ['install'], { cwd: ROOT, stdio: 'inherit', env: process.env });
   if ((r.status ?? 1) === 0) {
     try {
-      const snapshot = writeSetupSnapshot(ROOT);
-      console.log(`[setup] recorded setup version ${snapshot.rootHead.slice(0, 12)} (+${snapshot.submodules.length} submodule pins)`);
+      const result = writeRecursiveInputResult(ROOT);
+      console.log(`[setup] recorded recursive input ${result.status}`);
     } catch (error) {
-      console.error(`[setup] could not record setup version: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[setup] could not record recursive input: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     }
   }
   process.exit(r.status ?? 1);
 }
 
-function runScript(file: string, args: string[]): never {
-  const r = spawnSync(BUN, [file, ...args], { cwd: ROOT, stdio: 'inherit', env: process.env });
+const LOCAL_INPUT_CLASSES: InputClass[] = [
+  'source',
+  'dependency-installation',
+  'toolchain',
+  'large-file-storage',
+];
+
+function recursiveInputResultPath(root: string): string {
+  return join(root, '.forgeax', 'recursive-input-result.json');
+}
+
+function writeRecursiveInputResult(root: string): RecursiveInputResult {
+  const graph = projectGitlinkGraph(readAuthoritativeGitGraph(root));
+  const result = createRecursiveInputResult({
+    graph,
+    producer: 'bun-fx-setup',
+    job: 'setup',
+    attempt: `setup-${Date.now()}`,
+    trustScope: 'local-fixed-worktree',
+    requestedInputClasses: LOCAL_INPUT_CLASSES,
+    readiness: graph.unreachablePaths.length > 0
+      ? { source: { status: 'unavailable' } }
+      : undefined,
+  });
+  mkdirSync(join(root, '.forgeax'), { recursive: true });
+  writeFileSync(recursiveInputResultPath(root), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+  return result;
+}
+
+function readRecursiveInputResult(root: string): unknown {
+  try {
+    return JSON.parse(readFileSync(recursiveInputResultPath(root), 'utf8')) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function checkRecursiveInput(root: string): { ok: boolean; result: RecursiveInputResult } {
+  const candidate = readRecursiveInputResult(root);
+  const graph = projectGitlinkGraph(readAuthoritativeGitGraph(root));
+  const typed = isRecursiveInputResult(candidate) ? candidate : null;
+  const requestedInputClasses = typed?.content.requestedInputClasses ?? LOCAL_INPUT_CLASSES;
+  return validateRecursiveInputResult(candidate, {
+    graph,
+    requestedInputClasses,
+    trustScope: typed?.provenance.trustScope ?? 'local-fixed-worktree',
+    job: typed?.provenance.job ?? 'setup',
+    attempt: typed?.provenance.attempt ?? 'missing',
+  });
+}
+
+function runScript(file: string, args: string[], env: NodeJS.ProcessEnv = process.env): never {
+  const r = spawnSync(BUN, [file, ...args], { cwd: ROOT, stdio: 'inherit', env });
   process.exit(r.status ?? 1);
 }
 
@@ -372,6 +466,29 @@ function updateFloatingHarness(dryRun: boolean): UpdateResult {
   };
 }
 
+function updateFloatingGames(dryRun: boolean): UpdateResult {
+  const repo = FLOATING_REPOS.runtimeGames.path;
+  const syncScript = script('sync-games.mjs');
+  if (!existsSync(join(ROOT, repo))) {
+    return { repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' };
+  }
+  const args = [syncScript, '--update'];
+  if (dryRun) args.push('--dry-run');
+  if (dryRun) console.log(`[dry-run] ${BUN} ${args.join(' ')}`);
+  else console.log(`[update] floating repo ${repo}`);
+  const r = dryRun
+    ? { status: 0 }
+    : spawnSync(BUN, args, { cwd: ROOT, stdio: 'inherit', env: process.env });
+  return {
+    repoType: 'floating-repo',
+    repo,
+    result: (r.status ?? 1) === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
+    detail: (r.status ?? 1) === 0
+      ? (dryRun ? `would run ${BUN} ${args.join(' ')}` : 'synced to forgeax-games/main')
+      : `games update exited ${r.status ?? 1}`,
+  };
+}
+
 function currentBranch(): string {
   return gitOut(['rev-parse', '--abbrev-ref', 'HEAD']) || '?';
 }
@@ -438,17 +555,13 @@ function startStudio(args: string[]): never {
   const skipSetupCheck = args.includes('--skip-setup-check');
   const startArgs = args.filter((arg) => arg !== '--skip-setup-check');
   if (!skipSetupCheck) {
-    const setup = checkSetupVersion(ROOT);
-    if (setup.status === 'current') {
-      console.log('[start] setup version is current');
+    const input = checkRecursiveInput(ROOT);
+    if (input.ok) {
+      console.log('[start] recursive input result is ready');
     } else {
-      const reason = setup.status === 'missing'
-        ? 'no setup snapshot found'
-        : setup.status === 'invalid'
-          ? 'setup snapshot is invalid'
-          : 'repository or submodule versions changed since setup';
-      console.error(`[start] ${reason}; run bun fx setup before starting`);
-      for (const difference of setup.differences) console.error(`        ${difference}`);
+      const failure = input.result.status === 'non-ready' ? input.result.failure : null;
+      console.error(`[start] recursive input is non-ready${failure ? `: ${failure.code}` : ''}; run bun fx setup before starting`);
+      if (failure) console.error(`        ${failure.hint}`);
       console.error('[start] bypass once with: bun fx start --skip-setup-check');
       process.exit(1);
     }
@@ -457,7 +570,7 @@ function startStudio(args: string[]): never {
   }
 
   const [maybeMode, ...rest] = startArgs;
-  if (maybeMode === 'desktop') runScript(script('desktop.ts'), rest);
+  if (maybeMode === 'desktop') runScript(script('desktop.ts'), rest, lifecycleProcessEnv());
   if (maybeMode && maybeMode !== 'web' && !maybeMode.startsWith('-')) {
     console.error(`[start] unknown client: ${maybeMode}`);
     console.error('[start] usage: bun fx start [web|desktop] [args...]');
@@ -465,15 +578,17 @@ function startStudio(args: string[]): never {
   }
 
   const runArgs = maybeMode === 'web' ? rest : startArgs;
-  // Floating on purpose: startWeb awaits unified HTTP readiness, then exits
-  // through open-web / no-open / error.
+  // Floating on purpose: startWeb awaits unified HTTP readiness, then exits.
   void startWeb(runArgs);
 }
 
 async function startWeb(runArgs: string[]): Promise<never> {
   const ensure = runArgs.includes('--ensure');
-  const noOpen = runArgs.includes('--no-open');
-  const launcherArgs = runArgs.filter((arg) => arg !== '--ensure' && arg !== '--no-open');
+  if (runArgs.includes('--no-open')) {
+    console.error('[start] --no-open was removed because start never opens a browser; use bun fx open explicitly.');
+    process.exit(2);
+  }
+  const launcherArgs = runArgs.filter((arg) => arg !== '--ensure');
   let startup: ReturnType<typeof resolveStartupEnvironment>;
   try {
     const result = await startSourceRuntime({
@@ -481,28 +596,22 @@ async function startWeb(runArgs: string[]): Promise<never> {
       profile: sourceProfileFromEnvironment(),
       existing: ensure ? 'ensure' : 'error',
       runArgs: launcherArgs,
+      // source-runtime-launcher is the sole instance projection authority for
+      // start; lifecycleProcessEnv remains for desktop/stop/status children.
+      env: process.env,
     });
     startup = result.startup;
     console.log(
       `[start] ${result.reused ? 'reusing' : 'started'} ${startup.profile} launcher pid=${result.launcherPid || '?'}`,
     );
-    // Avoid clickable URLs here because open-web.ts owns browser launch.
-    // Terminal URL detection racing that launch creates duplicate Studio tabs.
-    console.log(`[start] server   :${startup.server.port}`);
-    console.log(`[start] UI       :${startup.interface.port}`);
-    console.log(`[start] engine   :${startup.engine.port}`);
+    console.log(`[start] server   http://127.0.0.1:${startup.server.port}`);
+    console.log(`[start] UI       ${startup.interface.localOrigin}`);
+    console.log(`[start] engine   http://127.0.0.1:${startup.engine.port}`);
   } catch (error) {
     console.error(`[start] ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
-  // Optional upstream sidecars: only report services that actually listened.
-  const narrativePort = 8900;
-  const faceMaskPort = 18930;
-  if (portOwner(narrativePort)) console.log(`[start] narrative :${narrativePort}`);
-  if (portOwner(faceMaskPort)) console.log(`[start] face-mask :${faceMaskPort}`);
-
-  if (noOpen) process.exit(0);
-  runScript(script('open-web.ts'), []);
+  process.exit(0);
 }
 
 function sourceProfileFromEnvironment(): Exclude<StartupProfile, 'desktop-prod'> {
@@ -515,13 +624,15 @@ function sourceProfileFromEnvironment(): Exclude<StartupProfile, 'desktop-prod'>
 }
 
 function status(): void {
+  const instance = resolveRuntimeInstance({ root: ROOT });
   const startup = resolveStartupEnvironment({
     root: ROOT,
     profile: sourceProfileFromEnvironment(),
-    env: process.env,
+    env: lifecycleProcessEnv(process.env, instance),
   });
   console.log('ForgeaX Studio status');
   console.log(`root: ${ROOT}`);
+  console.log(`instance: ${instance.id} slot=${instance.slot}`);
   console.log(`branch: ${currentBranch()}`);
   const up = upstream();
   console.log(`upstream: ${up || '(none)'}`);
@@ -531,20 +642,14 @@ function status(): void {
   }
   console.log(`dirty: ${isDirty() ? 'yes' : 'no'}`);
   console.log(`wgpu-wasm: ${wgpuWasmStatus()}`);
-  const runtime = readRuntimeState(startup.stateFile);
+  const runtime = liveRuntimeStateForInstance(instance);
   console.log(
     `runtime: ${runtime ? `${runtime.status} profile=${runtime.profile} launcher=${runtime.launcherPid}` : 'stopped'}`,
   );
   if (runtime?.error) console.log(`runtime error: ${runtime.error}`);
   console.log();
   console.log('ports:');
-  for (const [name, port] of [
-    ['server', startup.server.port],
-    ['ui', startup.interface.port],
-    ['engine', startup.engine.port],
-    ['narrative', 8900],
-    ['face-mask', 18930],
-  ] as const) {
+  for (const [name, port] of sourceRuntimeStatusPorts(startup)) {
     const pid = portOwner(port);
     console.log(`  ${name.padEnd(9)} :${port} ${pid ? `listening pid=${pid}` : 'free'}`);
   }
@@ -644,6 +749,7 @@ function update(args: string[]): void {
   if (rootOk) {
     if (!dryRun) dropStaleSubmoduleConfig();
     results.push(updateFloatingHarness(dryRun));
+    results.push(updateFloatingGames(dryRun));
     console.log('[update] Updating submodules');
     results.push(...updateSubmodules(dryRun));
   } else {
@@ -673,9 +779,62 @@ function update(args: string[]): void {
 }
 
 function restartStack(args: string[]): never {
-  const stop = spawnSync(BUN, [script('stop.ts'), '--force'], { cwd: ROOT, stdio: 'inherit' });
+  const stop = spawnSync(BUN, [script('stop.ts'), '--force'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: lifecycleProcessEnv(),
+  });
   if ((stop.status ?? 0) !== 0) process.exit(stop.status ?? 1);
   startStudio(args);
+}
+
+// Local PR gate for the Studio superrepo. Keep this as a deterministic local
+// projection of the remote CI surface: install the pinned graph, run the root
+// contracts, verify the engine-owned template path, then delegate the editor
+// leaf's own CI to its checked-out CLI.
+function ci(args: string[]): never {
+  if (args.length > 0) {
+    console.error('usage: bun fx ci');
+    process.exit(2);
+  }
+  const ciEnv = {
+    ...process.env,
+    // Match the non-interactive CI setup while keeping harness state outside
+    // this fast local projection.
+    FORGEAX_SKIP_HARNESS: '1',
+    FORGEAX_SKIP_GAMES: '1',
+    FORGEAX_SKIP_BOOTSTRAP: '1',
+  };
+  const steps: readonly [string, string, string[], string][] = [
+    ['recursive submodule checkout', 'git', ['submodule', 'update', '--init', '--recursive'], ROOT],
+    ['root frozen Bun install + prepare', BUN, ['install', '--frozen-lockfile'], ROOT],
+    ['root repository gates', BUN, [script('repos.ts'), 'check', '.'], ROOT],
+    ['games floating checkout contract', BUN, ['test', 'scripts/games-floating-contract.test.ts'], ROOT],
+    ['bun fx command contract', BUN, ['test', 'scripts/fx-ci-contract.test.ts'], ROOT],
+    ['Studio editor smoke contract', BUN, ['run', 'test:studio-smoke-contract'], ROOT],
+    [
+      'server engine-template catalog and creation tests',
+      BUN,
+      [
+        'test',
+        'test/game-templates.test.ts',
+        'test/workbench-create-game-default.test.ts',
+        'test/workbench-link-idempotency.test.ts',
+      ],
+      join(ROOT, 'packages', 'server'),
+    ],
+    ['editor PR CI projection', BUN, ['scripts/fx.ts', 'ci'], join(ROOT, 'packages', 'editor')],
+  ];
+  for (const [name, command, argv, cwd] of steps) {
+    console.log(`\n[ci] ${name}`);
+    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env: ciEnv });
+    if ((result.status ?? 1) !== 0) {
+      console.error(`[ci] FAIL: ${name}`);
+      process.exit(result.status ?? 1);
+    }
+  }
+  console.log('\n[ci] PASS: local Studio PR CI');
+  process.exit(0);
 }
 
 // ── clean ──────────────────────────────────────────────────────────────────
@@ -1023,7 +1182,10 @@ function dropStaleSubmoduleConfig(): void {
 
 function main(): void {
   const plan = resolveCommand(process.argv.slice(2));
-  if (plan.type === 'script') runScript(plan.script, plan.args);
+  if (plan.type === 'script') {
+    const lifecycleScript = plan.script === script('stop.ts') || plan.script === script('open-web.ts');
+    runScript(plan.script, plan.args, lifecycleScript ? lifecycleProcessEnv() : process.env);
+  }
   if (plan.type === 'unknown') {
     console.error(`unknown command: ${plan.command}`);
     usage();
@@ -1048,11 +1210,20 @@ function main(): void {
     case 'doctor':
       doctor(plan.args);
       break;
+    case 'recursive-inputs': {
+      const result = executeRecursiveInputCli(plan.args, createRecursiveInputCliDependencies(ROOT));
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      process.exit(result.exitCode);
+    }
     case 'update':
       update(plan.args);
       break;
     case 'clean':
       clean(plan.args);
+      break;
+    case 'ci':
+      ci(plan.args);
       break;
     case 'restart':
       restartStack(plan.args);

@@ -38,9 +38,10 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { desktopServerEntryAdapter, resolveActiveServerRole } from './lib/server-role.ts';
+import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
 import { writeVersionJson } from './lib/version.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -153,7 +154,18 @@ function indexWorkspace(): Map<string, string> {
     if (depth > 6) return;
     const pj = join(dir, 'package.json');
     const j = existsSync(pj) ? readJson(pj) : null;
-    if (j?.name) idx.set(j.name, dir);
+    if (j?.name) {
+      const existing = idx.get(j.name);
+      // Studio intentionally contains nested editor submodules that can expose
+      // the same package name as a top-level Studio workspace. The shallower
+      // package is the host authority; filesystem enumeration order must never
+      // decide which implementation is shipped in the desktop server closure.
+      const workspaceDepth = relative(ROOT, dir).split(/[\\/]/).length;
+      const existingDepth = existing === undefined
+        ? Number.POSITIVE_INFINITY
+        : relative(ROOT, existing).split(/[\\/]/).length;
+      if (workspaceDepth < existingDepth) idx.set(j.name, dir);
+    }
     let entries: ReturnType<typeof readdirSync>;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
@@ -199,16 +211,11 @@ if (SKIP_FRONTEND) {
   run('bun', ['x', 'vite', 'build'], IFACE);
   log('1.5/7 building editor edit/play runtimes…');
   run('bun', ['x', 'vite', 'build'], join(ROOT, 'packages/editor/packages/edit-runtime'));
-  // play-runtime holds ZERO on-disk layout convention — the HOST injects it.
-  // Pre-import the bundled games (packages/games) at build time and bake the
-  // client URL-space prefix so the frozen .app serves games under .forgeax/games
-  // (lib.rs symlinks the runtime games there). Both must agree. (run() inherits
-  // process.env; set for this one build then restore.)
-  process.env.FORGEAX_PREVIEW_GAMES_DIR = join(ROOT, 'packages/games');
-  process.env.FORGEAX_GAMES_URL_PREFIX = '.forgeax/games';
+  // Build a generic Play shell. Asset ownership is established at runtime by
+  // the server's authenticated exact-game bind; this build must not scan or
+  // union the bundled sibling games. A shipping `--game` build is handled by
+  // the explicit static-game inputs in packages/editor/scripts/fx.ts.
   run('bun', ['x', 'vite', 'build'], join(ROOT, 'packages/editor/packages/play-runtime'));
-  delete process.env.FORGEAX_PREVIEW_GAMES_DIR;
-  delete process.env.FORGEAX_GAMES_URL_PREFIX;
 }
 
 // ── 2 reset payload ─────────────────────────────────────────────────────────
@@ -317,6 +324,7 @@ if (existsSync(tsconfigSrc)) {
   }
   writeFileSync(join(serverDest, 'tsconfig.json'), `${JSON.stringify(ts, null, 2)}\n`);
 }
+if (process.env.FORGEAX_PLUGIN_RUNTIME === '1') copyRuntimeDependencyClosure(join(RES, 'node_modules'));
 
 // Bake the version snapshot — the packaged server has no .git, so getVersion()
 // reads resources/server/dist/version.json instead.
@@ -352,6 +360,19 @@ const ENG_SRC = join(ROOT, 'packages/editor/packages/play-runtime');
 const ENG = join(RES, 'engine');
 rmrf(ENG);
 mkdirSync(join(ENG, 'node_modules/@forgeax'), { recursive: true });
+// Vite bundles its config at startup, but it cannot follow the editor-relative
+// `../../scripts/vite/engine-vite-preset` path after the play host is
+// materialized under the user's project root. Pre-bundle that config helper
+// while the complete editor source layout exists; package imports remain
+// external and resolve from the merged runtime node_modules view.
+run('bun', [
+  'build',
+  join(ROOT, 'packages/editor/scripts/vite/engine-vite-preset.ts'),
+  '--target=node',
+  '--packages=external',
+  '--outfile',
+  join(ENG, 'engine-vite-preset.mjs'),
+]);
 // rhi-debug-config.ts is imported by vite.config.ts (standalone RHI-debug plugins).
 for (const f of ['index.html', 'vite.config.ts', 'package.json', 'pack-catalog.ts', 'tsconfig.json', 'rhi-debug-config.ts']) {
   if (existsSync(join(ENG_SRC, f))) cpSync(join(ENG_SRC, f), join(ENG, f));
@@ -368,10 +389,13 @@ for (const f of ['index.html', 'vite.config.ts', 'package.json', 'pack-catalog.t
     const patched = src.replace(
       /from\s+['"]\.\.\/core\/src\/asset-roots['"]/g,
       "from '@forgeax/editor-core/asset-roots'",
+    ).replace(
+      /from\s+['"]\.\.\/\.\.\/engine-vite-preset['"]/g,
+      "from './engine-vite-preset.mjs'",
     );
     if (patched !== src) {
       writeFileSync(vcPath, patched);
-      log('  patched vite.config.ts: ../core/src/asset-roots → @forgeax/editor-core/asset-roots');
+      log('  patched vite.config.ts for packaged editor-core + engine preset imports');
     }
   }
 }
@@ -407,9 +431,20 @@ for (const pkgdir of dirsOf(join(ROOT, 'packages/editor/packages'))) {
 const ENGINE_RT_DEPS = [
   'uuidv7', 'upng-js', 'jpeg-js', 'ajv', 'ajv-formats',
   'fast-deep-equal', 'json-schema-traverse', 'require-from-string', 'fast-uri', 'zod',
+  // Vite is launched directly by the packaged play-runtime. Its pnpm-isolated
+  // dependencies are not visible from the root hoisted node_modules.
+  'vite', 'esbuild', 'fsevents', 'jiti', 'lightningcss', 'picomatch', 'postcss',
+  'rolldown', 'tinyglobby', 'fdir', '@rolldown/pluginutils', '@rolldown/binding-darwin-arm64',
+  // Engine package third-party imports that only exist under the pnpm store.
+  '@noble/hashes', 'fast-glob', 'pako', 'css-tree', 'parse5',
 ];
 const pnpmStore = join(ENGINE_ROOT, 'node_modules/.pnpm');
-for (const dep of ENGINE_RT_DEPS) {
+const engineDepQueue = [...ENGINE_RT_DEPS];
+const engineDepSeen = new Set<string>();
+while (engineDepQueue.length) {
+  const dep = engineDepQueue.shift()!;
+  if (engineDepSeen.has(dep) || dep.startsWith('@forgeax/')) continue;
+  engineDepSeen.add(dep);
   const src = findInPnpmStore(pnpmStore, dep);
   if (!src) {
     warn(`engine runtime dep not found in pnpm store: ${dep}`);
@@ -418,6 +453,8 @@ for (const dep of ENGINE_RT_DEPS) {
   const dest = join(ENG, 'node_modules', dep);
   rmrf(dest);
   copyTree(src, dest, new Set(['node_modules']));
+  const pkg = readJson(join(src, 'package.json')) ?? {};
+  for (const child of Object.keys(pkg.dependencies ?? {})) engineDepQueue.push(child);
 }
 
 // Minimal game template for "new game" scaffolding (lib.rs seeds it into the project root).
@@ -429,12 +466,30 @@ if (existsSync(gameTemplateSource)) {
   copyTree(gameTemplateSource, dst, new Set(['node_modules', '.git']));
 }
 
-// Shared game library (official examples). The .app can't link the git tree, so
-// ship a curated read-only COPY; lib.rs symlinks each into the project root.
+// Keep the editor-owned project templates available to the server's New Game
+// catalog in the packaged resource layout as well as in source checkouts.
+const engineTemplatesSource = join(ROOT, 'packages/editor/packages/engine/templates');
+if (existsSync(engineTemplatesSource)) {
+  const dst = join(RES, 'editor/packages/engine/templates');
+  rmrf(dst);
+  copyTree(engineTemplatesSource, dst, new Set(['node_modules', '.git']));
+}
+const editorTemplateCatalogSource = join(ROOT, 'packages/editor/standalone/template-catalog.ts');
+if (existsSync(editorTemplateCatalogSource)) {
+  const dst = join(RES, 'editor/standalone/template-catalog.ts');
+  mkdirSync(dirname(dst), { recursive: true });
+  cpSync(editorTemplateCatalogSource, dst);
+}
+
+// Optional floating game library (consumer examples). The .app can't link the
+// checkout tree, so when opted in ship a curated read-only payload; the packaged launcher copies each game once
+// into the confined editable project root.
 // Multiple games sharing base-asset GUIDs break the preview's global pack scan,
 // so ship a single clean example by default. Override: DESKTOP_GAMES="a b c".
 const gamesSrc = join(ROOT, 'packages/games');
-if (existsSync(gamesSrc)) {
+if (process.env.FORGEAX_SKIP_GAMES === '1') {
+  log('6/7 shared game payload — skipped (FORGEAX_SKIP_GAMES=1)');
+} else if (existsSync(gamesSrc)) {
   const desktopGames = (process.env.DESKTOP_GAMES ?? 'spin-cube').split(/\s+/).filter(Boolean);
   const gamesDst = join(RES, 'games');
   rmrf(gamesDst);
@@ -462,8 +517,7 @@ if (NO_SIDECAR) {
   log('7/7 staging bun runtime as sidecar…');
   const triple = resolveTriple();
   if (!triple) die('could not determine target triple — pass --triple <target> or install rustc');
-  const ext = triple.includes('windows') ? '.exe' : '';
-  const dest = join(BIN, `bun-${triple}${ext}`);
+  const dest = join(BIN, sidecarNameForTriple(triple));
   cpSync(BUN, dest);
   log(`staged bun for ${triple}`);
 }
@@ -493,8 +547,18 @@ function dirsOf(dir: string): string[] {
  */
 function copyThirdParty(destNm: string): void {
   mkdirSync(destNm, { recursive: true });
+  // The plugin Runtime has one flat, verified dependency closure. Copying every
+  // nested Bun link recursively duplicates the same store many times and can turn
+  // an otherwise small Runtime into gigabytes. Desktop builds retain historical
+  // behavior; the plugin path relies on the flat top-level closure.
+  const excludes = process.env.FORGEAX_PLUGIN_RUNTIME === '1'
+    ? new Set(['node_modules'])
+    : new Set<string>();
   for (const entry of dirsOf(join(ROOT, 'node_modules'))) {
     const name = basename(entry);
+    // Bun's store and bin shims are link farms, not packages: copying them
+    // duplicates the whole store into the bundle.
+    if (name === '.bun' || name === '.bin') continue;
     if (THIRD_PARTY_DENYLIST.has(name)) continue;
     if (name === '@forgeax' || name === '@forgeax-studio') {
       // First-party scope: workspace packages are vendored by the BFS closure
@@ -505,20 +569,80 @@ function copyThirdParty(destNm: string): void {
       for (const sub of dirsOf(entry)) {
         const pj = readJson(join(sub, 'package.json'));
         if (pj?.name && WS.has(pj.name)) continue;
-        copyTree(sub, join(destNm, name, basename(sub)), new Set());
+        copyTree(sub, join(destNm, name, basename(sub)), excludes);
       }
       continue;
     }
     if (name.startsWith('@')) {
       // scoped third-party: copy the scope dir wholesale (deref real pkgs)
-      copyTree(entry, join(destNm, name), new Set());
+      copyTree(entry, join(destNm, name), excludes);
       continue;
     }
     // unscoped: skip if it's a workspace package (e.g. @forgeax/orchestrator/-interface)
     const pj = readJson(join(entry, 'package.json'));
     if (pj?.name && WS.has(pj.name)) continue;
-    copyTree(entry, join(destNm, name), new Set());
+    copyTree(entry, join(destNm, name), excludes);
   }
+}
+
+/**
+ * Bun workspaces keep many production packages only in node_modules/.bun rather
+ * than at the repository root. The published plugin has no Bun workspace linker,
+ * so copy the active server's non-workspace production closure into one flat
+ * node_modules tree. The video provider is intentionally omitted: the game plugin
+ * does not expose Studio video tools and shipping its source/assets costs >1GB.
+ */
+function copyRuntimeDependencyClosure(destNm: string): void {
+  const store = join(ROOT, 'node_modules/.bun');
+  const queue: string[] = [];
+  const seen = new Set<string>();
+  const seeds = [activeServer.packageDir, WS.get('@forgeax/server')].filter((dir): dir is string => Boolean(dir));
+  for (const dir of seeds) {
+    const pkg = readJson(join(dir, 'package.json'));
+    for (const name of [
+      ...Object.keys(pkg?.dependencies ?? {}),
+      ...Object.keys(pkg?.optionalDependencies ?? {}),
+    ]) queue.push(name);
+  }
+  while (queue.length) {
+    const name = queue.shift()!;
+    if (seen.has(name) || WS.has(name) || name === '@forgeax/wb-game-video') continue;
+    seen.add(name);
+    const source = findInBunStore(store, name);
+    if (!source) {
+      warn(`server runtime dependency not found in Bun store: ${name}`);
+      continue;
+    }
+    log(`  server dependency: ${name}`);
+    copyTree(source, join(destNm, name), new Set(['node_modules', '.git']));
+    const pkg = readJson(join(source, 'package.json'));
+    for (const child of [
+      ...Object.keys(pkg?.dependencies ?? {}),
+      ...Object.keys(pkg?.optionalDependencies ?? {}),
+    ]) queue.push(child);
+  }
+}
+
+function findInBunStore(store: string, dependency: string): string | null {
+  // Prefer the newest matching package. Bun keeps multiple versions of the same
+  // dependency side-by-side; picking the first directory can wire sharp to an
+  // ancient semver that no longer exposes subpath exports such as
+  // `semver/functions/coerce`.
+  let best: { path: string; version: number[] } | null = null;
+  for (const entry of dirsOf(store)) {
+    const candidate = join(entry, 'node_modules', dependency);
+    const pkg = readJson(join(candidate, 'package.json'));
+    if (!pkg?.version) continue;
+    const version = String(pkg.version).replace(/^v/, '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+    if (
+      !best ||
+      version.some((part, index) => part !== (best.version[index] ?? 0) && part > (best.version[index] ?? 0)) ||
+      (version.every((part, index) => part >= (best.version[index] ?? 0)) && version.length > best.version.length)
+    ) {
+      best = { path: candidate, version };
+    }
+  }
+  return best?.path ?? null;
 }
 
 /** Find `dep`'s real dir inside a pnpm `.pnpm` store (…/<hash>/node_modules/<dep>). */

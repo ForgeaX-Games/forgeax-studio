@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { materializePackagedEngineWorkspace } from './engine-workspace.ts';
-import { runPackagedRuntime } from './packaged-runtime.ts';
+import { packagedRuntimeServiceEnv, runPackagedRuntime } from './packaged-runtime.ts';
 import { readRuntimeState } from './runtime-state.ts';
 import { seedSharedGames } from './seed-games.ts';
 import { ServiceSupervisor, type ServiceEvent } from './service-supervisor.ts';
@@ -45,9 +45,61 @@ describe('shared game seeding', () => {
     expect(backups).toHaveLength(1);
     expect(readFileSync(join(destination, backups[0] as string, 'local.txt'), 'utf8')).toBe('preserve me');
   });
+
+  test('copies packaged games into the confined project authority and preserves edits', () => {
+    const root = temporaryRoot();
+    const source = join(root, 'bundle-games');
+    const destination = join(root, 'project', '.forgeax', 'games');
+    mkdirSync(join(source, 'spin-cube'), { recursive: true });
+    writeFileSync(join(source, 'spin-cube', 'forge.json'), '{"id":"spin-cube"}\n');
+    writeFileSync(join(source, 'spin-cube', 'main.ts'), 'export const source = 1;\n');
+
+    const first = seedSharedGames({ source, destination, materialization: 'copy-if-absent' });
+    writeFileSync(join(destination, 'spin-cube', 'main.ts'), 'export const userEdit = 2;\n');
+    const second = seedSharedGames({ source, destination, materialization: 'copy-if-absent' });
+
+    expect(first.copied).toBe(1);
+    expect(lstatSync(join(destination, 'spin-cube')).isSymbolicLink()).toBe(false);
+    expect(second.unchanged).toBe(1);
+    expect(readFileSync(join(destination, 'spin-cube', 'main.ts'), 'utf8')).toBe('export const userEdit = 2;\n');
+  });
 });
 
 describe('packaged engine workspace', () => {
+  test('projects the StartupEnvironment socket for repeated packaged service launches without touching resources', () => {
+    const root = temporaryRoot();
+    const resources = join(root, 'read-only-resources');
+    const projects = join(root, 'projects');
+    mkdirSync(resources, { recursive: true });
+    const startup = resolveStartupEnvironment({
+      root,
+      homeDir: root,
+      profile: 'desktop-prod',
+      env: {
+        FORGEAX_RESOURCE_ROOT: resources,
+        FORGEAX_PROJECT_ROOT: projects,
+        FORGEAX_AGENT_HOST_SOCK: '/explicit/desktop-agent.sock',
+      },
+    });
+    const before = readdirSync(resources);
+
+    const first = packagedRuntimeServiceEnv(startup, { FORGEAX_AGENT_HOST_SOCK: '/wrong-parent.sock' });
+    const second = packagedRuntimeServiceEnv(startup, {});
+
+    expect(first.FORGEAX_AGENT_HOST_SOCK).toBe('/explicit/desktop-agent.sock');
+    expect(second.FORGEAX_AGENT_HOST_SOCK).toBe('/explicit/desktop-agent.sock');
+    expect(first.FORGEAX_PROJECT_ROOT).toBe(projects);
+    expect(readdirSync(resources)).toEqual(before);
+  });
+
+  test('keeps source StartLock out of desktop-prod local-runtime control flow', () => {
+    const source = readFileSync(join(import.meta.dir, '..', 'local-runtime.ts'), 'utf8');
+
+    expect(source).toContain("profile === 'desktop-prod'\n    ? null");
+    expect(source).toContain('lock?.release()');
+    expect(source).not.toContain("const lock = handoffToken ? StartLock.adopt");
+  });
+
   test('materializes writable sources and points runtime-owned trees at their authorities', () => {
     const root = temporaryRoot();
     const resources = join(root, 'resources');
@@ -61,12 +113,14 @@ describe('packaged engine workspace', () => {
     mkdirSync(join(shared, 'three'), { recursive: true });
     mkdirSync(work, { recursive: true });
     writeFileSync(join(resources, 'vite.config.ts'), 'export default {};\n');
+    writeFileSync(join(resources, 'engine-vite-preset.mjs'), 'export const preset = {};\n');
     writeFileSync(join(resources, 'src', 'main.ts'), 'export {};\n');
     symlinkSync(join(root, 'missing-shared-assets'), join(work, 'shared-assets'), 'junction');
 
     materializePackagedEngineWorkspace(resources, work, projects);
 
     expect(readFileSync(join(work, 'src', 'main.ts'), 'utf8')).toBe('export {};\n');
+    expect(readFileSync(join(work, 'engine-vite-preset.mjs'), 'utf8')).toBe('export const preset = {};\n');
     // node_modules is a real dir of junctions merging engine-local + shared pools
     const nmStat = lstatSync(join(work, 'node_modules'));
     expect(nmStat.isDirectory() && !nmStat.isSymbolicLink()).toBe(true);

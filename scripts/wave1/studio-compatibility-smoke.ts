@@ -66,7 +66,7 @@ async function stopStack(): Promise<void> {
 try {
   const [serverPort, interfacePort, enginePort] = await Promise.all([freePort(), freePort(), freePort()]);
   baseUrl = `http://127.0.0.1:${serverPort}`;
-  stack = spawn('bun', ['scripts/run.ts'], {
+  stack = spawn('bun', ['scripts/local-runtime.ts', '--profile', 'web-dev'], {
     cwd: root,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {

@@ -14,6 +14,7 @@
 // real platform forks left live in lib/proc.ts (kill / port discovery).
 
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -29,11 +30,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENGINE_ENTRY_OUTPUTS, isEngineEntryDistFresh } from './lib/engine-entry-freshness.ts';
-import { loadDotenv } from './lib/env.ts';
 import {
   type SpawnOpts,
   clearPidfiles,
@@ -45,14 +44,12 @@ import {
   waitForPort,
 } from './lib/proc.ts';
 import { readinessSummary, waitForRuntime } from './lib/runtime-readiness.ts';
+import { managedRuntimePorts } from './lib/managed-runtime-ports.ts';
 import { RuntimeStateStore } from './lib/runtime-state.ts';
 import { resolveActiveServerRole, serverRuntimeInvocation } from './lib/server-role.ts';
 import { ServiceSupervisor, type ServiceEvent } from './lib/service-supervisor.ts';
 import { StartLock } from './lib/startlock.ts';
-import {
-  resolveStartupEnvironment,
-  startupProcessEnv,
-} from './lib/startup-environment.ts';
+import { consumeSourceRuntimeContext } from './lib/source-runtime-context.ts';
 import { vanityBanner, versionCheck, versionString, writeVersionJson } from './lib/version.ts';
 import { viteGuard, vitePurgeAll } from './lib/vite-cache.ts';
 
@@ -61,6 +58,10 @@ const argv = process.argv.slice(2);
 const has = (flag: string) => argv.includes(flag);
 const rhiDebug = has('--rhi-debug');
 const coreOnly = process.env.FORGEAX_CORE_ONLY === '1';
+// Fail a direct `bun scripts/run.ts` before it can create or acquire run.lock.
+// local-runtime is the sole service-graph child entry and publishes this exact
+// startup object only after the parent launcher has finalized childEnv.
+const startup = consumeSourceRuntimeContext();
 
 // ── 0 purge-vite / start lock ───────────────────────────────────────────────
 if (has('--purge-vite') || has('--fresh')) {
@@ -68,8 +69,10 @@ if (has('--purge-vite') || has('--fresh')) {
   console.log('[run] vite caches purged (--purge-vite/--fresh)');
 }
 
-const lock = new StartLock(ROOT);
-lock.acquire();
+// local-runtime acquired (or adopted) this lock before resolving any instance
+// state. Keep that exact owner through the service lifetime.
+const lock = StartLock.consumeRuntimeOwner(ROOT);
+if (!lock) throw new Error('source runtime lock owner is unavailable; start through `bun fx start`');
 
 // STUDIO routing default — :18920 vite serves packages/studio when STUDIO=1.
 const STUDIO = process.env.STUDIO ?? '1';
@@ -85,39 +88,16 @@ console.log('  ⚠ BREAKING CHANGE: The preview engine changed from Three.js to 
 console.log('  Existing THREE.js game code will not run after merge; rewrite it for the ECS scaffold.');
 console.log();
 
-// ── 1 .env ───────────────────────────────────────────────────────────────────
-const envFile = process.env.FORGEAX_ENV_FILE ?? join(ROOT, '.env');
-const envExample = join(ROOT, '.env.example');
-if (!existsSync(envFile)) {
-  const legacy = join(ROOT, 'packages/forgeax/.env');
-  if (existsSync(legacy)) {
-    copyFileSync(legacy, envFile);
-    console.log(`  Migrated packages/forgeax/.env -> ${envFile}.`);
-  } else if (existsSync(envExample)) {
-    copyFileSync(envExample, envFile);
-    console.log(`\n  Created ${envFile} from ${envExample}.`);
-    console.log('  No model key configured — continuing; chat/agent features will be unavailable.\n');
-  } else {
-    console.error(`  ERROR: no .env at ${envFile} and no .env.example to seed from.`);
-    process.exit(1);
-  }
-}
-const env = loadDotenv(envFile); // also injected into process.env
-const startup = resolveStartupEnvironment({
-  root: ROOT,
-  profile: process.env.FORGEAX_STARTUP_PROFILE ?? 'web-dev',
-  env: process.env,
-});
-Object.assign(process.env, startupProcessEnv(startup));
+// ── 1 resolved source environment ────────────────────────────────────────────
+// source-runtime-launcher is the only dotenv reader and environment projector.
+// local-runtime resolves that final child environment once, then hands this
+// exact StartupEnvironment object to run.ts inside the same process.
+const envFile = startup.envFile;
 const PORT_SERVER = startup.server.port;
 const PORT_INTERFACE = startup.interface.port;
 const PORT_ENGINE = startup.engine.port;
-const PORT_NARRATIVE = parsePort(process.env.NARRATIVE_PORT, 8900, 'NARRATIVE_PORT');
-const RHI_REVIEWER_PORT = parsePort(
-  process.env.FORGEAX_RHI_REVIEWER_PORT,
-  15274,
-  'FORGEAX_RHI_REVIEWER_PORT',
-);
+const PORT_NARRATIVE = startup.optional.narrativePort;
+const RHI_REVIEWER_PORT = startup.optional.rhiReviewerPort;
 const activeServer = resolveActiveServerRole({
   root: ROOT,
   profile: process.env.FORGEAX_SERVER_PROFILE,
@@ -251,24 +231,32 @@ for (const [name, port] of preflight) {
 if (preflightBusy) {
   console.error('\n  Stop the previous stack first:');
   console.error('    bun fx stop           # SIGTERM + 4s grace');
-  console.error('    bun fx stop --force   # escalate to SIGKILL');
+  console.error('    bun fx stop           # SIGTERM + 4s grace, then SIGKILL by default');
+  console.error('    bun fx stop --no-force # preserve processes after the grace period');
   console.error('  Or set FORGEAX_SKIP_PREFLIGHT=1 to override.');
   if (process.env.FORGEAX_SKIP_PREFLIGHT !== '1') process.exit(1);
 }
 
 // ── 2.5 workspace install self-heal ──────────────────────────────────────────
-const wsSentinel = join(ROOT, 'packages/editor/packages/play-runtime/node_modules/@forgeax/engine-runtime/package.json');
+const wsSentinel = join(
+  ROOT,
+  'packages/editor/packages/play-runtime/node_modules/@forgeax/engine-runtime/package.json',
+);
 if (!existsSync(wsSentinel)) {
   console.log(`[run] workspace dependencies not linked (missing ${wsSentinel})`);
   console.log('[run]   running: bun install (one-shot self-heal)');
-  const r = spawnSync(process.execPath, ['install'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
+  const r = spawnSync(process.execPath, ['install'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
   if (r.status !== 0) {
     console.error('  ERROR: bun install failed — check network/submodules, then retry: bun install');
     process.exit(1);
   }
   if (!existsSync(wsSentinel)) {
     console.error(`  ERROR: bun install finished but ${wsSentinel} still missing.`);
-    console.error('  This usually means the engine submodule isn\'t initialised. Run: bun install');
+    console.error("  This usually means the engine submodule isn't initialised. Run: bun install");
     process.exit(1);
   }
 }
@@ -288,9 +276,11 @@ const engineEntryPkgs = [
   'vite-plugin-shader',
 ];
 const engineDeclarationSentinel = join(ROOT, '.forgeax/sentinels/engine-declarations.built');
-const missing = engineEntryPkgs.flatMap((p) => ENGINE_ENTRY_OUTPUTS
-  .filter((name) => !existsSync(join(enginePkgDir, p, 'dist', name)))
-  .map((name) => `${p}/dist/${name}`));
+const missing = engineEntryPkgs.flatMap((p) =>
+  ENGINE_ENTRY_OUTPUTS.filter((name) => !existsSync(join(enginePkgDir, p, 'dist', name))).map(
+    (name) => `${p}/dist/${name}`,
+  ),
+);
 if (missing.length > 0) {
   console.error(`  ERROR: engine dist missing for: ${missing.join(' ')}`);
   console.error('  (expected packages/editor/packages/engine/packages/<pkg>/dist/index.mjs and index.d.ts)');
@@ -300,19 +290,26 @@ if (missing.length > 0) {
 console.log(`[engine] entry artifacts found for packages: ${engineEntryPkgs.join(' ')}`);
 
 if (process.env.FORGEAX_SKIP_ENGINE_DIST_FRESHNESS !== '1') {
-  const stale = engineEntryPkgs.filter((p) =>
-    !isEngineEntryDistFresh(join(enginePkgDir, p), engineDeclarationSentinel));
+  const stale = engineEntryPkgs.filter(
+    (p) => !isEngineEntryDistFresh(join(enginePkgDir, p), engineDeclarationSentinel),
+  );
   if (stale.length > 0) {
     if (process.env.FORGEAX_AUTO_DEPLOY === '1') {
       console.error(`[engine] dist STALE for: ${stale.join(' ')} — FORGEAX_AUTO_DEPLOY=1, rebuilding…`);
-      const r = spawnSync(process.execPath, ['run', 'prepare'], { cwd: ROOT, stdio: 'inherit', windowsHide: true });
+      const r = spawnSync(process.execPath, ['run', 'prepare'], {
+        cwd: ROOT,
+        stdio: 'inherit',
+        windowsHide: true,
+      });
       if (r.status !== 0) {
         console.error('  ERROR: auto prepare failed. Run: bun run prepare');
         process.exit(1);
       }
     } else {
       console.error(`  ERROR: engine dist STALE for: ${stale.join(' ')} (src newer than dist).`);
-      console.error('  Rebuild: bun run prepare   (or set FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 / FORGEAX_AUTO_DEPLOY=1)');
+      console.error(
+        '  Rebuild: bun run prepare   (or set FORGEAX_SKIP_ENGINE_DIST_FRESHNESS=1 / FORGEAX_AUTO_DEPLOY=1)',
+      );
       process.exit(1);
     }
   }
@@ -341,15 +338,26 @@ if (process.env.FORGEAX_VITE_NO_CLEAN !== '1') {
   // so the shared runtime + manifest + store now live under core/src.
   const editorCoreSrc = join(ROOT, 'packages/editor/packages/core/src');
   const rootLock = join(ROOT, 'bun.lock');
-  viteGuard(ROOT, join(ROOT, 'packages/interface/node_modules/.vite'), 'interface', [engineDist, interfaceSrc, rootLock]);
+  viteGuard(ROOT, join(ROOT, 'packages/interface/node_modules/.vite'), 'interface', [
+    engineDist,
+    interfaceSrc,
+    rootLock,
+  ]);
   // studio now serves the editor engine IN-PROCESS (single realm), so its
   // optimizeDeps cache must invalidate when the engine dist OR the edit-runtime /
   // editor-core sources change — not just interface.
   viteGuard(ROOT, join(ROOT, 'packages/studio/node_modules/.vite'), 'studio', [
-    engineDist, interfaceSrc, editSrc, editorCoreSrc, rootLock,
+    engineDist,
+    interfaceSrc,
+    editSrc,
+    editorCoreSrc,
+    rootLock,
   ]);
   viteGuard(ROOT, join(ROOT, 'packages/editor/packages/play-runtime/.vite'), 'play-runtime', [
-    engineDist, playSrc, editorCoreSrc, rootLock,
+    engineDist,
+    playSrc,
+    editorCoreSrc,
+    rootLock,
   ]);
   // NOTE: the edit-runtime (:15280) vite guard is gone with its service — the
   // Edit engine is served in-process by the studio guard above.
@@ -379,28 +387,37 @@ if (npcClientBuild.status !== 0 || !existsSync(join(npcClientRoot, 'dist/index.j
 console.log('[npc-client] browser bundle ready');
 
 // Games stay install-time projections, but Soul declarations are runtime
-// prerequisites: a branch update may add or change a tracked pack without
+// prerequisites: a floating consumer update may add or change a shared pack without
 // re-running `bun install`. Re-project only Soul symlinks on every start. The
 // script is idempotent and never replaces a user-owned real directory.
 const soulsRoot = join(instanceRoot, '.forgeax/souls-builtin');
 mkdirSync(soulsRoot, { recursive: true });
-const seedSouls = spawnSync(process.execPath, [join(ROOT, 'scripts/seed-souls.ts')], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  windowsHide: true,
-  env: {
-    ...process.env,
-    FORGEAX_GAMES_SRC: join(ROOT, 'packages/games'),
-    FORGEAX_SOULS_DST: soulsRoot,
-  },
-});
-if (seedSouls.status !== 0) {
-  console.error('  ERROR: tracked Soul pack projection failed.');
-  process.exit(1);
+if (process.env.FORGEAX_SKIP_GAMES === '1') {
+  console.log('[games] shared Soul projection skipped (FORGEAX_SKIP_GAMES=1)');
+} else {
+  const seedSouls = spawnSync(process.execPath, [join(ROOT, 'scripts/seed-souls.ts')], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    windowsHide: true,
+    env: {
+      ...process.env,
+      FORGEAX_GAMES_SRC: join(ROOT, 'packages/games'),
+      FORGEAX_SOULS_DST: soulsRoot,
+    },
+  });
+  if (seedSouls.status !== 0) {
+    console.error('  ERROR: shared Soul pack projection failed.');
+    process.exit(1);
+  }
 }
 
 process.env.FORGEAX_PROJECT_ROOT = instanceRoot;
 process.env.FORGEAX_HOST_PACKAGE_ROOT = ROOT;
+// The server is the active-game authority. It uses this loopback-only secret
+// to bind the Play sidecar to one exact game directory after both services are
+// up; the secret is never sent to the browser.
+const runtimeScopeSecret = process.env.FORGEAX_RUNTIME_SCOPE_SECRET ?? randomUUID();
+process.env.FORGEAX_RUNTIME_SCOPE_SECRET = runtimeScopeSecret;
 
 // ── 3.5 per-stack agent-host socket ──────────────────────────────────────────
 // The forgeax-core kernel runs inside a persistent `agent-host` sidecar the
@@ -413,13 +430,11 @@ process.env.FORGEAX_HOST_PACKAGE_ROOT = ROOT;
 // replies come back empty (0 tokens) after a long retry stall; the claude kernel
 // is unaffected (it never goes through the sidecar).
 //
-// Fix: derive the socket from PORT_SERVER, which is already unique across any
-// stacks that can run concurrently (port preflight forbids two on one port).
-// default→18900 / dev-local→28900 / dev-local2→38900 each get their own socket,
-// so the three bands (and separate checkouts) never share one agent-host.
-// SSOT: no new identity — the socket is a function of the already-declared port.
-// Set-if-absent so an explicit FORGEAX_AGENT_HOST_SOCK still wins.
-process.env.FORGEAX_AGENT_HOST_SOCK ??= join(homedir(), '.forgeax', `agent-host-${PORT_SERVER}.sock`);
+// `startupProcessEnv()` has already selected the RuntimeInstance socket. An
+// explicitly provided FORGEAX_AGENT_HOST_SOCK is retained by the startup
+// contract; otherwise its short user-local path is derived from the instance
+// server port, preventing cross-slot agent-host reuse without exceeding the
+// Unix-domain socket path limit on long worktree roots.
 
 // ── 3.75 heal broken workbench plugin dists ──────────────────────────────────
 if (existsSync(join(ROOT, 'scripts/build-extensions.ts'))) {
@@ -461,8 +476,17 @@ for (const d of coreOnly ? [] : discoverStandaloneExtensions(join(ROOT, 'package
   const backendPort = allocPort(seed + 2);
   const projectRoot = join(instanceRoot, '.forgeax/workbench', d.shortId);
   mkdirSync(projectRoot, { recursive: true });
-  extensions.push({ dir: d.dir, id: d.id, shortId: d.shortId, frontendPort, backendPort, projectRoot });
-  console.log(`[run] + ${d.shortId} frontend :${frontendPort} backend :${backendPort} (workspace .forgeax/workbench/${d.shortId})`);
+  extensions.push({
+    dir: d.dir,
+    id: d.id,
+    shortId: d.shortId,
+    frontendPort,
+    backendPort,
+    projectRoot,
+  });
+  console.log(
+    `[run] + ${d.shortId} frontend :${frontendPort} backend :${backendPort} (workspace .forgeax/workbench/${d.shortId})`,
+  );
 }
 if (extensions.length === 0) console.log('[run]   no standalone-backend extensions discovered');
 
@@ -471,7 +495,9 @@ writeFileSync(
   `${JSON.stringify(
     {
       generatedBy: 'scripts/local-runtime.ts',
-      plugins: Object.fromEntries(extensions.map((p) => [p.id, { frontendPort: p.frontendPort, backendPort: p.backendPort }])),
+      plugins: Object.fromEntries(
+        extensions.map((p) => [p.id, { frontendPort: p.frontendPort, backendPort: p.backendPort }]),
+      ),
     },
     null,
     2,
@@ -482,15 +508,33 @@ process.env.FORGEAX_EXTENSION_DEV_PORTS_FILE = extensionDevPortsFile;
 // ── cleanup trap ──────────────────────────────────────────────────────────────
 let cleanedUp = false;
 let runtimeFailed = false;
-const runtimeState = new RuntimeStateStore(startup);
+const activeInterfaceDir = join(ROOT, 'packages', STUDIO === '1' ? 'studio' : 'interface');
+const runtimeState = new RuntimeStateStore(
+  startup,
+  process.pid,
+  managedRuntimePorts({
+    serverPort: PORT_SERVER,
+    interfacePort: PORT_INTERFACE,
+    enginePort: PORT_ENGINE,
+    ...(narrativeWillStart() ? { narrativePort: PORT_NARRATIVE } : {}),
+    ...(rhiDebug ? { rhiReviewerPort: RHI_REVIEWER_PORT } : {}),
+    extensions: extensions.map(({ shortId, frontendPort, backendPort }) => ({
+      shortId,
+      frontendPort,
+      backendPort,
+    })),
+  }),
+  {
+    server: { packageDir: activeServer.packageDir, entry: activeServer.entry },
+    interface: { dir: activeInterfaceDir },
+  },
+);
 runtimeState.writeStarting();
 const supervisor = new ServiceSupervisor({
   onEvent: (event) => {
     recordRuntimeServiceEvent(event);
     if (event.status === 'restarting' || event.status === 'failed') {
-      console.error(
-        `[run] service '${event.name}' ${event.status}${event.error ? `: ${event.error}` : ''}`,
-      );
+      console.error(`[run] service '${event.name}' ${event.status}${event.error ? `: ${event.error}` : ''}`);
     }
   },
   onFatal: (error) => {
@@ -534,15 +578,9 @@ console.log(
 if (narrativeWillStart()) console.log(`[run] + narrative API :${PORT_NARRATIVE} (wb-narrative standalone)`);
 if (rhiDebug) console.log(`[run] + RHI reviewer :${RHI_REVIEWER_PORT} (pnpm @forgeax/engine-rhi-debug-viewer vite)`);
 console.log(`[run] open http://localhost:${PORT_INTERFACE} to use the Studio UI`);
-console.log('[run]   Browser (WebGPU): bun fx start   ·   Desktop App: bun fx start desktop');
+console.log('[run]   Open browser: bun fx open   ·   Desktop App: bun fx start desktop');
 
-const launch = (
-  name: string,
-  cmd: string,
-  args: string[],
-  opts: SpawnOpts,
-  required = false,
-): number => {
+const launch = (name: string, cmd: string, args: string[], opts: SpawnOpts, required = false): number => {
   const pid = supervisor.launch({
     name,
     command: cmd,
@@ -558,48 +596,54 @@ const launch = (
   return pid;
 };
 
-const srv = launch(
-  'server',
-  'bun',
-  ['--watch', activeServerRuntime.entryPath],
-  { cwd: activeServer.packageDir },
-  true,
-);
+const srv = launch('server', 'bun', ['--watch', activeServerRuntime.entryPath], { cwd: activeServer.packageDir }, true);
 
 // Wait for server to bind before starting interface (avoids proxy ECONNREFUSED race).
-if (!await waitForPort(PORT_SERVER, 10_000)) {
+if (!(await waitForPort(PORT_SERVER, 10_000))) {
   runtimeFailed = true;
   runtimeState.markFailed(`server did not bind :${PORT_SERVER} within 10 seconds`);
   console.error(`[run] server did not bind :${PORT_SERVER} within 10 seconds`);
   process.exit(1);
 }
 
-const uiPkg = STUDIO === '1' ? 'studio' : 'interface';
-const ui = launch('interface', 'bun', ['x', 'vite'], {
-  cwd: join(ROOT, 'packages', uiPkg),
-  env: {
-    ...process.env,
-    FORGEAX_HOST_PACKAGE_ROOT: ROOT,
-    ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
+const ui = launch(
+  'interface',
+  'bun',
+  ['x', 'vite'],
+  {
+    cwd: activeInterfaceDir,
+    env: {
+      ...process.env,
+      FORGEAX_HOST_PACKAGE_ROOT: ROOT,
+      ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
+    },
   },
-}, true);
-// play-runtime holds ZERO on-disk layout convention now — the HOST injects it.
-// Studio's layout is `<engineSrcDir>/.forgeax/games` (via the junction above),
-// served under the vite root as the URL prefix `.forgeax/games`. Both must agree.
-const en = launch('engine', 'bun', ['x', 'vite'], {
-  cwd: engineSrcDir,
-  env: {
-    ...process.env,
-    FORGEAX_HOST_PACKAGE_ROOT: ROOT,
-    ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
-    FORGEAX_PREVIEW_GAMES_DIR: join(engineSrcDir, '.forgeax/games'),
-    FORGEAX_GAMES_URL_PREFIX: '.forgeax/games',
+  true,
+);
+// play-runtime holds ZERO on-disk layout convention now — the server injects
+// one exact game directory through the authenticated runtime-scope command.
+// `host-games` is only the URL mount name for that exact directory; it is not a
+// parent-games asset input.
+const en = launch(
+  'engine',
+  'bun',
+  ['x', 'vite'],
+  {
+    cwd: engineSrcDir,
+    env: {
+      ...process.env,
+      FORGEAX_HOST_PACKAGE_ROOT: ROOT,
+      FORGEAX_RUNTIME_SCOPE_SECRET: runtimeScopeSecret,
+      FORGEAX_GAMES_URL_PREFIX: 'host-games',
+      ...(rhiDebug ? { FORGEAX_ENGINE_RHI_DEBUG: '1' } : {}),
+    },
   },
-}, true);
+  true,
+);
 // Single-realm (feat-20260703): the editor engine boots IN-PROCESS in the
 // interface(studio) vite at :18920 — no separate edit-runtime vite service. The
 // former `editor` (:15280) launch is gone; the play/preview engine (:15173) stays
-// (Play iframe + the in-process editor's per-game pack catalog fallback use it).
+// (Play iframe + the in-process editor's scoped runtime binding use it).
 let reviewer = 0;
 if (rhiDebug) {
   reviewer = launch(
@@ -631,6 +675,7 @@ if (
 }
 
 const extensionPids: number[] = [];
+const headlessPids: number[] = [];
 for (const p of extensions) {
   const cmd = extensionRunCmd(p.dir);
   const pluginBase = standaloneProxyEnabled ? `/__fx-plugin/${p.shortId}/` : '';
@@ -667,11 +712,21 @@ for (const p of extensions) {
     existsSync(join(p.dir, 'node_modules/playwright')) &&
     existsSync(join(p.dir, 'scripts/headless-renderer.mjs'))
   ) {
-    console.log(`[run] + ${p.shortId} headless renderer (agent screenshots; disable: FORGEAX_LOWPOLY_HEADLESS_RENDERER=0)`);
-    launch(`plugin-${p.shortId}-headless`, 'node', ['scripts/headless-renderer.mjs'], {
+    if (!hasPlaywrightHeadlessBrowser(p.dir)) {
+      console.warn(
+        `[run] - ${p.shortId} headless renderer skipped: Playwright browser unavailable ` +
+          '(run bun fx setup after configuring the browser download source)',
+      );
+      continue;
+    }
+    console.log(
+      `[run] + ${p.shortId} headless renderer (agent screenshots; disable: FORGEAX_LOWPOLY_HEADLESS_RENDERER=0)`,
+    );
+    const headlessPid = launch(`plugin-${p.shortId}-headless`, 'node', ['scripts/headless-renderer.mjs'], {
       cwd: p.dir,
       env: { ...process.env, LOWPOLY_FRONTEND_PORT: String(p.frontendPort) },
     });
+    if (headlessPid > 0) headlessPids.push(headlessPid);
   }
 }
 
@@ -689,12 +744,15 @@ writeFileSync(
     '# generated by scripts/local-runtime.ts',
     `FORGEAX_STARTUP_PROFILE="${startup.profile}"`,
     `FORGEAX_RUNTIME_STATE_FILE="${startup.stateFile}"`,
-    `FORGEAX_RUN_PIDS="${[process.pid, srv, ui, en, reviewer, narr, ...extensionPids].filter(Boolean).join(' ')}"`,
+    `FORGEAX_RUN_SERVER_PACKAGE_DIR="${activeServer.packageDir}"`,
+    `FORGEAX_RUN_SERVER_ENTRY="${activeServer.entry}"`,
+    `FORGEAX_RUN_INTERFACE_DIR="${activeInterfaceDir}"`,
+    `FORGEAX_RUN_PIDS="${[process.pid, srv, ui, en, reviewer, narr, ...extensionPids, ...headlessPids].filter(Boolean).join(' ')}"`,
     `FORGEAX_RUN_PORTS="${[
       PORT_SERVER,
       PORT_INTERFACE,
       PORT_ENGINE,
-      PORT_NARRATIVE,
+      ...(narrativeWillStart() ? [PORT_NARRATIVE] : []),
       ...(rhiDebug ? [RHI_REVIEWER_PORT] : []),
       ...extensions.map((p) => p.frontendPort),
       ...extensions.map((p) => p.backendPort),
@@ -722,18 +780,6 @@ await new Promise<void>(() => {});
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function parsePort(value: string | undefined, fallback: number, name: string): number {
-  if (value === undefined || value.trim() === '') return fallback;
-  if (!/^\d+$/.test(value.trim())) {
-    throw new Error(`${name} must be a positive integer, got '${value}'`);
-  }
-  const port = Number(value);
-  if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535) {
-    throw new Error(`${name} must be a port between 1 and 65535, got '${value}'`);
-  }
-  return port;
-}
-
 function recordRuntimeServiceEvent(event: ServiceEvent): void {
   if (event.pid) {
     runtimeState.setServicePid(event.name, event.pid);
@@ -742,6 +788,20 @@ function recordRuntimeServiceEvent(event: ServiceEvent): void {
   if (event.status === 'failed' || event.status === 'stopped') {
     runtimeState.setServicePid(event.name, 0);
   }
+}
+
+function hasPlaywrightHeadlessBrowser(dir: string): boolean {
+  const cli = join(dir, 'node_modules/playwright/cli.js');
+  if (!existsSync(cli)) return false;
+  const probe = spawnSync(
+    'node',
+    [
+      '-e',
+      "const{chromium}=require('playwright');(async()=>{const browser=await chromium.launch({headless:true});await browser.close()})().catch(()=>process.exit(1))",
+    ],
+    { cwd: dir, stdio: 'ignore', windowsHide: true },
+  );
+  return probe.status === 0;
 }
 
 /** Recursively true if any file under `dir` has mtime > `anchorMs`. */
@@ -834,7 +894,16 @@ function discoverStandaloneExtensions(extensionsDir: string): DiscoveredExtensio
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     const mf = join(extensionsDir, e.name, 'forgeax-extension.json');
     if (!existsSync(mf)) continue;
-    let m: { id?: string; entry?: { standalone?: { embeddedAlso?: boolean; start?: unknown; port?: unknown } } };
+    let m: {
+      id?: string;
+      entry?: {
+        standalone?: {
+          embeddedAlso?: boolean;
+          start?: unknown;
+          port?: unknown;
+        };
+      };
+    };
     try {
       m = JSON.parse(readFileSync(mf, 'utf8'));
     } catch {
@@ -874,7 +943,9 @@ function extensionRunCmd(dir: string): string {
 /** The package's declared `packageManager` (e.g. "bun@1.3.13"), '' if absent. */
 function pkgManager(dir: string): string {
   try {
-    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { packageManager?: string };
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+      packageManager?: string;
+    };
     return pkg.packageManager ?? '';
   } catch {
     return '';

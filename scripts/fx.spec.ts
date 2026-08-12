@@ -1,7 +1,8 @@
 // @ts-nocheck
-import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
   cleanableFloatingRepoPaths,
   cleanTreeFlags,
@@ -10,6 +11,7 @@ import {
   formatUpdateReport,
   floatingRepoExclusionArgs,
   hasActiveGitProcess,
+  lifecycleProcessEnv,
   parseSubmodulePaths,
   resolveCommand,
   startBusyPorts,
@@ -17,10 +19,26 @@ import {
   submoduleUpdateArgs,
   updateShouldStash,
 } from './fx.ts';
+import {
+  resolveRuntimeInstance,
+  runtimeInstanceProcessEnv,
+  writeRuntimeInstanceConfig,
+} from './lib/runtime-instance.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const script = (name: string) => resolve(ROOT, 'scripts', name);
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
+const fixtureRoots: string[] = [];
+
+function fixtureRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'forgeax-fx-runtime-'));
+  fixtureRoots.push(root);
+  return root;
+}
+
+afterEach(() => {
+  for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe('scripts/fx.ts command routing', () => {
   it('starts the dev stack with a development NODE_ENV regardless of its parent shell', () => {
@@ -69,28 +87,28 @@ describe('scripts/fx.ts command routing', () => {
     });
   });
 
-  it('keeps start as the single client-launching lifecycle command', () => {
+  it('separates service startup from explicit web-client opening', () => {
     expect(resolveCommand(['start'])).toEqual({ type: 'internal', command: 'start', args: [] });
     expect(resolveCommand(['start', 'web', '--fresh'])).toEqual({ type: 'internal', command: 'start', args: ['web', '--fresh'] });
     expect(resolveCommand(['start', 'desktop', 'debug'])).toEqual({ type: 'internal', command: 'start', args: ['desktop', 'debug'] });
-  });
+    expect(resolveCommand(['open'])).toEqual({ type: 'script', script: script('open-web.ts'), args: [] });
+    expect(resolveCommand(['open', '--managed'])).toEqual({ type: 'script', script: script('open-web.ts'), args: ['--managed'] });
 
-  it('does not print clickable Studio URLs before opening Chrome itself', () => {
-    const fx = readFileSync(script('fx.ts'), 'utf8');
-    const openWeb = readFileSync(script('open-web.ts'), 'utf8');
-
-    expect(fx).toContain('console.log(`[start] UI       :${startup.interface.port}`)');
-    expect(fx).not.toContain('console.log(`[start] UI       ${startup.interface.localOrigin}`)');
-    expect(openWeb).toContain("console.log('[web] launching Chrome (WebGPU forced)')");
-    expect(openWeb).not.toContain('launching Chrome (WebGPU forced) → ${url}');
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const startWebBody = source.slice(source.indexOf('async function startWeb('), source.indexOf('function sourceProfileFromEnvironment'));
+    expect(startWebBody).not.toContain("runScript(script('open-web.ts')");
+    expect(startWebBody).toContain('--no-open was removed because start never opens a browser');
   });
 
   it('checks every fixed stack port before start launches a new stack', () => {
-    const owner = (port: number) => (port === 18900 || port === 15173 ? `pid-${port}` : '');
+    const { ports } = resolveRuntimeInstance({ root: ROOT });
+    const owner = (port: number) => (
+      port === ports.server || port === ports.engine ? `pid-${port}` : ''
+    );
 
     expect(startBusyPorts(owner)).toEqual([
-      ['server', 18900, 'pid-18900'],
-      ['engine', 15173, 'pid-15173'],
+      ['server', ports.server, `pid-${ports.server}`],
+      ['engine', ports.engine, `pid-${ports.engine}`],
     ]);
   });
 
@@ -117,12 +135,103 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['stop'])).toEqual({ type: 'script', script: script('stop.ts'), args: [] });
   });
 
+  it('routes worktree runtime instance commands to their dedicated CLI', () => {
+    expect(resolveCommand(['instance', 'init', '--slot', '1'])).toEqual({
+      type: 'script',
+      script: script('instance.ts'),
+      args: ['init', '--slot', '1'],
+    });
+    expect(resolveCommand(['instance', 'show'])).toEqual({
+      type: 'script',
+      script: script('instance.ts'),
+      args: ['show'],
+    });
+  });
+
+  it('derives lifecycle environment from RuntimeInstance instead of hardcoding optional ports', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const statusBody = source.slice(source.indexOf('function status()'), source.indexOf('function doctor('));
+    const usageBody = source.slice(source.indexOf('function usage()'), source.indexOf('function runSetup('));
+
+    expect(source).toContain('runtimeInstanceProcessEnv(instance)');
+    expect(statusBody).toContain('sourceRuntimeStatusPorts(startup)');
+    expect(statusBody).not.toContain("['narrative', 8900]");
+    expect(statusBody).not.toContain("['face-mask', 18930]");
+    expect(usageBody).toContain('instance init --slot N');
+    expect(usageBody).not.toContain('start [web|app|local]');
+  });
+
+  it('leaves source start projection to source-runtime-launcher while retaining lifecycle projections elsewhere', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const startWebBody = source.slice(source.indexOf('async function startWeb('), source.indexOf('function sourceProfileFromEnvironment'));
+
+    expect(startWebBody).toContain('env: process.env');
+    expect(startWebBody).not.toContain('env: lifecycleProcessEnv()');
+    expect(source).toContain("runScript(script('desktop.ts'), rest, lifecycleProcessEnv())");
+  });
+
+  it('retains only an explicit parent agent-host socket when projecting lifecycle environment', () => {
+    const root = fixtureRoot();
+    writeRuntimeInstanceConfig({ root, slot: 1 });
+    const instance = resolveRuntimeInstance({ root });
+    const instanceEnv = runtimeInstanceProcessEnv(instance);
+    const projected = lifecycleProcessEnv({
+      FORGEAX_AGENT_HOST_SOCK: '/external-agent-host.sock',
+      FORGEAX_SERVER_PORT: '1',
+      FORGEAX_PROJECT_ROOT: '/wrong-project',
+      FORGEAX_RUNTIME_STATE_FILE: '/wrong-state.json',
+      FORGEAX_RUNTIME_LOG_FILE: '/wrong.log',
+      FORGEAX_PLUGIN_PORT_OFFSET: '999',
+      FORGEAX_ASSET_CORS_ORIGINS: 'http://wrong.example',
+    }, instance);
+
+    expect(projected.FORGEAX_AGENT_HOST_SOCK).toBe('/external-agent-host.sock');
+    expect(projected.FORGEAX_SERVER_PORT).toBe(instanceEnv.FORGEAX_SERVER_PORT);
+    expect(projected.FORGEAX_PROJECT_ROOT).toBe(instanceEnv.FORGEAX_PROJECT_ROOT);
+    expect(projected.FORGEAX_RUNTIME_STATE_FILE).toBe(instanceEnv.FORGEAX_RUNTIME_STATE_FILE);
+    expect(projected.FORGEAX_RUNTIME_LOG_FILE).toBe(instanceEnv.FORGEAX_RUNTIME_LOG_FILE);
+    expect(projected.FORGEAX_PLUGIN_PORT_OFFSET).toBe(instanceEnv.FORGEAX_PLUGIN_PORT_OFFSET);
+    expect(projected.FORGEAX_ASSET_CORS_ORIGINS).toBe(instanceEnv.FORGEAX_ASSET_CORS_ORIGINS);
+  });
+
+  it('uses the instance agent-host socket without an explicit parent override', () => {
+    const root = fixtureRoot();
+    writeRuntimeInstanceConfig({ root, slot: 1 });
+    const instance = resolveRuntimeInstance({ root });
+
+    expect(lifecycleProcessEnv({}, instance).FORGEAX_AGENT_HOST_SOCK)
+      .toBe(runtimeInstanceProcessEnv(instance).FORGEAX_AGENT_HOST_SOCK);
+  });
+
   it('routes multi-repo lifecycle commands to repos.ts with the subcommand prepended', () => {
     expect(resolveCommand(['sync', '--dry-run'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['sync', '--dry-run'] });
     expect(resolveCommand(['check', '--all'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['check', '--all'] });
     expect(resolveCommand(['commit', '-m', 'msg', '--push'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['commit', '-m', 'msg', '--push'] });
     expect(resolveCommand(['bump', 'packages/interface'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['bump', 'packages/interface'] });
     expect(resolveCommand(['versions'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['versions'] });
+  });
+
+  it('routes recursive input discovery through one internal top-level entry', () => {
+    expect(resolveCommand(['recursive-inputs'])).toEqual({ type: 'internal', command: 'recursive-inputs', args: [] });
+    expect(resolveCommand(['recursive-inputs', 'status'])).toEqual({
+      type: 'internal',
+      command: 'recursive-inputs',
+      args: ['status'],
+    });
+    expect(resolveCommand(['recursive-inputs', '--help'])).toEqual({
+      type: 'internal',
+      command: 'recursive-inputs',
+      args: ['--help'],
+    });
+  });
+
+  it('keeps commit preflight ahead of source-owned repository gates', () => {
+    const source = readFileSync(script('repos.ts'), 'utf8');
+    const commitBody = source.slice(source.indexOf('function commitCmd('), source.indexOf('// ── bump'));
+
+    expect(commitBody).toContain('verifyRecursiveInputForCommit');
+    expect(commitBody.indexOf('verifyRecursiveInputForCommit')).toBeLessThan(commitBody.indexOf('checkCmd('));
+    expect(commitBody).not.toContain('--no-verify: gates SKIPPED');
   });
 
   it('routes build and version aliases', () => {
@@ -141,6 +250,7 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['update', '--dry-run'])).toEqual({ type: 'internal', command: 'update', args: ['--dry-run'] });
     expect(resolveCommand(['status'])).toEqual({ type: 'internal', command: 'status', args: [] });
     expect(resolveCommand(['doctor', '--fix'])).toEqual({ type: 'internal', command: 'doctor', args: ['--fix'] });
+    expect(resolveCommand(['ci'])).toEqual({ type: 'internal', command: 'ci', args: [] });
     expect(resolveCommand(['restart'])).toEqual({ type: 'internal', command: 'restart', args: [] });
   });
 
@@ -156,6 +266,7 @@ describe('scripts/fx.ts command routing', () => {
     expect(floatingRepoExclusionArgs()).toEqual([
       '-e', '.forgeax-harness',
       '-e', 'packages/harness',
+      '-e', 'packages/games',
     ]);
 
     const source = readFileSync(script('fx.ts'), 'utf8');

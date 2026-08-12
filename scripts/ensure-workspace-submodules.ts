@@ -17,6 +17,108 @@ import { spawnSync } from 'node:child_process';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+export type SubmoduleMaterializerPlatform = 'win32' | 'posix';
+export type SubmoduleMaterializerAdapter = 'unix-shared-materializer' | 'windows-direct-git';
+export type SubmoduleMaterializationReport = {
+  platform: SubmoduleMaterializerPlatform;
+  adapter: SubmoduleMaterializerAdapter;
+  status: number;
+  materializationStatus: 'ready' | 'non-ready';
+  recursiveStatus: 'passed' | 'failed';
+  unresolvedPaths: string[];
+  windowsLiveEvidence: 'native-runner-available' | 'external-acceptance-pending';
+};
+
+type CommandResult = {
+  status: number | null;
+  stdout?: string | Buffer;
+};
+
+export type SubmoduleCommandRunner = (
+  command: string,
+  args: string[],
+  options: { cwd: string; stdio: 'inherit' | 'pipe'; encoding?: 'utf8' },
+) => CommandResult;
+
+function defaultRun(command: string, args: string[], options: Parameters<SubmoduleCommandRunner>[2]): CommandResult {
+  const result = spawnSync(command, args, options);
+  return { status: result.status, stdout: result.stdout };
+}
+
+function normalizePlatform(platform: NodeJS.Platform): SubmoduleMaterializerPlatform {
+  return platform === 'win32' ? 'win32' : 'posix';
+}
+
+export function parseUnresolvedSubmoduleStatus(output: string | Buffer | undefined): string[] {
+  return String(output ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.match(/^[-+U][0-9a-f]{7,40}\s+(.+)$/i)?.[1]?.trim())
+    .filter((path): path is string => Boolean(path));
+}
+
+function report(
+  platform: SubmoduleMaterializerPlatform,
+  adapter: SubmoduleMaterializerAdapter,
+  status: number,
+  unresolvedPaths: string[],
+): SubmoduleMaterializationReport {
+  const normalizedStatus = status === 0 && unresolvedPaths.length > 0 ? 1 : status;
+  return {
+    platform,
+    adapter,
+    status: normalizedStatus,
+    materializationStatus: normalizedStatus === 0 ? 'ready' : 'non-ready',
+    recursiveStatus: normalizedStatus === 0 ? 'passed' : 'failed',
+    unresolvedPaths,
+    windowsLiveEvidence: process.platform === 'win32'
+      ? 'native-runner-available'
+      : 'external-acceptance-pending',
+  };
+}
+
+export function materializeWorkspaceSubmodules(
+  root: string,
+  options: {
+    platform?: NodeJS.Platform;
+    run?: SubmoduleCommandRunner;
+  } = {},
+): SubmoduleMaterializationReport {
+  const platform = normalizePlatform(options.platform ?? process.platform);
+  const run = options.run ?? defaultRun;
+  const materializer = join(root, 'deploy/dev/scripts/materialize-submodules.sh');
+
+  if (platform === 'win32') {
+    const sync = run('git', ['submodule', 'sync', '--recursive'], {
+      cwd: root,
+      stdio: 'inherit',
+    });
+    const update = sync.status === 0
+      ? run('git', ['submodule', 'update', '--init', '--recursive'], {
+        cwd: root,
+        stdio: 'inherit',
+      })
+      : sync;
+    let status = update.status ?? 1;
+    let unresolvedPaths: string[] = [];
+    if (status === 0) {
+      const postCheck = run('git', ['submodule', 'status', '--recursive'], {
+        cwd: root,
+        stdio: 'pipe',
+        encoding: 'utf8',
+      });
+      status = postCheck.status ?? 1;
+      unresolvedPaths = parseUnresolvedSubmoduleStatus(postCheck.stdout);
+    }
+    return report(platform, 'windows-direct-git', status, unresolvedPaths);
+  }
+
+  const update = run('sh', [materializer, root], {
+    cwd: root,
+    stdio: 'inherit',
+  });
+  return report(platform, 'unix-shared-materializer', update.status ?? 1, []);
+}
+
 export function parseGitmodulesPaths(text: string): string[] {
   const paths: string[] = [];
   for (const line of text.split(/\r?\n/)) {
@@ -63,31 +165,11 @@ export function ensureWorkspaceSubmodules(root = ROOT): {
 
   // Align every recorded pin through the same retry/fallback policy used by
   // CI, git hooks, cloud-dev startup, and Docker image seeding. Native Windows
-  // has no guaranteed POSIX shell, so retain Git's direct equivalent there.
-  const materializer = join(root, 'deploy/dev/scripts/materialize-submodules.sh');
+  // has no guaranteed POSIX shell, so use Git directly and perform the same
+  // recursive post-check before reporting readiness.
   console.log('[ensure-workspaces] materializing recursive submodule graph');
-  let status: number;
-  if (process.platform === 'win32') {
-    const sync = spawnSync('git', ['submodule', 'sync', '--recursive'], {
-      cwd: root,
-      stdio: 'inherit',
-    });
-    const update =
-      sync.status === 0
-        ? spawnSync('git', ['submodule', 'update', '--init', '--recursive'], {
-            cwd: root,
-            stdio: 'inherit',
-          })
-        : sync;
-    status = update.status ?? 1;
-  } else {
-    const update = spawnSync('sh', [materializer, root], {
-      cwd: root,
-      stdio: 'inherit',
-    });
-    status = update.status ?? 1;
-  }
-  return { missingBefore, status };
+  const result = materializeWorkspaceSubmodules(root);
+  return { missingBefore, status: result.status };
 }
 
 function main(): void {

@@ -39,6 +39,11 @@ import {
   type RepoInfo,
 } from './lib/repos.ts';
 import { repositoryCommandHelp } from './lib/repos-help.ts';
+import {
+  createRecursiveInputCliDependencies,
+  executeRecursiveInputCli,
+} from '../packages/recursive-input-contract/src/cli.ts';
+import { isRecursiveInputResult } from '../packages/recursive-input-contract/src/index.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUN = process.execPath;
@@ -61,6 +66,27 @@ function git(repo: RepoInfo, args: string[], dryRun: boolean): boolean {
 
 function label(repo: RepoInfo): string {
   return repo.path || '(root)';
+}
+
+function verifyRecursiveInputForCommit(root: string, inputClasses: readonly string[]): number {
+  const dependencies = createRecursiveInputCliDependencies(root);
+  const args = [
+    'verify',
+    '--classes',
+    inputClasses.join(','),
+  ];
+  const candidate = dependencies.readResult();
+  if (isRecursiveInputResult(candidate)) {
+    args.push(
+      '--trust', candidate.provenance.trustScope,
+      '--job', candidate.provenance.job,
+      '--attempt', candidate.provenance.attempt,
+    );
+  }
+  const result = executeRecursiveInputCli(args, dependencies);
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  return result.exitCode;
 }
 
 // ── status / versions ────────────────────────────────────────────────────────
@@ -189,6 +215,10 @@ function commitCmd(args: string[]): number {
     .filter((a, i) => i !== mIdx && i !== mIdx + 1 && !a.startsWith('--'))
     .map((p) => (p === '.' ? '' : p.replace(/\/$/, '')));
 
+  const commitInputClasses = ['source', 'dependency-installation', 'toolchain', 'large-file-storage'] as const;
+  const preflightExit = verifyRecursiveInputForCommit(ROOT, commitInputClasses);
+  if (preflightExit !== 0) return preflightExit;
+
   const repos = scanRepos(ROOT);
   // Out-of-scope repos are treated as clean: they are not committed, but their
   // pin relationships stay visible to the dangling-pin guard.
@@ -213,7 +243,7 @@ function commitCmd(args: string[]): number {
       return gateExit;
     }
   } else if (noVerify) {
-    console.log('[commit] --no-verify: gates SKIPPED');
+    console.log('[commit] existing repository gates skipped by option; recursive input preflight already passed');
   }
 
   const byPath = new Map(repos.map((r) => [r.path, r]));

@@ -1,0 +1,4 @@
+interface:
+  display_name: "ForgeaX Game"
+  short_description: "Build and verify ForgeaX games through the bounded MCP loop"
+  default_prompt: "Inspect ForgeaX status, make the requested game change, run it, and verify the result."

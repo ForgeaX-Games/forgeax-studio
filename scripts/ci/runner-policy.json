@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "sourceRoots": [
+    ".github/workflows",
+    "scripts/mirror/ci"
+  ],
+  "requiredSelfHostedLabel": "self-hosted",
+  "capacityLabels": [
+    "standard",
+    "heavy"
+  ],
+  "hostedRunnerAllowlist": [
+    {
+      "workflow": ".github/workflows/desktop-build.yml",
+      "job": "build",
+      "runners": [
+        "macos-latest",
+        "macos-13",
+        "windows-latest"
+      ],
+      "events": [
+        "workflow_dispatch"
+      ],
+      "reason": "Native Tauri installer builds require the target operating system and SDK."
+    },
+    {
+      "workflow": ".github/workflows/game-runtime-publish.yml",
+      "job": "build-platform",
+      "runners": [
+        "macos-latest",
+        "windows-latest"
+      ],
+      "events": [
+        "schedule",
+        "workflow_dispatch",
+        "push:tag"
+      ],
+      "reason": "Native Runtime packages run at low frequency on nightly/manual/tag validation; Linux stays self-hosted."
+    },
+    {
+      "workflow": ".github/workflows/weekly-release.yml",
+      "job": "desktop-build",
+      "runners": [
+        "macos-latest",
+        "macos-13",
+        "windows-latest"
+      ],
+      "events": [
+        "workflow_dispatch"
+      ],
+      "reason": "The release workflow builds signed native desktop installers."
+    }
+  ]
+}

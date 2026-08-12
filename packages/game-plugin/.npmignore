@@ -1,0 +1,1 @@
+# Publication is controlled by package.json "files"; build.mjs derives assets first.

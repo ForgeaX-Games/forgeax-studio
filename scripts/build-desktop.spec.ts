@@ -3,19 +3,21 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { desktopServerEntryAdapter } from './lib/server-role.ts';
+import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 describe('desktop build pack scan scope', () => {
-  it('builds play-runtime against the bundled games scope, not local .forgeax/games', () => {
+  it('builds a generic play shell without a sibling-games asset producer', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
     const playRuntimeViteConfig = readFileSync(
       join(root, 'packages/editor/packages/play-runtime/vite.config.ts'),
       'utf8',
     );
 
-    expect(playRuntimeViteConfig).toContain('FORGEAX_PREVIEW_GAMES_DIR');
-    expect(buildScript).toContain("process.env.FORGEAX_PREVIEW_GAMES_DIR = join(ROOT, 'packages/games')");
+    expect(playRuntimeViteConfig).not.toContain('FORGEAX_PREVIEW_GAMES_DIR');
+    expect(buildScript).not.toContain('FORGEAX_PREVIEW_GAMES_DIR');
+    expect(buildScript).toContain('generic Play shell');
     expect(buildScript).toContain("run('bun', ['x', 'vite', 'build']");
   });
 
@@ -66,5 +68,14 @@ describe('desktop server entry adapter', () => {
 
     expect(adapter).toContain('./nested/deep/main.ts');
     expect(adapter).not.toContain('\\');
+  });
+});
+
+describe('desktop and Game Runtime sidecar naming', () => {
+  it('shares the canonical cross-platform sidecar filename helper', () => {
+    const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
+    expect(buildScript).toContain('sidecarNameForTriple(triple)');
+    expect(sidecarNameForTriple('x86_64-pc-windows-msvc')).toEndWith('.exe');
+    expect(sidecarNameForTriple('x86_64-unknown-linux-gnu')).not.toEndWith('.exe');
   });
 });

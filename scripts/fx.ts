@@ -5,7 +5,7 @@
 // Usage:
 //   bun fx <command> [args...]
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -443,49 +443,53 @@ function updateSubmodules(dryRun: boolean): UpdateResult[] {
   return rows;
 }
 
-function updateFloatingHarness(dryRun: boolean): UpdateResult {
+function spawnChild(command: string, args: string[]): Promise<number> {
+  return new Promise((resolveChild) => {
+    const child = spawn(command, args, { cwd: ROOT, stdio: 'inherit', env: process.env });
+    child.once('error', () => resolveChild(1));
+    child.once('close', (status) => resolveChild(status ?? 1));
+  });
+}
+
+async function updateFloatingHarness(dryRun: boolean): Promise<UpdateResult> {
   const repo = FLOATING_REPOS.runtimeHarness.path;
   const syncScript = script('sync-package-harness.mjs');
   if (!existsSync(join(ROOT, repo))) {
-    return { repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' };
+    return Promise.resolve({ repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' });
   }
   const args = [syncScript, '--update'];
   if (dryRun) args.push('--dry-run');
   if (dryRun) console.log(`[dry-run] ${BUN} ${args.join(' ')}`);
   else console.log(`[update] floating repo ${repo}`);
-  const r = dryRun
-    ? { status: 0 }
-    : spawnSync(BUN, args, { cwd: ROOT, stdio: 'inherit', env: process.env });
+  const status = dryRun ? 0 : await spawnChild(BUN, args);
   return {
     repoType: 'floating-repo',
     repo,
-    result: (r.status ?? 1) === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
-    detail: (r.status ?? 1) === 0
+    result: status === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
+    detail: status === 0
       ? (dryRun ? `would run ${BUN} ${args.join(' ')}` : 'synced to forgeax-harness/main')
-      : `harness update exited ${r.status ?? 1}`,
+      : `harness update exited ${status}`,
   };
 }
 
-function updateFloatingGames(dryRun: boolean): UpdateResult {
+async function updateFloatingGames(dryRun: boolean): Promise<UpdateResult> {
   const repo = FLOATING_REPOS.runtimeGames.path;
   const syncScript = script('sync-games.mjs');
   if (!existsSync(join(ROOT, repo))) {
-    return { repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' };
+    return Promise.resolve({ repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' });
   }
   const args = [syncScript, '--update'];
   if (dryRun) args.push('--dry-run');
   if (dryRun) console.log(`[dry-run] ${BUN} ${args.join(' ')}`);
   else console.log(`[update] floating repo ${repo}`);
-  const r = dryRun
-    ? { status: 0 }
-    : spawnSync(BUN, args, { cwd: ROOT, stdio: 'inherit', env: process.env });
+  const status = dryRun ? 0 : await spawnChild(BUN, args);
   return {
     repoType: 'floating-repo',
     repo,
-    result: (r.status ?? 1) === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
-    detail: (r.status ?? 1) === 0
+    result: status === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
+    detail: status === 0
       ? (dryRun ? `would run ${BUN} ${args.join(' ')}` : 'synced to forgeax-games/main')
-      : `games update exited ${r.status ?? 1}`,
+      : `games update exited ${status}`,
   };
 }
 
@@ -705,7 +709,7 @@ function doctor(args: string[]): never {
   process.exit(failed > 0 ? 1 : 0);
 }
 
-function update(args: string[]): void {
+async function update(args: string[]): Promise<void> {
   const dryRun = args.includes('--dry-run');
   const stash = updateShouldStash(args);
   const restart = args.includes('--restart');
@@ -748,8 +752,13 @@ function update(args: string[]): void {
   const rootOk = !results.some((row) => row.repoType === 'root' && row.result === 'failed');
   if (rootOk) {
     if (!dryRun) dropStaleSubmoduleConfig();
-    results.push(updateFloatingHarness(dryRun));
-    results.push(updateFloatingGames(dryRun));
+    // These checkouts are independent. Start both network fetches together so
+    // a slow floating remote cannot add another full fetch latency after the
+    // first one completes.
+    results.push(...await Promise.all([
+      updateFloatingHarness(dryRun),
+      updateFloatingGames(dryRun),
+    ]));
     console.log('[update] Updating submodules');
     results.push(...updateSubmodules(dryRun));
   } else {
@@ -1180,7 +1189,7 @@ function dropStaleSubmoduleConfig(): void {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const plan = resolveCommand(process.argv.slice(2));
   if (plan.type === 'script') {
     const lifecycleScript = plan.script === script('stop.ts') || plan.script === script('open-web.ts');
@@ -1217,7 +1226,7 @@ function main(): void {
       process.exit(result.exitCode);
     }
     case 'update':
-      update(plan.args);
+      await update(plan.args);
       break;
     case 'clean':
       clean(plan.args);
@@ -1239,5 +1248,8 @@ function main(): void {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
+  main().catch((error) => {
+    console.error(`[fx] ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
 }

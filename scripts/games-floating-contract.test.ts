@@ -47,6 +47,16 @@ describe('optional forgeax-games consumer checkout', () => {
     expect(read('scripts/fx.ts')).toContain("path: 'packages/games'");
   });
 
+  test('reuses an existing floating checkout remote during update', () => {
+    for (const file of ['scripts/sync-package-harness.mjs', 'scripts/sync-games.mjs']) {
+      const source = read(file);
+      const updateBody = source.slice(source.indexOf('function update('));
+      expect(source, file).toContain("remote', 'get-url', 'origin'");
+      expect(updateBody, file).toContain('fetchArgs()');
+      expect(updateBody, file).not.toContain("cloneUrl(), 'main'");
+    }
+  });
+
   test('makes CI explicitly skip the optional games checkout', () => {
     for (const workflow of [
       '.github/workflows/ci.yml',

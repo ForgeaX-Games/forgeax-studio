@@ -29,7 +29,7 @@ export interface IntegrityDomainManifest {
 }
 
 export const SCANNER_CONFIGURATION_INPUT_FILES = [
-  '.forgeax-harness/docs/ai-native/other-team-gap-ownership.md',
+  'packages/harness/docs/ai-native/other-team-gap-ownership.md',
   'scripts/ai-native/alias-map.json',
   'scripts/ai-native/exclusions.json',
   'scripts/ai-native/manual-pool-effect-promotions.json',
@@ -48,7 +48,7 @@ const STATIC_RESOURCE_REGISTRATIONS: ReadonlyArray<{
     'scripts/ai-native/manual-pool-adjudications-v1.jsonl',
   ] },
   { consumer: 'scripts/ai-native/scanner.ts', resources: [
-    '.forgeax-harness/docs/ai-native/other-team-gap-ownership.md',
+    'packages/harness/docs/ai-native/other-team-gap-ownership.md',
     'scripts/ai-native/alias-map.json',
     'scripts/ai-native/exclusions.json',
     'scripts/ai-native/manual-pool-effect-promotions.json',

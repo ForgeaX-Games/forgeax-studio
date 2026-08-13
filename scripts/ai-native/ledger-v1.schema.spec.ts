@@ -53,7 +53,7 @@ describe('ledger v1 fail-closed Zod schema', () => {
   it('validates the complete checked-in ledger and its one-row-per-control invariant', () => {
     const root = join(import.meta.dir, '../..');
     const baselineId = loadCurrentBaselineState(root).currentBaselineId;
-    const controlsPath = join(root, '.forgeax-harness/docs/ai-native/baseline', baselineId, 'controls.jsonl');
+    const controlsPath = join(root, 'packages/harness/docs/ai-native/baseline', baselineId, 'controls.jsonl');
     const controls = readFileSync(controlsPath, 'utf8').trim().split('\n').filter(Boolean);
     const path = join(import.meta.dir, 'ledger-v1.jsonl');
     const rows = readFileSync(path, 'utf8').trim().split('\n').map((line) => parseLedgerV1Row(JSON.parse(line)));

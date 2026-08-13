@@ -84,7 +84,7 @@
     "evidence": [
       "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260721-212706-audit-vitest-browser-hmr-tail/REPORT.md",
       "engine@6c06e414a7f5c5c2dab9facd5919c04513b102ce:.forgeax-harness/solo/fast-robust-ci/experiments/20260723-172526-audit-test-tail-distribution-13/REPORT.md",
-      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.forgeax-harness/docs/testing.md"
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:packages/harness/docs/testing.md"
     ],
     "originalFalsifier": "A proposed consolidation or shard is rejected when it duplicates setup without preserving the behavior uniquely falsified by the moved test.",
     "studioDelta": "Studio's browser, Gateway, and recursive leaf contracts are not being reassigned in sfc-02.",
@@ -198,7 +198,7 @@
     "decision": "adapt",
     "evidence": [
       "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/post-merge-monitor.yml",
-      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.forgeax-harness/docs/conventions.md"
+      "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:packages/harness/docs/conventions.md"
     ],
     "originalFalsifier": "A monitor run or delivery SHA must not replace the workflow_run payload SHA used for incident identity.",
     "studioDelta": "The monitor observes only four named workflows today; the collector exposes current workflow/event coverage without changing monitor behavior.",

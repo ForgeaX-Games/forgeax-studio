@@ -2,7 +2,7 @@
  * dependency-cruiser config — Phase A5 package boundary lint.
  *
  * Encodes the §11.1 ownership table from
- * .forgeax-harness/docs/v2-vision/architecture-evolution/11-LONG-TERM-MAINTAINABILITY.md.
+ * packages/harness/docs/v2-vision/architecture-evolution/11-LONG-TERM-MAINTAINABILITY.md.
  *
  * Run (when dep-cruiser is installed in CI):
  *   npx depcruise --config .dependency-cruiser.cjs packages/

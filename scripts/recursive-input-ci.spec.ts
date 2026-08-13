@@ -131,7 +131,7 @@ describe('recursive-input CI contract entry', () => {
         expect(files.manifest.consumers.some((consumer) => consumer.consumerId === consumerId)).toBe(true);
       }
     }
-    expect(read('.forgeax-harness/docs/contracts/recursive-inputs.md')).toContain('status --scope ci --live-ruleset');
-    expect(read('.forgeax-harness/docs/contracts/recursive-inputs.md')).toContain('sourceWork.status = suppressed');
+    expect(read('packages/harness/docs/contracts/recursive-inputs.md')).toContain('status --scope ci --live-ruleset');
+    expect(read('packages/harness/docs/contracts/recursive-inputs.md')).toContain('sourceWork.status = suppressed');
   });
 });

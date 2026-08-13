@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/ForgeaX-Games/forgeax-studio/brand/schema.json",
   "title": "BrandConfig",
-  "description": "Brand pack manifest. See .forgeax-harness/docs/decisions/0006-rebrand-to-forgeax.md and .forgeax-harness/docs/features/full-rebrand-to-forgeax.md §5.",
+  "description": "Brand pack manifest. See packages/harness/docs/decisions/0006-rebrand-to-forgeax.md and packages/harness/docs/features/full-rebrand-to-forgeax.md §5.",
   "type": "object",
   "required": ["id", "schemaVersion", "product", "assistant", "splash", "providers", "links"],
   "additionalProperties": false,

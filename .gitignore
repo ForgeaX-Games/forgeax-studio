@@ -21,15 +21,16 @@ node_modules
 /projects/
 /state/
 /workspace.json
-# .forgeax-harness is a floating clone of forgeax-studio-harness (the studio
-# closed-loop state and documentation repo), NOT a submodule and NEVER tracked
-# here. Do not force-add loop state or docs from this directory. The no-slash
-# pattern also protects a local symlink used to point at an alternate clone.
+# .forgeax-harness is a floating clone of forgeax-studio-harness (closed-loop
+# state only), NOT a submodule and NEVER tracked here. Do not force-add loop
+# state or source docs from this directory. The no-slash pattern also protects
+# a local symlink used to point at an alternate clone.
 # Materialised by scripts/sync-harness.mjs (npm run harness:sync / bootstrap.sh /
 # deploy.sh).
 /.forgeax-harness
-# Studio-owned rules and skills live in the floating harness above. Keep stale
-# local mounts out of the root tree; CI also rejects force-added copies.
+# Studio source docs, rules, and skills live in the root forgeax-harness
+# repository and are consumed through packages/harness. Keep stale local mounts
+# out of the root tree; CI also rejects force-added copies.
 /rules
 /skills
 .self-evolve/
@@ -86,7 +87,7 @@ packages/kernel/
 # forgeax-harness is a floating runtime-tool checkout, not a Studio gitlink.
 # `bun install`/`bun fx setup` materialises it when missing; `bun fx update`
 # refreshes it only when the checkout already exists.
-/packages/harness/
+/packages/harness
 
 # forgeax-games is an optional consumer checkout, not part of Studio's pinned
 # source graph. Materialise it only for local game-library work; CI sets

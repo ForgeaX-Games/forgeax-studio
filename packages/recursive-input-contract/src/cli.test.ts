@@ -47,7 +47,7 @@ describe('recursive input CLI discovery contract', () => {
     expect(result.stdout).toContain('bun fx recursive-inputs materialize');
     expect(result.stdout).toContain('bun fx recursive-inputs schema');
     expect(result.stdout).toContain('schema/status/verify --scope ci');
-    expect(result.stdout).toContain('.forgeax-harness/docs/contracts/recursive-inputs.md');
+    expect(result.stdout).toContain('packages/harness/docs/contracts/recursive-inputs.md');
     expect(graphReads).toBe(0);
     expect(resultReads).toBe(0);
   });

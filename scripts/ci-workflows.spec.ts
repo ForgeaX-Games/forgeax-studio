@@ -135,9 +135,9 @@ describe('CI workflow orchestration', () => {
 
   });
 
-  it('runs the floating-harness ownership gate before runner policy validation', () => {
+  it('runs the source-harness ownership gate before runner policy validation', () => {
     const runnerPolicy = jobBlock(ci, 'runner-policy');
-    expect(runnerPolicy).toContain('name: Enforce floating harness ownership');
+    expect(runnerPolicy).toContain('name: Enforce source harness ownership');
     expect(runnerPolicy).toContain('bun scripts/ci/check-repo-ownership.ts');
   });
 

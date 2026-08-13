@@ -11,7 +11,9 @@
 // A REAL directory of the same slug (a user's own game) is preserved — only
 // symlinks are created or refreshed. Idempotent.
 //
-// The packaged desktop launcher calls the same function. Keep this file as the
+// The packaged desktop launcher calls the same function with copy-if-absent:
+// bundled games become project-confined editable copies instead of links back
+// into the read-only application payload. Keep this file as the link-mode
 // environment-driven CLI adapter used by prepare.ts.
 import { seedSharedGames } from './lib/seed-games.ts';
 

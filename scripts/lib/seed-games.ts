@@ -1,4 +1,5 @@
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -14,12 +15,16 @@ import { join } from 'node:path';
 interface SeedSharedGamesOptions {
   readonly source: string;
   readonly destination: string;
+  /** Source checkouts use links; packaged desktop games are copied once so the
+   *  project-confined platform-io authority can accept and edit them. */
+  readonly materialization?: 'link' | 'copy-if-absent';
   readonly log?: (message: string) => void;
   readonly warn?: (message: string) => void;
 }
 
 export interface SeedSharedGamesResult {
   readonly linked: number;
+  readonly copied: number;
   readonly refreshed: number;
   readonly unchanged: number;
   readonly skipped: number;
@@ -30,6 +35,7 @@ export function seedSharedGames(options: SeedSharedGamesOptions): SeedSharedGame
   const warn = options.warn ?? log;
   const result = {
     linked: 0,
+    copied: 0,
     refreshed: 0,
     unchanged: 0,
     skipped: 0,
@@ -75,6 +81,12 @@ export function seedSharedGames(options: SeedSharedGamesOptions): SeedSharedGame
     }
 
     if (!targetStat) {
+      if (options.materialization === 'copy-if-absent') {
+        cpSync(sourceGame, target, { recursive: true, dereference: true, force: true });
+        result.copied++;
+        log(`${slug} copied`);
+        continue;
+      }
       symlinkSync(sourceGame, target, 'junction');
       result.linked++;
       log(`${slug} linked`);
@@ -82,6 +94,14 @@ export function seedSharedGames(options: SeedSharedGamesOptions): SeedSharedGame
     }
 
     if (targetStat.isSymbolicLink()) {
+      if (options.materialization === 'copy-if-absent') {
+        rmSync(target);
+        cpSync(sourceGame, target, { recursive: true, dereference: true, force: true });
+        result.copied++;
+        result.refreshed++;
+        log(`${slug} migrated from link to project copy`);
+        continue;
+      }
       if (readlinkSync(target) === sourceGame) {
         result.unchanged++;
         log(`${slug} ok`);
@@ -91,6 +111,12 @@ export function seedSharedGames(options: SeedSharedGamesOptions): SeedSharedGame
       symlinkSync(sourceGame, target, 'junction');
       result.refreshed++;
       log(`${slug} relinked`);
+      continue;
+    }
+
+    if (options.materialization === 'copy-if-absent') {
+      result.unchanged++;
+      log(`${slug} project copy preserved`);
       continue;
     }
 

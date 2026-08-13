@@ -1,0 +1,117 @@
+{
+  "specVersion": 1,
+  "manifestVersion": "recursive-input-ci.v1",
+  "outputContractVersion": "recursive-input-ci-result.v1",
+  "scope": "recursive-input-direct-consumers",
+  "producers": [
+    {
+      "producerId": "fetch-submodules-ordinary",
+      "owner": ".github/actions/fetch-submodules/action.yml",
+      "inputClasses": ["source", "large-file-storage"],
+      "trustScopes": ["ordinary-ci"],
+      "outputContractVersion": "recursive-input-ci-result.v1"
+    },
+    {
+      "producerId": "fetch-submodules-trusted",
+      "owner": ".github/actions/fetch-submodules/action.yml",
+      "inputClasses": ["source", "large-file-storage"],
+      "trustScopes": ["trusted-base-ci"],
+      "outputContractVersion": "recursive-input-ci-result.v1"
+    }
+  ],
+  "consumers": [
+    {
+      "consumerId": "ci-build",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "build",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "bun install"
+    },
+    {
+      "consumerId": "boundaries-full",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/boundaries.yml",
+      "job": "full-boundaries",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "bun run lint:layers"
+    },
+    {
+      "consumerId": "nightly-e2e",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/nightly-e2e.yml",
+      "job": "contract",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "bun install"
+    },
+    {
+      "consumerId": "mirror-dryrun",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/mirror-multi.yml",
+      "job": "dryrun",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "scripts/mirror/smoke-install.sh"
+    },
+    {
+      "consumerId": "mirror-publish",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/mirror-multi.yml",
+      "job": "publish",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "scripts/mirror/smoke-install.sh"
+    },
+    {
+      "consumerId": "mirror-publish-dryrun",
+      "producerId": "fetch-submodules-trusted",
+      "trustScope": "trusted-base-ci",
+      "workflow": ".github/workflows/mirror-publish-dryrun.yml",
+      "job": "publish-dryrun",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": ".trusted-base/scripts/mirror/publish-multi.sh push"
+    }
+  ],
+  "requiredContexts": [
+    {
+      "name": "typecheck + build + script smoke",
+      "source": ".github/workflows/ci.yml",
+      "job": "check",
+      "reporter": "thin-reporter"
+    },
+    {
+      "name": "dependency-cruiser boundary lint",
+      "source": ".github/workflows/boundaries.yml",
+      "job": "lint-boundaries",
+      "reporter": "thin-reporter"
+    },
+    {
+      "name": "submodule pin reachability + main-ancestry",
+      "source": ".github/workflows/submodule-pins.yml",
+      "job": "check",
+      "reporter": "thin-reporter"
+    },
+    {
+      "name": "mirror dry-run (assemble + scrub + gate)",
+      "source": ".github/workflows/mirror-multi.yml",
+      "job": "dryrun",
+      "reporter": "direct"
+    },
+    {
+      "name": "mirror publish dry-run (external push)",
+      "source": ".github/workflows/mirror-publish-dryrun.yml",
+      "job": "publish-dryrun",
+      "reporter": "direct"
+    }
+  ],
+  "governance": {
+    "repository": "ForgeaX-Games/forgeax-studio",
+    "ref": "main",
+    "enforcement": "active",
+    "bypassActors": [],
+    "currentUserCanBypass": "never"
+  }
+}

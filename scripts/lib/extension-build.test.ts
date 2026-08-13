@@ -1,5 +1,46 @@
 import { expect, test } from 'bun:test';
-import { extensionBuildCommands } from './extension-build';
+import {
+  extensionBuildCommands,
+  extensionPackageManager,
+  extensionPackageManagerFallback,
+} from './extension-build';
+
+test('honors a declared package manager without requiring a workspace marker', () => {
+  expect(extensionPackageManager({ packageManager: 'pnpm@9.0.0' }, 'bun')).toBe('pnpm');
+  expect(extensionPackageManager({ packageManager: 'bun@1.3.13' }, 'pnpm')).toBe('bun');
+});
+
+test('uses the legacy fallback only when packageManager is absent', () => {
+  expect(extensionPackageManager({}, 'pnpm')).toBe('pnpm');
+  expect(extensionPackageManager({}, 'bun')).toBe('bun');
+});
+
+test('prefers a Bun lockfile over a stale pnpm workspace marker', () => {
+  expect(
+    extensionPackageManagerFallback({
+      bunLock: true,
+      pnpmLock: false,
+      pnpmWorkspace: true,
+    }),
+  ).toBe('bun');
+});
+
+test('uses pnpm lockfiles and legacy workspaces when no Bun lock exists', () => {
+  expect(
+    extensionPackageManagerFallback({
+      bunLock: false,
+      pnpmLock: true,
+      pnpmWorkspace: false,
+    }),
+  ).toBe('pnpm');
+  expect(
+    extensionPackageManagerFallback({
+      bunLock: false,
+      pnpmLock: false,
+      pnpmWorkspace: true,
+    }),
+  ).toBe('pnpm');
+});
 
 test('uses Bun for a Bun-owned extension', () => {
   expect(extensionBuildCommands({ packageManager: 'bun@1.3.13' })).toEqual([

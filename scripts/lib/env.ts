@@ -1,13 +1,12 @@
-// scripts/lib/env.ts — minimal .env loader (mirrors bash `set -a; source .env`).
-//
-// Parses KEY=value lines and injects them into process.env (without clobbering
-// vars already set in the real environment, matching shell `source` semantics
-// where an exported value wins only if the file assigns it). Returns the parsed
-// map too, for callers that want the values directly.
+// scripts/lib/env.ts — pure dotenv parsing for the source-runtime launcher.
+// Parsing and precedence are intentionally separate: callers merge the parsed
+// values once without mutating process.env, then pass the final environment to
+// every detached child.
 
 import { existsSync, readFileSync } from 'node:fs';
 
-export function loadDotenv(file: string): Record<string, string> {
+/** Parses a dotenv file without mutating process.env. */
+export function readDotenv(file: string): Record<string, string> {
   const out: Record<string, string> = {};
   if (!existsSync(file)) return out;
   for (const raw of readFileSync(file, 'utf8').split('\n')) {
@@ -17,13 +16,10 @@ export function loadDotenv(file: string): Record<string, string> {
     if (!m) continue;
     const key = m[1] as string;
     let val = (m[2] as string).trim();
-    // strip surrounding matching quotes
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1);
     }
     out[key] = val;
-    // `source` overwrites the running shell's value, so we mirror that.
-    process.env[key] = val;
   }
   return out;
 }

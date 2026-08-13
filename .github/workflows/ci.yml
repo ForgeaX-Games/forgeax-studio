@@ -294,12 +294,18 @@ jobs:
       - name: Vite build packages/studio
         run: bun run --cwd packages/studio build
 
-      # ── run.ts smoke: start the 3-service stack and probe health ──────
-      - name: Smoke — bun scripts/run.ts + probe ports
+      # ── canonical fx smoke: start the 3-service stack and probe health ──
+      - name: Smoke — bun fx start web + probe ports
         id: smoke
+        env:
+          # The public gate verifies the core Studio topology only; do not
+          # start optional marketplace sidecars during this health probe.
+          FORGEAX_CORE_ONLY: '1'
+          # Self-hosted runners can retain stale Vite optimizer metadata.
+          FORGEAX_VITE_FORCE_CLEAN: '1'
         run: |
           set -eux
-          nohup bun scripts/run.ts > /tmp/forgeax-stack.log 2>&1 &
+          env -u RUNNER_TRACKING_ID nohup bun fx start web --skip-setup-check > /tmp/forgeax-stack.log 2>&1 &
           STACK_PID=$!
           echo "stack pid: $STACK_PID"
           for i in $(seq 1 90); do

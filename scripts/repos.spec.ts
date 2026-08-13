@@ -40,6 +40,28 @@ describe('scan helpers', () => {
     expect(repositoryCommandHelp('unknown')).toBeUndefined();
   });
 
+  it('places recursive-input preflight before the commit scan', () => {
+    const source = readFileSync(resolve(import.meta.dir, 'repos.ts'), 'utf8');
+    const commitBody = source.slice(source.indexOf('function commitCmd('), source.indexOf('// ── bump'));
+    const preflight = commitBody.indexOf('verifyRecursiveInputForCommit');
+    const scan = commitBody.indexOf('const repos = scanRepos(ROOT)');
+
+    expect(preflight).toBeGreaterThanOrEqual(0);
+    expect(scan).toBeGreaterThan(preflight);
+    expect(commitBody).not.toContain('scanRepos(ROOT);\n  const preflight');
+  });
+
+  it('keeps commit preflight source-owned and does not add a build-output barrier', () => {
+    const source = readFileSync(resolve(import.meta.dir, 'repos.ts'), 'utf8');
+    const commitBody = source.slice(source.indexOf('function commitCmd('), source.indexOf('// ── bump'));
+
+    expect(commitBody).toContain("'source'");
+    expect(commitBody).toContain("'dependency-installation'");
+    expect(commitBody).toContain("'toolchain'");
+    expect(commitBody).toContain("'large-file-storage'");
+    expect(commitBody).not.toContain("'build-output'");
+  });
+
   it('runs boundary checker tests in CI', () => {
     const workflow = readFileSync(resolve(import.meta.dir, '../.github/workflows/boundaries.yml'), 'utf8');
     expect(workflow).toContain('run: bun run test:boundaries:fs');

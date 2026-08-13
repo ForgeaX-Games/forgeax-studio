@@ -1,36 +1,37 @@
 import { describe, expect, it } from 'bun:test';
-import { compareSetupSnapshots, type SetupSnapshot } from './setup-version.ts';
+import { computeInputDigest } from '../../packages/recursive-input-contract/src/digest.ts';
+import { projectGitlinkGraph, type AuthoritativeGitGraph } from '../../packages/recursive-input-contract/src/git-graph.ts';
 
-const snapshot = (overrides: Partial<SetupSnapshot> = {}): SetupSnapshot => ({
-  schemaVersion: 1,
-  recordedAt: '2026-07-31T00:00:00.000Z',
-  rootHead: 'root-a',
-  submodules: [
-    { path: 'packages/editor', pin: 'editor-pin-a', head: 'editor-pin-a' },
-  ],
-  ...overrides,
-});
-
-describe('setup version snapshots', () => {
-  it('treats identical root and submodule state as current', () => {
-    expect(compareSetupSnapshots(snapshot(), snapshot())).toEqual([]);
+describe('recursive input contract migration regression', () => {
+  it('keeps identical root and recursive pin identity stable', () => {
+    const graph: AuthoritativeGitGraph = {
+      sourceIdentity: { repository: 'forgeax-studio', revision: 'root-a' },
+      nodes: [{ path: 'packages/editor', pin: 'editor-pin-a' }],
+    };
+    const projected = projectGitlinkGraph(graph);
+    expect(computeInputDigest({
+      sourceIdentity: graph.sourceIdentity,
+      recursivePins: projected.pins,
+      requestedInputClasses: ['source'],
+    })).toBe(computeInputDigest({
+      sourceIdentity: graph.sourceIdentity,
+      recursivePins: projected.pins,
+      requestedInputClasses: ['source'],
+    }));
   });
 
-  it('detects root, pin, checkout, and topology drift', () => {
-    expect(compareSetupSnapshots(
-      snapshot(),
-      snapshot({
-        rootHead: 'root-b',
-        submodules: [
-          { path: 'packages/editor', pin: 'editor-pin-b', head: 'editor-head-b' },
-          { path: 'packages/server', pin: 'server-pin-a', head: '' },
-        ],
-      }),
-    )).toEqual([
-      'root HEAD root-a → root-b',
-      'packages/editor pin editor-pin-a → editor-pin-b',
-      'packages/editor checkout editor-pin-a → editor-head-',
-      'packages/server added',
+  it('detects recursive topology and pin drift without a legacy snapshot owner', () => {
+    const projected = projectGitlinkGraph({
+      sourceIdentity: { repository: 'forgeax-studio', revision: 'root-a' },
+      nodes: [
+        { path: 'packages/editor', pin: 'editor-pin-b' },
+        { path: 'packages/server', pin: 'server-pin-a', reachable: false },
+      ],
+    });
+    expect(projected.pins).toEqual([
+      { path: 'packages/editor', pin: 'editor-pin-b' },
+      { path: 'packages/server', pin: 'server-pin-a' },
     ]);
+    expect(projected.unreachablePaths).toEqual(['packages/server']);
   });
 });

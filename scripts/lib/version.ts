@@ -16,6 +16,13 @@ export interface VersionInfo {
   branch: string;
 }
 
+export interface VersionInfoOptions {
+  /** Use source-tree identity instead of commit-object identity. */
+  reproducible?: boolean;
+  /** Stable package-facing version for reproducible payloads. */
+  stableVersion?: string;
+}
+
 function git(root: string, args: string[]): string {
   try {
     return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true }).trim();
@@ -25,7 +32,22 @@ function git(root: string, args: string[]): string {
 }
 
 /** Derive the full version info from git (or .version fallback). */
-export function versionInfo(root: string): VersionInfo {
+export function versionInfo(root: string, options: VersionInfoOptions = {}): VersionInfo {
+  if (options.reproducible) {
+    // Runtime payloads must not inherit the merge commit, branch, or CI-only
+    // scan metadata. In particular, hashing the whole Git tree here would
+    // make an allowlist update change version.json, which changes the archive
+    // digest that the allowlist records. Use the stable package identity as
+    // the informational sha so the packaging input has no feedback loop.
+    const stableIdentity = options.stableVersion ?? 'v0.0.0.0-reproducible';
+    return {
+      version: stableIdentity,
+      sha: stableIdentity,
+      date: '1970-01-01',
+      totalCommits: 0,
+      branch: 'reproducible-runtime',
+    };
+  }
   const inGit = git(root, ['rev-parse', '--git-dir']) !== '';
   if (!inGit) {
     const vf = join(root, '.version');
@@ -101,9 +123,9 @@ export function versionCheck(root: string): void {
 }
 
 /** Write version JSON to `out` (creating parent dirs). */
-export function writeVersionJson(root: string, out: string): void {
+export function writeVersionJson(root: string, out: string, options: VersionInfoOptions = {}): void {
   mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, `${JSON.stringify(versionInfo(root), null, 2)}\n`);
+  writeFileSync(out, `${JSON.stringify(versionInfo(root, options), null, 2)}\n`);
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────────

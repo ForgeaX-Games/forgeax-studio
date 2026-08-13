@@ -3,19 +3,21 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { desktopServerEntryAdapter } from './lib/server-role.ts';
+import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 describe('desktop build pack scan scope', () => {
-  it('builds play-runtime against the bundled games scope, not local .forgeax/games', () => {
+  it('builds a generic play shell without a sibling-games asset producer', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
     const playRuntimeViteConfig = readFileSync(
       join(root, 'packages/editor/packages/play-runtime/vite.config.ts'),
       'utf8',
     );
 
-    expect(playRuntimeViteConfig).toContain('FORGEAX_PREVIEW_GAMES_DIR');
-    expect(buildScript).toContain("process.env.FORGEAX_PREVIEW_GAMES_DIR = join(ROOT, 'packages/games')");
+    expect(playRuntimeViteConfig).not.toContain('FORGEAX_PREVIEW_GAMES_DIR');
+    expect(buildScript).not.toContain('FORGEAX_PREVIEW_GAMES_DIR');
+    expect(buildScript).toContain('generic Play shell');
     expect(buildScript).toContain("run('bun', ['x', 'vite', 'build']");
   });
 
@@ -48,6 +50,21 @@ describe('desktop server runtime closure', () => {
     expect(buildScript).toContain("if (dep.startsWith('@forgeax/')) queue.push(dep)");
     expect(buildScript).toContain("copyTree(join(ROOT, 'brand'), join(RES, 'brand')");
   });
+
+  it('does not package generated Engine build-control markers', () => {
+    const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
+
+    expect(buildScript).toContain("const ENGINE_RUNTIME_COPY_EXCLUDES = new Set(['.gitignore'])");
+    expect(buildScript).toContain(
+      "const PREVIEW_PACKAGE_COPY_EXCLUDES = new Set(['node_modules', 'target', '.git', '.gitignore'])",
+    );
+    expect(buildScript).toContain(
+      "copyTree(join(dir, 'pkg'), join(dest, 'pkg'), ENGINE_RUNTIME_COPY_EXCLUDES)",
+    );
+    expect(buildScript).toContain(
+      "copyTree(pkgdir, join(ENG, 'node_modules', pj.name), PREVIEW_PACKAGE_COPY_EXCLUDES)",
+    );
+  });
 });
 
 describe('desktop server entry adapter', () => {
@@ -66,5 +83,14 @@ describe('desktop server entry adapter', () => {
 
     expect(adapter).toContain('./nested/deep/main.ts');
     expect(adapter).not.toContain('\\');
+  });
+});
+
+describe('desktop and Game Runtime sidecar naming', () => {
+  it('shares the canonical cross-platform sidecar filename helper', () => {
+    const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
+    expect(buildScript).toContain('sidecarNameForTriple(triple)');
+    expect(sidecarNameForTriple('x86_64-pc-windows-msvc')).toEndWith('.exe');
+    expect(sidecarNameForTriple('x86_64-unknown-linux-gnu')).not.toEndWith('.exe');
   });
 });

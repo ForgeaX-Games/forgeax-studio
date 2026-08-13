@@ -18,8 +18,6 @@ type CommandTask = {
 
 export const STATIC_GATES: readonly CommandTask[] = [
   { name: 'Test @forgeax/agent-runtime', args: ['-F', '@forgeax/agent-runtime', 'test'] },
-  { name: 'Game engine-import resolution gate', args: ['scripts/check-game-engine-imports.ts'] },
-  { name: 'Game input-contract gate', args: ['scripts/check-game-input-contract.ts'] },
   { name: 'Typecheck @forgeax/platform-io', args: ['-F', '@forgeax/platform-io', 'typecheck'] },
   { name: 'interface package-boundary guard', args: ['run', '--cwd', 'packages/interface', 'lint:dep'] },
   { name: 'interface app-agnostic import guard', args: ['run', '--cwd', 'packages/interface', 'lint:agnostic'] },
@@ -30,7 +28,7 @@ export const STATIC_GATES: readonly CommandTask[] = [
   },
   {
     name: 'New-game Play import-resolution contract',
-    args: ['test', 'src/viewport/runtime-vite-preset.test.ts'],
+    args: ['test', 'src/viewport/__tests__/runtime-vite-preset.test.ts'],
     cwd: 'packages/editor/packages/edit-runtime',
   },
   {

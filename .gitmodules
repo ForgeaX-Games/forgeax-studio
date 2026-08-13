@@ -2,10 +2,6 @@
 	path = packages/engine
 	url = https://github.com/ForgeaX-Games/forgeax-engine.git
 	branch = main
-[submodule "packages/games"]
-	path = packages/games
-	url = https://github.com/ForgeaX-Games/forgeax-games.git
-	branch = main
 [submodule "packages/build"]
 	path = packages/build
 	url = https://github.com/ForgeaX-Games/forgeax-build.git

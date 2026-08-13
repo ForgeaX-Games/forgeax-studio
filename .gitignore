@@ -15,7 +15,8 @@ github-info.txt
 
 # Build/runtime artifacts
 *.log
-node_modules/
+# Ignore dependency directories and worktree-sharing symlinks.
+node_modules
 .forgeax/
 /projects/
 /state/
@@ -33,7 +34,6 @@ node_modules/
 .playwright-cli/
 .forgeax.legacy-backup-*.tar.gz
 games/
-!packages/games/
 test-results/
 __pycache__/
 
@@ -67,7 +67,6 @@ forgeax-studio-ca.crt
 /packages/studio/.forgeax-debug/
 /packages/npc-client/dist/
 packages/editor
-packages/games
 packages/marketplace
 packages/server
 
@@ -81,6 +80,11 @@ packages/kernel/
 # `bun install`/`bun fx setup` materialises it when missing; `bun fx update`
 # refreshes it only when the checkout already exists.
 /packages/harness/
+
+# forgeax-games is an optional consumer checkout, not part of Studio's pinned
+# source graph. Materialise it only for local game-library work; CI sets
+# FORGEAX_SKIP_GAMES=1 and never clones it.
+/packages/games/
 
 # brainstorming visual companion mockups
 .superpowers/

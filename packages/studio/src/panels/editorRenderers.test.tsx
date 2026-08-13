@@ -24,6 +24,7 @@ mock.module('@forgeax/editor/bridge', () => ({
   panelBridge: { on: () => () => undefined },
   gateway: { mode: 'edit', playPhase: 'idle', dispatch: () => undefined },
   hasPendingDiskSave: () => false,
+  createEvalChannel: () => ({ eval: () => ({ ok: false, error: { code: 'mock', hint: 'mock' } }) }),
 }));
 mock.module('@forgeax/editor/default-dock-layout', () => ({ DEFAULT_EDITOR_DOCK_LAYOUT: {} }));
 mock.module('@forgeax/editor/viewport', () => ({ ViewportComponent: () => null, resetEditRealm: () => undefined }));

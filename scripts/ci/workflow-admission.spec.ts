@@ -103,4 +103,40 @@ describe('workflow parser admission', () => {
     expect(tokenPosition).toBeGreaterThan(parserPosition);
     expect(parserStep).not.toContain('secrets.');
   });
+
+  it('keeps trusted admission least-privileged, head-as-data, and producer-owned before publisher work', () => {
+    for (const path of ['.github/workflows/mirror-publish-dryrun.yml', 'scripts/mirror/ci/mirror-publish-dryrun.yml']) {
+      const workflow = readFileSync(join(root, path), 'utf8');
+      const jobStart = workflow.indexOf('\n  publish-dryrun:\n');
+      const job = workflow.slice(jobStart);
+      const parserStart = workflow.indexOf('      - name: Validate every PR-head workflow and mirrored source');
+      const parserEnd = workflow.indexOf('\n      - name:', parserStart + 1);
+      const parserStep = workflow.slice(parserStart, parserEnd);
+      const auditStart = workflow.indexOf('      - name: Audit producer-owned required contexts and live ruleset');
+      const auditEnd = workflow.indexOf('\n      - name:', auditStart + 1);
+      const publisherStart = workflow.indexOf('      - name: Run the post-merge publish path without mutating remotes');
+      const auditBarrier = workflow.slice(auditStart, auditEnd);
+
+      expect(workflow).toContain('pull_request_target:');
+      expect(job).toContain('contents: read');
+      expect(job).toContain('pull-requests: read');
+      expect(job).not.toMatch(/^\s+(?:administration|contents|pull-requests): write$/mu);
+
+      expect(workflow).toContain('repository: ${{ github.event.pull_request.head.repo.full_name }}');
+      expect(workflow).toContain('ref: ${{ github.event.pull_request.head.sha }}');
+      expect(workflow).toContain('path: pr-head');
+      expect(workflow).toContain('persist-credentials: false');
+      expect(parserStep).toContain('.trusted-base/scripts/ci/validate-workflow-sources.ts');
+      expect(parserStep).not.toContain('secrets.');
+      expect(auditStart).toBeGreaterThan(parserStart);
+      expect(publisherStart).toBeGreaterThan(auditStart);
+      expect(auditBarrier).toContain('.trusted-base/scripts/ci/audit-required-checks-ruleset.mjs');
+      expect(auditBarrier).toContain('GH_TOKEN: ${{ secrets.INTERNAL_TOKEN }}');
+      expect(workflow.indexOf('MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}')).toBeGreaterThan(publisherStart);
+    }
+
+    expect(WORKFLOW_PARSER_CONTRACT.parser.version).toBe('1.7.12');
+    expect(WORKFLOW_PARSER_CONTRACT.parser.sha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(readFileSync(join(root, '.github/workflows/mirror-publish-dryrun.yml'), 'utf8')).toContain('sha256sum --check --status');
+  });
 });

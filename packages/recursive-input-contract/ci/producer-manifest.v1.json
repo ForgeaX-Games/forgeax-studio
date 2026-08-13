@@ -119,15 +119,21 @@
       "reporter": "thin-reporter"
     },
     {
+      "name": "SFC-07 stable aggregate",
+      "source": ".github/workflows/ci.yml",
+      "job": "sfc07",
+      "reporter": "direct"
+    },
+    {
+      "name": "Runtime validation aggregate",
+      "source": ".github/workflows/game-runtime-publish.yml",
+      "job": "runtime-validation",
+      "reporter": "direct"
+    },
+    {
       "name": "dependency-cruiser boundary lint",
       "source": ".github/workflows/boundaries.yml",
       "job": "lint-boundaries",
-      "reporter": "thin-reporter"
-    },
-    {
-      "name": "submodule pin reachability + main-ancestry",
-      "source": ".github/workflows/submodule-pins.yml",
-      "job": "check",
       "reporter": "thin-reporter"
     },
     {
@@ -137,9 +143,21 @@
       "reporter": "direct"
     },
     {
+      "name": "submodule pin reachability + main-ancestry",
+      "source": ".github/workflows/submodule-pins.yml",
+      "job": "check",
+      "reporter": "thin-reporter"
+    },
+    {
       "name": "mirror publish dry-run (external push)",
       "source": ".github/workflows/mirror-publish-dryrun.yml",
       "job": "publish-dryrun",
+      "reporter": "direct"
+    },
+    {
+      "name": "every commit has a human author",
+      "source": ".github/workflows/require-human-author.yml",
+      "job": "check",
       "reporter": "direct"
     }
   ],

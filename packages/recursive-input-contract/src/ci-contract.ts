@@ -34,10 +34,13 @@ export const CI_ERROR_CODES = [
 
 export const CI_REQUIRED_CONTEXTS = [
   'typecheck + build + script smoke',
+  'SFC-07 stable aggregate',
+  'Runtime validation aggregate',
   'dependency-cruiser boundary lint',
-  'submodule pin reachability + main-ancestry',
   'mirror dry-run (assemble + scrub + gate)',
+  'submodule pin reachability + main-ancestry',
   'mirror publish dry-run (external push)',
+  'every commit has a human author',
 ] as const;
 export type CiRequiredContext = (typeof CI_REQUIRED_CONTEXTS)[number];
 export type CiTrustScope = Extract<TrustScope, 'ordinary-ci' | 'trusted-base-ci'>;
@@ -231,7 +234,7 @@ export function validateCiManifest(value: unknown): CiManifestValidation {
   }
 
   if (!Array.isArray(value.requiredContexts) || value.requiredContexts.length !== CI_REQUIRED_CONTEXTS.length) {
-    errors.push(error('recursive-input.ci.context-set-invalid', '$.requiredContexts', 'must contain exactly the five canonical contexts'));
+    errors.push(error('recursive-input.ci.context-set-invalid', '$.requiredContexts', 'must contain exactly the canonical required contexts'));
   } else {
     const contexts = value.requiredContexts as unknown[];
     const names = contexts.map((context) => isRecord(context) ? context.name : undefined);

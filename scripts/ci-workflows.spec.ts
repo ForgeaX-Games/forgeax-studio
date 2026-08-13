@@ -26,7 +26,7 @@ const postMergeScript = read('scripts/ci/post-merge-gate.sh');
 const pinChangeScript = read('scripts/ci/submodule-pin-change.sh');
 const tokenAccessScript = read('scripts/ci/check-internal-token-access.sh');
 const recursiveInputAction = read('.github/actions/fetch-submodules/action.yml');
-const requiredChecks = JSON.parse(read('scripts/ci/required-checks.json')) as string[];
+const requiredChecks = ciManifest.requiredContexts.map((context) => context.name);
 const ordinaryContractSources = [...new Set(ciManifest.consumers
   .filter((consumer) => consumer.trustScope === 'ordinary-ci')
   .flatMap((consumer) => [
@@ -172,7 +172,18 @@ describe('CI workflow orchestration', () => {
     for (const context of requiredChecks) {
       expect(workflowSources.split(`name: ${context}`).length - 1).toBe(1);
     }
-    expect(jobBlock(ci, 'runner-policy')).toContain('bun scripts/ci/audit-required-checks-ruleset.mjs');
+    expect(jobBlock(ci, 'runner-policy')).not.toContain('audit-required-checks-ruleset.mjs');
+    for (const workflow of [mirrorPublishDryrun, mirrorPublishDryrunTemplate]) {
+      const parserPosition = workflow.indexOf('Validate every PR-head workflow and mirrored source');
+      const auditPosition = workflow.indexOf('Audit producer-owned required contexts and live ruleset');
+      const publisherPosition = workflow.indexOf('Run the post-merge publish path without mutating remotes');
+      const auditEnd = workflow.indexOf('\n      - name:', auditPosition + 1);
+      expect(parserPosition).toBeGreaterThanOrEqual(0);
+      expect(auditPosition).toBeGreaterThan(parserPosition);
+      expect(publisherPosition).toBeGreaterThan(auditPosition);
+      expect(workflow.slice(auditPosition, auditEnd)).toContain('.trusted-base/scripts/ci/audit-required-checks-ruleset.mjs');
+      expect(workflow.slice(auditPosition, auditEnd)).toContain('GH_TOKEN: ${{ secrets.INTERNAL_TOKEN }}');
+    }
   });
 
   it('serializes fixed-port Studio consumers per workflow run without cross-run eviction', () => {

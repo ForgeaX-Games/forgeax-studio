@@ -15,6 +15,9 @@ export const DESKTOP_BUNDLE_PROFILE_ENV = DESKTOP_BUNDLE_ENV;
 export const DESKTOP_BUNDLE_PROFILES = ['lite', 'full'] as const;
 export type DesktopBundleProfile = (typeof DESKTOP_BUNDLE_PROFILES)[number];
 
+/** The server role selected for a desktop bundle at the build boundary. */
+export type DesktopServerProfile = 'base' | 'auto';
+
 export interface DesktopBundleCapabilities {
   readonly sampleGames: boolean;
   readonly productExtensions: boolean;
@@ -50,6 +53,11 @@ const PROFILE_CAPABILITIES: Record<DesktopBundleProfile, DesktopBundleCapabiliti
   },
 };
 
+const PROFILE_SERVER_PROFILES: Record<DesktopBundleProfile, DesktopServerProfile> = {
+  lite: 'base',
+  full: 'auto',
+};
+
 function isDesktopBundleProfile(value: unknown): value is DesktopBundleProfile {
   return typeof value === 'string'
     && (DESKTOP_BUNDLE_PROFILES as readonly string[]).includes(value);
@@ -76,6 +84,24 @@ export function desktopBundleCapabilities(
     );
   }
   return { ...PROFILE_CAPABILITIES[profile] };
+}
+
+/**
+ * Map the user-facing desktop bundle to the server role staged into its payload.
+ *
+ * This is deliberately a pure mapping: source/dev startup continues to read
+ * FORGEAX_SERVER_PROFILE directly, while desktop assembly derives its role from
+ * the already-resolved bundle profile.
+ */
+export function desktopBundleServerProfile(
+  profile: DesktopBundleProfile,
+): DesktopServerProfile {
+  if (!isDesktopBundleProfile(profile)) {
+    throw new Error(
+      `desktop bundle profile must be one of ${DESKTOP_BUNDLE_PROFILES.join(', ')}; received ${String(profile)}`,
+    );
+  }
+  return PROFILE_SERVER_PROFILES[profile];
 }
 
 export function desktopBundleManifest(

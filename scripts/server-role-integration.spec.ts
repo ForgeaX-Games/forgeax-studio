@@ -38,11 +38,22 @@ describe('server role script integration', () => {
   it('desktop build takes package metadata and copied server files from the active package', () => {
     const text = source('build-desktop.ts');
 
+    expect(text).toContain('desktopBundleServerProfile');
+    expect(text).toContain('resolveDesktopBundleProfile');
+    expect(text).toContain('profile: desktopBundleServerProfile(DESKTOP_BUNDLE_PROFILE)');
+    expect(text).not.toContain('profile: process.env.FORGEAX_SERVER_PROFILE');
     expect(text).toContain("readJson(join(activeServer.packageDir, 'package.json'))");
     expect(text).toContain("copyTree(join(activeServer.packageDir, 'src')");
     expect(text).toContain("join(activeServer.packageDir, 'builtin')");
     expect(text).toContain("join(activeServer.packageDir, 'tsconfig.json')");
     expect(text).toContain('desktopServerEntryAdapter(activeServer.entry)');
+  });
+
+  it('keeps source and dev server role selection on FORGEAX_SERVER_PROFILE', () => {
+    expect(source('run.ts')).toContain('profile: process.env.FORGEAX_SERVER_PROFILE');
+    expect(source('stop.ts')).toContain('profile: process.env.FORGEAX_SERVER_PROFILE');
+    expect(source('lib/source-runtime-launcher.ts'))
+      .toContain('profile: childEnv.FORGEAX_SERVER_PROFILE');
   });
 
   it('CI smoke uses the canonical fx startup path and keeps auto server profile resolution', () => {

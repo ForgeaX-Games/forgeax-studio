@@ -48,6 +48,43 @@ describe('desktop build pack scan scope', () => {
     expect(workflow).not.toContain('macos-13');
   });
 
+  it('derives the packaged server role from the desktop bundle profile', () => {
+    const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
+
+    expect(buildScript).toContain('resolveDesktopBundleProfile(process.env)');
+    expect(buildScript).toContain('desktopBundleServerProfile(DESKTOP_BUNDLE_PROFILE)');
+    expect(buildScript).toContain('profile: desktopBundleServerProfile(DESKTOP_BUNDLE_PROFILE)');
+    expect(buildScript).not.toContain('FORGEAX_SERVER_PROFILE');
+  });
+
+  it('keeps full resources intact while selecting lite extensions and excluding games', () => {
+    const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
+
+    expect(buildScript).toContain("scanDesktopExtensions(join(ROOT, 'packages/marketplace/extensions'))");
+    expect(buildScript).toContain("selectDesktopExtensionClosure(parsedExtensions, 'lite')");
+    expect(buildScript).toContain("const selectorModule = './lib/desktop-extension-selection.ts'");
+    expect(buildScript).toContain('await import(selectorModule)');
+    expect(buildScript).not.toMatch(/from ['"]\.\/lib\/desktop-extension-selection\.ts['"]/);
+    expect(buildScript).toContain("new Set(['extensions', 'plugins', 'node_modules', '.git'])");
+    expect(buildScript).toContain("join(RES, 'marketplace/extensions', desktopExtensionOutputName(extension))");
+    expect(buildScript).toContain("copyTree(join(ROOT, 'packages/marketplace'), join(RES, 'marketplace'), new Set(['node_modules', '.git', 'plugins']))");
+    expect(buildScript).toContain("copyTree(join(ROOT, 'packages/marketplace/extensions'), join(RES, 'marketplace/extensions'), new Set(['node_modules', '.git']), true)");
+    expect(buildScript).toContain("process.env.FORGEAX_SKIP_GAMES === '1'");
+    expect(buildScript).toContain('process.env.DESKTOP_GAMES');
+    expect(buildScript).toContain("DESKTOP_BUNDLE_PROFILE === 'lite'");
+    expect(buildScript).toContain('desktopBundleManifest(DESKTOP_BUNDLE_PROFILE)');
+    expect(buildScript).toContain("join(RES, 'runtime', 'desktop-bundle.json')");
+    expect(buildScript).toContain("existsSync(join(RES, 'games'))");
+    expect(buildScript).toContain('capabilities.productWorkbench');
+    expect(buildScript).toContain("full desktop bundle cannot set FORGEAX_SKIP_GAMES=1");
+    expect(buildScript).toContain("full desktop bundle must contain at least one sample game");
+    expect(buildScript).toContain("IS_PLUGIN_RUNTIME");
+    expect(buildScript).toContain("desktop bundle manifest — skipped for Game Runtime staging");
+    expect(buildScript).toContain('required copy failed');
+    expect(buildScript).toContain('full desktop bundle extension count mismatch');
+    expect(buildScript).toContain('lite desktop bundle extension mismatch');
+  });
+
   it('builds a generic play shell without a sibling-games asset producer', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
     const playRuntimeViteConfig = readFileSync(

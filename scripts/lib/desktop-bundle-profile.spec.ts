@@ -3,6 +3,7 @@ import {
   assertDesktopBundleManifest,
   desktopBundleCapabilities,
   desktopBundleManifest,
+  desktopBundleServerProfile,
   resolveDesktopBundleProfile,
 } from './desktop-bundle-profile.ts';
 
@@ -20,6 +21,14 @@ describe('desktop bundle profile', () => {
       .toThrow('FORGEAX_DESKTOP_BUNDLE must be one of lite, full');
     expect(() => resolveDesktopBundleProfile({ FORGEAX_DESKTOP_BUNDLE: 'FULL' }))
       .toThrow('FORGEAX_DESKTOP_BUNDLE must be one of lite, full');
+  });
+
+  it('maps each desktop bundle to its packaged server role', () => {
+    expect(desktopBundleServerProfile('lite')).toBe('base');
+    expect(desktopBundleServerProfile('full')).toBe('auto');
+    expect(desktopBundleServerProfile(resolveDesktopBundleProfile({}))).toBe('auto');
+    expect(() => desktopBundleServerProfile('unknown' as never))
+      .toThrow('desktop bundle profile must be one of lite, full');
   });
 
   it('keeps the capability shape stable across profiles', () => {

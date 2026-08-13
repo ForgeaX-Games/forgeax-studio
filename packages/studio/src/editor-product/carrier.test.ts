@@ -3,6 +3,7 @@ import {
   TRANSPORT_PROTOCOL_VERSION,
   type TransportRequest,
 } from '@forgeax/editor/product';
+import { registerSessionApplier } from '@forgeax/editor-core';
 import {
   connectStudioEditorTransport,
   createStudioEditorTransportService,
@@ -104,6 +105,24 @@ test('Studio editor carrier answers typed requests on the registered socket', as
   expect(socket.readyState).toBe(3);
 });
 
+test('Studio editor carrier publishes gameplay bridge readiness transitions', async () => {
+  const host = globalThis as typeof globalThis & { __forgeax_editor_gameplay?: unknown };
+  const previousGameplay = host.__forgeax_editor_gameplay; host.__forgeax_editor_gameplay = undefined;
+  const socket = new FakeSocket();
+  const carrier = connectStudioEditorTransport('spin-cube', { url: 'ws://studio.test/ws/editor/transport', socketFactory: () => socket, service: { handle: async (value) => value as never } });
+  try {
+    await socket.receive({ type: 'editor-transport/hello', version: TRANSPORT_PROTOCOL_VERSION });
+    expect(JSON.parse(socket.sent.at(-1) ?? '{}')).toMatchObject({ type: 'editor-transport/ready', capabilities: { gameplay: false } });
+    for (const gameplay of [true, false]) {
+      host.__forgeax_editor_gameplay = gameplay ? {} : undefined;
+      await Bun.sleep(110);
+      expect(JSON.parse(socket.sent.at(-1) ?? '{}')).toMatchObject({ type: 'editor-transport/presence', capabilities: { gameplay } });
+    }
+  } finally {
+    carrier.dispose(); host.__forgeax_editor_gameplay = previousGameplay;
+  }
+});
+
 test('Studio editor carrier reconnects after the server socket closes', async () => {
   const sockets: FakeSocket[] = [];
   const carrier = connectStudioEditorTransport('spin-cube', {
@@ -178,6 +197,31 @@ test('Studio editor service accepts runs in the carrier game scope', async () =>
   }));
 
   expect(response).toMatchObject({ result: { status: 'succeeded' } });
+});
+
+test('Studio editor service refreshes late viewport play and stop appliers', async () => {
+  const service = createStudioEditorTransportService('game:spin-cube');
+  const unregister: Array<() => void> = [];
+  const dispatch = (id: string, operationId: string, input: unknown) => service.handle(request(id, 'run.dispatch', {
+    operationId,
+    input,
+    scope: 'game:spin-cube',
+    actor: { id: 'carrier-test', kind: 'ai' },
+    sessionId: 'carrier-test',
+    permission: 'execute',
+  }));
+  try {
+    unregister.push(registerSessionApplier('play', () => ({ ok: true })));
+    unregister.push(registerSessionApplier('stop', () => ({ ok: true })));
+
+    expect(await dispatch('late-play', 'editor.play', { dirtyPolicy: 'last-saved' }))
+      .toMatchObject({ result: { status: 'succeeded' } });
+    expect(await dispatch('late-stop', 'editor.stop', {}))
+      .toMatchObject({ result: { status: 'succeeded' } });
+  } finally {
+    for (const dispose of unregister.reverse()) dispose();
+    service.dispose();
+  }
 });
 
 test('Studio editor service projects the canonical document as serializable content', async () => {

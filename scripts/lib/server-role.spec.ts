@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as serverRole from './server-role.ts';
 
-const { resolveActiveServerRole } = serverRole;
+const { isDeclaredServerRole, resolveActiveServerRole } = serverRole;
 const fileSymlinkIt = process.platform === 'win32' ? it.skip : it;
 
 const roots: string[] = [];
@@ -175,6 +175,39 @@ describe('serverRuntimeInvocation', () => {
     const command = `bun --watch ${invocation.entryPath}`;
 
     expect(new RegExp(invocation.orphanSignature).test(command)).toBe(true);
+  });
+});
+
+describe('isDeclaredServerRole', () => {
+  it('accepts base and exact declared override identities only', () => {
+    const root = fixture();
+    override(root, 'server-pro', 10, 'src/start.ts');
+    writePackage(root, 'unrelated', { name: '@example/unrelated', entry: 'src/main.ts' });
+    writePackage(root, 'server-mismatch', {
+      name: '@example/server-mismatch',
+      entry: 'src/actual.ts',
+      metadata: { runtimeRole: 'server', entry: 'src/declared.ts', priority: 10 },
+    });
+
+    expect(isDeclaredServerRole(root, { packageDir: join(root, 'packages/server'), entry: 'src/main.ts' })).toBe(true);
+    expect(isDeclaredServerRole(root, { packageDir: join(root, 'packages/server-pro'), entry: 'src/start.ts' })).toBe(true);
+    expect(isDeclaredServerRole(root, { packageDir: join(root, 'packages/unrelated'), entry: 'src/main.ts' })).toBe(false);
+    expect(isDeclaredServerRole(root, { packageDir: join(root, 'packages/server-mismatch'), entry: 'src/actual.ts' })).toBe(false);
+    expect(isDeclaredServerRole(root, { packageDir: join(root, 'packages/missing'), entry: 'src/main.ts' })).toBe(false);
+  });
+
+  fileSymlinkIt('rejects copied-root and in-packages symlink identities', () => {
+    const root = fixture();
+    const copiedRoot = fixture();
+    override(root, 'server-pro', 10);
+    symlinkSync(
+      join(root, 'packages/server-pro'),
+      join(root, 'packages/server-link'),
+      'dir',
+    );
+
+    expect(isDeclaredServerRole(root, { packageDir: join(copiedRoot, 'packages/server'), entry: 'src/main.ts' })).toBe(false);
+    expect(isDeclaredServerRole(root, { packageDir: join(root, 'packages/server-link'), entry: 'src/main.ts' })).toBe(false);
   });
 });
 

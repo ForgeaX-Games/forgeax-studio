@@ -59,9 +59,8 @@ import { registerKeyboardRouterDeps, type KeyboardRouterDeps } from '@forgeax/in
 // editor standalone host produce the SAME dep object. Without this registration
 // studio's global keydown router has no editor callbacks, so G/Esc (display
 // toggle: game↔scene, i.e. "▶ Play 后按 Esc 回到 edit 模式") does nothing while
-// the GameOverlay button — which dispatches directly — still works. That split
-// was the diagnostic signal. window.confirm backs the risky multi-asset delete
-// (studio has no DeleteGuardDialog).
+// the GameOverlay button — which dispatches directly — still works. Focus-owned
+// F2/Delete/Mod+A no longer pass through this legacy bridge.
 import { buildKeyboardRouterDeps } from '@forgeax/editor/keyboard-router-deps';
 import { studioExtensions } from './panels/editorRenderers';
 import { subscribeEditorFactsPublisher } from './editor-product/editor-facts-publisher';
@@ -191,23 +190,7 @@ function bootFullShell(el: HTMLElement) {
   // editor-agnostic). Must run before <App> mounts so useGlobalShortcuts reads
   // them at effect time. Mirrors editor/standalone/main.tsx.
   registerKeyboardRouterDeps(
-    buildKeyboardRouterDeps({
-      confirmDeleteAssets: (assets) =>
-        Promise.resolve(
-          window.confirm(`Delete ${assets.length} assets? This cannot be undone.`),
-        ),
-      confirmDeleteFolder: (folderPath) =>
-        Promise.resolve(
-          window.confirm(`Delete folder "${folderPath}" and all its contents?`),
-        ),
-      promptRenameAsset: (currentName) =>
-        Promise.resolve(window.prompt('New name', currentName)),
-      // Cast through unknown: buildKeyboardRouterDeps returns the structural
-      // KeyboardRouterDepsShape (edit-runtime declares it locally to stay off the
-      // L1 framework); interface's KeyboardRouterDeps has since added richer asset
-      // fields (kind/payload) the router doesn't read, so the shapes no longer
-      // directly overlap. The builder is designed to be bridged at the call site.
-    }) as unknown as KeyboardRouterDeps,
+    buildKeyboardRouterDeps() as KeyboardRouterDeps,
   );
 
   createRoot(el).render(

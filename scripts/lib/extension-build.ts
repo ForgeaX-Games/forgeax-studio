@@ -2,6 +2,14 @@ export type ExtensionPackage = {
   packageManager?: string;
 };
 
+export type ExtensionPackageManager = 'bun' | 'pnpm';
+
+export type ExtensionPackageManagerSignals = Readonly<{
+  bunLock: boolean;
+  pnpmLock: boolean;
+  pnpmWorkspace: boolean;
+}>;
+
 export type ExtensionBuildCommand = readonly [command: string, args: readonly string[]];
 
 export class UnsupportedExtensionPackageManagerError extends Error {
@@ -14,18 +22,33 @@ export class UnsupportedExtensionPackageManagerError extends Error {
   }
 }
 
+export function extensionPackageManagerFallback(
+  signals: ExtensionPackageManagerSignals,
+): ExtensionPackageManager {
+  if (signals.bunLock) return 'bun';
+  if (signals.pnpmLock || signals.pnpmWorkspace) return 'pnpm';
+  return 'bun';
+}
+
+export function extensionPackageManager(
+  pkg: ExtensionPackage,
+  fallback?: ExtensionPackageManager,
+): ExtensionPackageManager {
+  if (pkg.packageManager?.startsWith('bun@')) return 'bun';
+  if (pkg.packageManager?.startsWith('pnpm@')) return 'pnpm';
+  if (!pkg.packageManager && fallback) return fallback;
+  throw new UnsupportedExtensionPackageManagerError(pkg.packageManager);
+}
+
 export function extensionBuildCommands(pkg: ExtensionPackage): ExtensionBuildCommand[] {
-  if (pkg.packageManager?.startsWith('bun@')) {
+  if (extensionPackageManager(pkg) === 'bun') {
     return [
       ['bun', ['install', '--frozen-lockfile']],
       ['bun', ['run', 'build']],
     ];
   }
-  if (pkg.packageManager?.startsWith('pnpm@')) {
-    return [
-      ['pnpm', ['install', '--no-frozen-lockfile']],
-      ['pnpm', ['build']],
-    ];
-  }
-  throw new UnsupportedExtensionPackageManagerError(pkg.packageManager);
+  return [
+    ['pnpm', ['install', '--no-frozen-lockfile']],
+    ['pnpm', ['build']],
+  ];
 }

@@ -42,7 +42,7 @@ drop into a visual editor to tweak the scene directly at any time.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
-## 🆕 What's new in v0.3.24
+## 🆕 What's new in v0.3.23
 
 - **Asset Canvas workflow** — shared Workbench Host integration unifies asset orchestration, model services, and media adapters.
 - **Stronger scene authoring** — scene creation, duplication, deletion, default scenes, and field editing now have clearer, safer boundaries.
@@ -67,13 +67,15 @@ drop into a visual editor to tweak the scene directly at any time.
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
 bun install         # deps + engine/wasm build; scaffolds .env (set ANTHROPIC_API_KEY)
-bun fx start         # starts Studio and opens the default web client
-# open http://localhost:18920 and tell Forge what to build
+bun fx start         # starts Studio services
+bun fx open          # focuses/opens Studio in your normal Chrome
 ```
 
-This superproject wires the engine, server, UI, editor, marketplace and games as
+This superproject wires the engine, server, UI, editor and marketplace as
 git submodules under `packages/`. Each submodule is its own repo in the
 [ForgeaX-Games](https://github.com/ForgeaX-Games) org, with its own deep-dive README.
+The optional `forgeax-games` consumer checkout is deliberately not part of this
+pin graph; materialise it locally with `bun games:sync` when you need its samples.
 
 ## 📦 Packages (submodules)
 
@@ -85,7 +87,6 @@ git submodules under `packages/`. Each submodule is its own repo in the
 | [`editor`](https://github.com/ForgeaX-Games/forgeax-editor) | visual scene editor — Edit/Play on one disk-backed scene |
 | [`orchestrator`](https://github.com/ForgeaX-Games/forgeax-orchestrator) | multi-agent orchestration layer — AgentTree, XML ledger, slot prompts |
 | [`marketplace`](https://github.com/ForgeaX-Games/forgeax-marketplace) | persona agents · skills · visual workbench plugins (content-as-data) |
-| [`games`](https://github.com/ForgeaX-Games/forgeax-games) | shared library of real, agent-authored games |
 | [`build`](https://github.com/ForgeaX-Games/forgeax-build) | build & packaging — recipe + validator pipeline |
 
 ## 🖥️ Runtime forms

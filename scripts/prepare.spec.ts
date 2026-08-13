@@ -23,6 +23,15 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain('FORGEAX_SKIP_PREPARE');
     expect(src).toContain('FORGEAX_FORCE_PREPARE');
   });
+  it('builds linked shared contracts before the CLI consumes their exports', () => {
+    const src = prepareSource();
+    const contractsBuild = "spawnSync('node', ['scripts/build-packages.mjs']";
+    const cliBuild = "spawnSync('bun', ['run', 'build']";
+    expect(src).toContain("join(ROOT, 'packages/contracts')");
+    expect(src).toContain('types/dist/permission-rules.js');
+    expect(src).toContain('agent-runtime/dist/index.js');
+    expect(src.indexOf(contractsBuild)).toBeLessThan(src.indexOf(cliBuild));
+  });
   it('covers assets-runtime in prepare and start engine entry gates', () => {
     const prepare = prepareSource();
     const run = runSource();
@@ -85,6 +94,16 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).toMatch(/engineEntryPkgs\s*=\s*\[[^\]]*['"]npc['"]/);
     expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-npc...');
+  });
+  it('builds the network packages required by the editor engine Vitest graph', () => {
+    const prepare = prepareSource();
+    const run = runSource();
+    expect(prepare).toMatch(/engineEntryPkgs\s*=\s*\[[\s\S]*['"]net['"]/);
+    expect(run).toMatch(/engineEntryPkgs\s*=\s*\[[\s\S]*['"]net['"]/);
+    expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-net...');
+    expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-net-websocket...');
+    expect(prepare).toContain("join(enginePkgDir, 'net-websocket', 'dist', 'browser.mjs')");
+    expect(prepare).toContain("join(enginePkgDir, 'net-websocket', 'dist', 'node.mjs')");
   });
   it('uses each standalone plugin package manager while preserving Bun retry behavior', () => {
     const src = prepareSource();
@@ -175,6 +194,12 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain("'submodule', 'update', '--init', '--recursive', ...depth, '--', path]");
     expect(src).not.toContain("fail('git submodule update failed.')");
     expect(src).toContain('formatPrepareReport');
+  });
+
+  it('can trust the parallel worktree bootstrap instead of repeating serial submodule init', () => {
+    const src = prepareSource();
+    expect(src).toContain('FORGEAX_SKIP_SUBMODULE_INIT');
+    expect(src).toContain('materialized by bun fx worktree');
   });
   it('prints per-submodule start/end diagnostics with exit and duration', () => {
     const src = prepareSource();

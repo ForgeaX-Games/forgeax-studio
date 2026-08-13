@@ -40,6 +40,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rewritePackagedEngineViteConfig } from './lib/desktop-engine-config.ts';
 import { desktopServerEntryAdapter, resolveActiveServerRole } from './lib/server-role.ts';
 import { resolveBunDependency } from './lib/runtime-dependency-closure.ts';
 import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
@@ -409,13 +410,7 @@ for (const f of ['index.html', 'vite.config.ts', 'package.json', 'pack-catalog.t
   const vcPath = join(ENG, 'vite.config.ts');
   if (existsSync(vcPath)) {
     const src = readFileSync(vcPath, 'utf8');
-    const patched = src.replace(
-      /from\s+['"]\.\.\/core\/src\/asset-roots['"]/g,
-      "from '@forgeax/editor-core/asset-roots'",
-    ).replace(
-      /from\s+['"]\.\.\/\.\.\/engine-vite-preset['"]/g,
-      "from './engine-vite-preset.mjs'",
-    );
+    const patched = rewritePackagedEngineViteConfig(src);
     if (patched !== src) {
       writeFileSync(vcPath, patched);
       log('  patched vite.config.ts for packaged editor-core + engine preset imports');

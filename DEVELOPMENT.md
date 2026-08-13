@@ -56,23 +56,28 @@ user root 的唯一执行真源；本文只描述流程，不能替代 `bun fx i
 实际输出。
 
 ```bash
-# 1. 用户创建 worktree；不要在主 checkout 切分支。
-git worktree add .worktrees/my-change -b my-change
+# 1. 一键创建完整 worktree；不要在主 checkout 切分支。
+bun fx worktree my-change --isolate-user --env-file /path/to/local.env
 cd .worktrees/my-change
 
-# 2. 每个 worktree 分别安装依赖；根 prepare 会同步准备所需 submodule。
-bun install      # runs package.json prepare → scripts/prepare.ts
+# 2. 上一条命令已经完成 recursive submodule、浮动仓、依赖、prepare 和 slot 分配。
+#    如果创建时传了 --no-setup / --fast，才需要手动补完整 prepare：
+# bun fx setup
 
-# 3. 选择未被其他 worktree 使用的 slot（worktree 通常使用 1..4）。
-bun fx instance init --slot 1 --isolate-user --env-file /path/to/local.env
+# 3. 查看命令自动分配的 RuntimeInstance；也可以创建时传 --slot N 固定它。
+bun fx instance show
 
 # 4. 日常生命周期。
-bun fx instance show
 bun fx start
 bun fx status
 bun fx open
 bun fx stop
 ```
+
+`bun fx worktree <name>` 默认创建 `codex/<name>` branch 到 `.worktrees/<name>`，并优先
+从当前 checkout 本地 clone 各种浮动仓，以避免重复网络拉取；缺失的浮动仓才走 origin
+初始化。`--no-setup`（别名 `--fast`）保留 submodule、浮动仓、依赖和 RuntimeInstance，
+只跳过安装后的重型 prepare。
 
 slot `0` 保留为未配置 checkout 的兼容默认值；并行 worktree 应从 `1..4` 选择。
 同一 slot 会派生相同的 OS 监听端口，因此即使是不同 worktree 也会冲突，必须分配

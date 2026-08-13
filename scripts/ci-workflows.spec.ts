@@ -22,6 +22,7 @@ const authorWorkflow = read('.github/workflows/require-human-author.yml');
 const postMergeWorkflow = read('.github/workflows/post-merge-gate.yml');
 const postMergeMonitor = read('.github/workflows/post-merge-monitor.yml');
 const weeklyRelease = read('.github/workflows/weekly-release.yml').replace(/\r\n/gu, '\n');
+const releaseSuccessNotify = read('.github/workflows/release-success-notify.yml');
 const postMergeScript = read('scripts/ci/post-merge-gate.sh');
 const pinChangeScript = read('scripts/ci/submodule-pin-change.sh');
 const tokenAccessScript = read('scripts/ci/check-internal-token-access.sh');
@@ -62,6 +63,13 @@ const requiredValidationJobs = [
 ] as const;
 
 describe('CI workflow orchestration', () => {
+  it('renders release notification dates without a runner tzdata dependency', () => {
+    expect(releaseSuccessNotify).toContain('from datetime import datetime, timedelta, timezone');
+    expect(releaseSuccessNotify).toContain('timezone(timedelta(hours=8))');
+    expect(releaseSuccessNotify).not.toContain('from zoneinfo import ZoneInfo');
+    expect(releaseSuccessNotify).not.toContain('ZoneInfo("Asia/Shanghai")');
+  });
+
   it('keeps SFC-07 standard, heavy, and aggregate on distinct capability paths', () => {
     const scope = jobBlock(ci, 'sfc07-scope');
     const standard = jobBlock(ci, 'sfc07-standard');

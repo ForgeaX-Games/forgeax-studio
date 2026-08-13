@@ -41,19 +41,28 @@ import {
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rewritePackagedEngineViteConfig } from './lib/desktop-engine-config.ts';
-import { resolveDesktopBundleProfile } from './lib/desktop-bundle-profile.ts';
+import {
+  desktopBundleManifest,
+  desktopBundleServerProfile,
+  resolveDesktopBundleProfile,
+} from './lib/desktop-bundle-profile.ts';
 import { desktopServerEntryAdapter, resolveActiveServerRole } from './lib/server-role.ts';
 import { resolveBunDependency } from './lib/runtime-dependency-closure.ts';
 import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
 import { writeVersionJson } from './lib/version.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const activeServer = resolveActiveServerRole({
-  root: ROOT,
-  profile: process.env.FORGEAX_SERVER_PROFILE,
-});
 const BUN = process.execPath;
 const IS_WIN = process.platform === 'win32';
+
+let desktopExtensionSelectionModule: any;
+async function loadDesktopExtensionSelection() {
+  // Keep the lite-only selector outside Game Runtime's build graph. Its staged
+  // release closure intentionally excludes marketplace manifest contracts.
+  const selectorModule = './lib/desktop-extension-selection.ts';
+  desktopExtensionSelectionModule ??= await import(selectorModule);
+  return desktopExtensionSelectionModule;
+}
 
 // ── args ──────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -72,7 +81,15 @@ const DESKTOP_BUNDLE_PROFILE = (() => {
     process.exit(1);
   }
 })();
+// Desktop assembly derives the server role from the already-resolved bundle
+// profile. The build boundary intentionally does not read the source/dev server
+// profile environment: a payload must be self-consistent.
+const activeServer = resolveActiveServerRole({
+  root: ROOT,
+  profile: desktopBundleServerProfile(DESKTOP_BUNDLE_PROFILE),
+});
 const SKIP_FRONTEND = flag('--skip-frontend');
+const IS_PLUGIN_RUNTIME = process.env.FORGEAX_PLUGIN_RUNTIME === '1';
 
 const STUDIO = process.env.STUDIO ?? '1';
 // Engine now lives as the editor's nested submodule (top-level packages/engine
@@ -81,6 +98,11 @@ const ENGINE_ROOT = join(ROOT, 'packages/editor/packages/engine');
 const IFACE = STUDIO === '1' ? join(ROOT, 'packages/studio') : join(ROOT, 'packages/interface');
 const RES = join(ROOT, 'packages/interface/src-tauri/resources');
 const BIN = join(ROOT, 'packages/interface/src-tauri/binaries');
+let liteSelectedExtensions: Array<{
+  id: string;
+  dir: string;
+  capabilities: { productWorkbench: boolean };
+}> = [];
 
 const log = (s: string) => console.log(`[build-desktop] ${s}`);
 const warn = (s: string) => console.error(`[build-desktop]   WARN: ${s}`);
@@ -132,8 +154,16 @@ function run(cmd: string, args: string[], cwd: string = ROOT): void {
  * the tree (mirrors rsync's non-anchored --exclude), and additionally support
  * `*.ext` suffix globs (e.g. '*.tgz', '*.db-wal').
  */
-function copyTree(src: string, dest: string, exclude: Set<string> = new Set(['node_modules', '.git'])): void {
-  if (!existsSync(src)) return;
+function copyTree(
+  src: string,
+  dest: string,
+  exclude: Set<string> = new Set(['node_modules', '.git']),
+  required = false,
+): void {
+  if (!existsSync(src)) {
+    if (required) die(`required copy source is missing: ${src}`);
+    return;
+  }
   const isExcluded = (base: string): boolean => {
     for (const pat of exclude) {
       if (pat.startsWith('*.')) {
@@ -150,6 +180,9 @@ function copyTree(src: string, dest: string, exclude: Set<string> = new Set(['no
       filter: (s) => !isExcluded(basename(s)),
     });
   } catch (e) {
+    if (required) {
+      die(`required copy failed ${src} → ${dest}: ${(e as Error).message}`);
+    }
     // Tolerate transient "file vanished" while copying a live tree (IDE/watcher
     // deleting temp files mid-copy) — mirrors the bash version's `|| true`.
     warn(`partial copy ${src} → ${dest}: ${(e as Error).message}`);
@@ -381,10 +414,38 @@ mkdirSync(join(RES, 'interface/dist/editor'), { recursive: true });
 mkdirSync(join(RES, 'interface/dist/preview'), { recursive: true });
 copyTree(join(ROOT, 'packages/editor/packages/edit-runtime/dist'), join(RES, 'interface/dist/editor'), new Set());
 copyTree(join(ROOT, 'packages/editor/packages/play-runtime/dist'), join(RES, 'interface/dist/preview'), new Set());
-// marketplace ROOT files (manifest.json + src) minus plugins/node_modules/.git
-copyTree(join(ROOT, 'packages/marketplace'), join(RES, 'marketplace'), new Set(['node_modules', '.git', 'plugins']));
-// plugin dists + single-file plugins + manifests (server serves these as iframes)
-copyTree(join(ROOT, 'packages/marketplace/extensions'), join(RES, 'marketplace/extensions'), new Set(['node_modules', '.git']));
+if (DESKTOP_BUNDLE_PROFILE === 'lite') {
+  // Keep marketplace metadata/personas, then add only the selector's complete
+  // extension directories. The selector owns classification and dependency
+  // closure; this builder only materializes its result.
+  copyTree(
+    join(ROOT, 'packages/marketplace'),
+    join(RES, 'marketplace'),
+    new Set(['extensions', 'plugins', 'node_modules', '.git']),
+  );
+  const {
+    desktopExtensionOutputName,
+    scanDesktopExtensions,
+    selectDesktopExtensionClosure,
+  } = await loadDesktopExtensionSelection();
+  const parsedExtensions = scanDesktopExtensions(join(ROOT, 'packages/marketplace/extensions'));
+  const liteSelection = selectDesktopExtensionClosure(parsedExtensions, 'lite');
+  liteSelectedExtensions = [...liteSelection.included];
+  for (const warning of liteSelection.warnings) warn(`lite extension selection: ${warning}`);
+  for (const extension of liteSelectedExtensions) {
+    copyTree(
+      extension.dir,
+      join(RES, 'marketplace/extensions', desktopExtensionOutputName(extension)),
+      new Set(['node_modules', '.git']),
+      true,
+    );
+  }
+} else {
+  // Full keeps the established payload: marketplace root plus the complete
+  // built-in extension tree (with only dependency/VCS trees excluded).
+  copyTree(join(ROOT, 'packages/marketplace'), join(RES, 'marketplace'), new Set(['node_modules', '.git', 'plugins']));
+  copyTree(join(ROOT, 'packages/marketplace/extensions'), join(RES, 'marketplace/extensions'), new Set(['node_modules', '.git']), true);
+}
 
 // ── 6 engine (vite preview) source + cycle-safe node_modules ────────────────
 log('6/7 copying engine (vite preview) source + node_modules…');
@@ -515,8 +576,14 @@ if (existsSync(editorTemplateCatalogSource)) {
 // Multiple games sharing base-asset GUIDs break the preview's global pack scan,
 // so ship a single clean example by default. Override: DESKTOP_GAMES="a b c".
 const gamesSrc = join(ROOT, 'packages/games');
-if (process.env.FORGEAX_SKIP_GAMES === '1') {
-  log('6/7 shared game payload — skipped (FORGEAX_SKIP_GAMES=1)');
+let bundledSharedGames = 0;
+if (DESKTOP_BUNDLE_PROFILE === 'lite') {
+  log('6/7 shared game payload — skipped (lite bundle)');
+} else if (process.env.FORGEAX_SKIP_GAMES === '1') {
+  if (!IS_PLUGIN_RUNTIME) {
+    die('full desktop bundle cannot set FORGEAX_SKIP_GAMES=1; use FORGEAX_DESKTOP_BUNDLE=lite');
+  }
+  log('6/7 shared game payload — skipped for Game Runtime staging');
 } else if (existsSync(gamesSrc)) {
   const desktopGames = (process.env.DESKTOP_GAMES ?? 'spin-cube').split(/\s+/).filter(Boolean);
   const gamesDst = join(RES, 'games');
@@ -533,9 +600,54 @@ if (process.env.FORGEAX_SKIP_GAMES === '1') {
       gdir,
       join(gamesDst, gname),
       new Set(['node_modules', '.git', '*.db-wal', '*.db-shm', '*.sqlite-wal', '*.sqlite-shm']),
+      true,
     );
+    bundledSharedGames += 1;
     log(`  bundled shared game: ${gname}`);
   }
+}
+
+// Materialize the profile contract only after all selected resources have been
+// copied. A lite payload must be provably free of games/product extensions and
+// must use the base server role; full deliberately retains the historical tree.
+const desktopBundleManifestPath = join(RES, 'runtime', 'desktop-bundle.json');
+if (!IS_PLUGIN_RUNTIME && DESKTOP_BUNDLE_PROFILE === 'full' && bundledSharedGames === 0) {
+  die('full desktop bundle must contain at least one sample game');
+}
+if (!IS_PLUGIN_RUNTIME && DESKTOP_BUNDLE_PROFILE === 'full') {
+  const { scanDesktopExtensions } = await loadDesktopExtensionSelection();
+  const sourceExtensions = scanDesktopExtensions(join(ROOT, 'packages/marketplace/extensions'));
+  const stagedExtensions = scanDesktopExtensions(join(RES, 'marketplace/extensions'));
+  if (sourceExtensions.length !== stagedExtensions.length) {
+    die(`full desktop bundle extension count mismatch: expected ${sourceExtensions.length}, staged ${stagedExtensions.length}`);
+  }
+}
+if (DESKTOP_BUNDLE_PROFILE === 'lite') {
+  const { scanDesktopExtensions } = await loadDesktopExtensionSelection();
+  if (desktopBundleServerProfile(DESKTOP_BUNDLE_PROFILE) !== 'base'
+    || activeServer.packageDir !== join(ROOT, 'packages/server')) {
+    die('lite desktop bundle must use the base server profile');
+  }
+  if (existsSync(join(RES, 'games'))) {
+    die('lite desktop bundle must not contain resources/games');
+  }
+  if (liteSelectedExtensions.some(({ capabilities }) => capabilities.productWorkbench)) {
+    die('lite desktop bundle must not contain product extensions');
+  }
+  const stagedIds = scanDesktopExtensions(join(RES, 'marketplace/extensions')).map(({ id }) => id).sort();
+  const selectedIds = liteSelectedExtensions.map(({ id }) => id).sort();
+  if (JSON.stringify(stagedIds) !== JSON.stringify(selectedIds)) {
+    die(`lite desktop bundle extension mismatch: selected ${selectedIds.length}, staged ${stagedIds.length}`);
+  }
+}
+if (IS_PLUGIN_RUNTIME) {
+  log('desktop bundle manifest — skipped for Game Runtime staging');
+} else {
+  writeFileSync(
+    desktopBundleManifestPath,
+    `${JSON.stringify(desktopBundleManifest(DESKTOP_BUNDLE_PROFILE), null, 2)}\n`,
+  );
+  log(`desktop bundle manifest: ${desktopBundleManifestPath}`);
 }
 
 // ── 7 stage bun runtime as sidecar ──────────────────────────────────────────

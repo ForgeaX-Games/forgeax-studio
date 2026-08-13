@@ -77,7 +77,7 @@ export interface ExtensionPort {
   /** Keep-alive panel visibility. The host CSS-hides inactive plugin iframes
    *  instead of unmounting them (no reload / cold-start on tab switch); this
    *  tells the plugin whether it is the visible tab so heavy plugins can pause
-   *  their render loop while hidden. See docs/.../06-WORKBENCH-THREE-PANE-V2.md. */
+   *  their render loop while hidden. See .forgeax-harness/docs/.../06-WORKBENCH-THREE-PANE-V2.md. */
   setVisibility(visible: boolean): void;
 
   /** Plugin requested the host switch the active workbench to another plugin,

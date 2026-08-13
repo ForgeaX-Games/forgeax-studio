@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // exemplar-replay.mjs — agent-native 打样 case 的确定性回放与验收。
 //
-// 复现 docs/ai-native/agent-native-exemplar.md 描述的 demo,并断言五条不变量。
+// 复现 .forgeax-harness/docs/ai-native/agent-native-exemplar.md 描述的 demo,并断言五条不变量。
 // 按需跑的验收脚本,不是 CI 门禁 —— 需要一套跑着的 Studio 栈。
 //
 // 断言纪律(反冻结镜像):只断言"门"的不变量 —— 经 dispatch 进门、账本带

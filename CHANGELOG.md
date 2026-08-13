@@ -193,7 +193,7 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 
 ### 内部 / agent 视角
 
-- **【架构】** `surface: split` + `panes.{left,center}` 协议位 · 见 `docs/06-WORKBENCH-THREE-PANE-V2.md`,商店端透传到 host。
+- **【架构】** `surface: split` + `panes.{left,center}` 协议位 · 见 `.forgeax-harness/docs/06-WORKBENCH-THREE-PANE-V2.md`,商店端透传到 host。
 - **【文档】** Architecture-evolution v3 起草 · 15-doc 草案,把 v2(2026-05-15)推进到 v3(packs/permissions/ledger + bus 协议位)。
 - **【基建】** `run.sh` 接 nvm + 调用新 `stop.sh` · 启停脚本闭环;无 `nvm.sh` 时 graceful 跳过。
 
@@ -1268,4 +1268,3 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 | `bash scripts/version.sh check` | 比对 CHANGELOG 顶版本 vs git 最新,差太多警告 |
 | `bash scripts/version.sh stats YYYY-MM-DD` | 当日跨 9 仓 +X/-Y 统计(填"代码增量"行用) |
 | `GET /api/version` | server 启动后查 |
-

@@ -1,10 +1,10 @@
 # ForgeaX Security Policy
 
-> Version: 0.1 · 2026-05-22 · Aligned with [ADR-0014 trust model](./docs/decisions/0014-trust-model-default-deny-runtime-confirm.md)
+> Version: 0.1 · 2026-05-22 · Aligned with [ADR-0014 trust model](./.forgeax-harness/docs/decisions/0014-trust-model-default-deny-runtime-confirm.md)
 
 ## Reporting a vulnerability
 
-Email **dev@forgeax.local** with subject `SECURITY: <one-line summary>`. Encrypt with the project key in `docs/security/forgeax-public.pgp` if you can; plain mail is acceptable. We aim to acknowledge within 72 hours.
+Email **dev@forgeax.local** with subject `SECURITY: <one-line summary>`. Encrypt with the project key in `.forgeax-harness/docs/security/forgeax-public.pgp` if you can; plain mail is acceptable. We aim to acknowledge within 72 hours.
 
 Please do **not** open a public GitHub issue for security-sensitive findings.
 
@@ -16,7 +16,7 @@ Please do **not** open a public GitHub issue for security-sensitive findings.
 
 ## Out of scope (v1)
 
-- **Runtime permission enforcement.** Manifest-declared permissions are advisory in v1: the host does NOT yet gate `fs:*` or `net:*` calls at runtime. A plugin that lies in its manifest can touch arbitrary paths under the daemon's UID. This gap is explicitly tracked under `docs/decisions/0014-...md` "Consequences" and is the next milestone after `.fxpack` portability lands.
+- **Runtime permission enforcement.** Manifest-declared permissions are advisory in v1: the host does NOT yet gate `fs:*` or `net:*` calls at runtime. A plugin that lies in its manifest can touch arbitrary paths under the daemon's UID. This gap is explicitly tracked under `.forgeax-harness/docs/decisions/0014-...md` "Consequences" and is the next milestone after `.fxpack` portability lands.
 - **Sandboxed plugin processes.** Plugins run in-process today. Worker-pool isolation is on the roadmap (`13-MIGRATION-ROADMAP §D4` worker pool).
 - **Cross-platform native code.** `.fxpack` exports reject native binaries (`.so/.dll/.dylib/.node`); receivers cannot run them via the standard import flow.
 - **Network isolation between plugins.** Plugins on the same host share the daemon's network egress. Use `permissions: ["net:..."]` to declare intent; enforcement is future work.

@@ -196,13 +196,13 @@ describe('CI workflow orchestration', () => {
     expect(securityScan).toContain('--exclude-paths "$RUNNER_TEMP/trufflehog-release-excludes.txt"');
   });
 
-  it('keeps the forgeax-build-game contract in the required non-docs boundary workflow', () => {
+  it('keeps the forgeax-build-game source-harness contract in the required non-docs boundary workflow', () => {
     const boundaryJob = jobBlock(boundaries, 'lint-boundaries');
-    expect(boundaryJob).toContain('name: Sync floating Studio harness');
+    expect(boundaryJob).toContain('name: Ensure source Studio harness');
     expect(boundaryJob).toContain('GH_TOKEN: ${{ secrets.INTERNAL_TOKEN }}');
-    expect(boundaryJob).toContain('run: bun scripts/sync-harness.mjs');
+    expect(boundaryJob).toContain('run: bun scripts/sync-package-harness.mjs --ensure');
     expect(boundaryJob).toContain('run: bun run test:forgeax-build-game');
-    expect(boundaryJob.indexOf('run: bun scripts/sync-harness.mjs')).toBeLessThan(
+    expect(boundaryJob.indexOf('run: bun scripts/sync-package-harness.mjs --ensure')).toBeLessThan(
       boundaryJob.indexOf('run: bun run test:forgeax-build-game'),
     );
   });

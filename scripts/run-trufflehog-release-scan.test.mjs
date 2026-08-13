@@ -211,7 +211,7 @@ test("prints only sanitized finding metadata when the scanner reports a finding"
 test("keeps the release scan allowlist explicit and content-bound", () => {
   const allowlist = JSON.parse(readFileSync(resolve(dirname(script), "trufflehog-release-allowlist.json"), "utf8"));
   assert.equal(allowlist.version, 1);
-  assert.equal(allowlist.entries.length, 13);
+  assert.equal(allowlist.entries.length, 14);
   const lobEntries = allowlist.entries.filter((entry) => entry.detector === "Lob");
   assert.equal(lobEntries.length, 3);
   for (const entry of lobEntries) {
@@ -227,7 +227,7 @@ test("keeps the release scan allowlist explicit and content-bound", () => {
   }
   assert.equal(allowlist.entries.some((entry) => entry.path.endsWith(".tar.gz")), false);
   const runtimeEntries = allowlist.entries.filter((entry) => entry.path.includes(".tar.gz.contents/"));
-  assert.equal(runtimeEntries.length, 10);
+  assert.equal(runtimeEntries.length, 11);
   assert.ok(runtimeEntries.every((entry) => entry.mode === "package"));
   assert.ok(runtimeEntries.every((entry) => ["GCP", "Postgres", "URI"].includes(entry.detector)));
   assert.ok(runtimeEntries.every((entry) => Number.isInteger(entry.detectorType)));

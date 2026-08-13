@@ -41,6 +41,7 @@ import {
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rewritePackagedEngineViteConfig } from './lib/desktop-engine-config.ts';
+import { resolveDesktopBundleProfile } from './lib/desktop-bundle-profile.ts';
 import { desktopServerEntryAdapter, resolveActiveServerRole } from './lib/server-role.ts';
 import { resolveBunDependency } from './lib/runtime-dependency-closure.ts';
 import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
@@ -63,6 +64,14 @@ const opt = (name: string): string | undefined => {
 };
 const NO_SIDECAR = flag('--no-sidecar');
 const SKIP_INSTALL = flag('--skip-install');
+const DESKTOP_BUNDLE_PROFILE = (() => {
+  try {
+    return resolveDesktopBundleProfile(process.env);
+  } catch (error) {
+    console.error(`[build-desktop] ERROR: ${(error as Error).message}`);
+    process.exit(1);
+  }
+})();
 const SKIP_FRONTEND = flag('--skip-frontend');
 
 const STUDIO = process.env.STUDIO ?? '1';
@@ -79,6 +88,7 @@ const die = (s: string): never => {
   console.error(`[build-desktop] ERROR: ${s}`);
   process.exit(1);
 };
+log(`desktop bundle profile: ${DESKTOP_BUNDLE_PROFILE}`);
 log(`active server runtime package: ${activeServer.packageName}`);
 
 function readJson(file: string): any {

@@ -10,6 +10,7 @@ const ciManifest = loadCiContractFiles(ROOT).manifest;
 
 const ci = read('.github/workflows/ci.yml');
 const sfc07 = read('.github/workflows/sfc07.yml');
+const runtimePublish = read('.github/workflows/game-runtime-publish.yml');
 const boundaries = read('.github/workflows/boundaries.yml');
 const pins = read('.github/workflows/submodule-pins.yml');
 const nightly = read('.github/workflows/nightly-e2e.yml');
@@ -25,6 +26,7 @@ const postMergeScript = read('scripts/ci/post-merge-gate.sh');
 const pinChangeScript = read('scripts/ci/submodule-pin-change.sh');
 const tokenAccessScript = read('scripts/ci/check-internal-token-access.sh');
 const recursiveInputAction = read('.github/actions/fetch-submodules/action.yml');
+const requiredChecks = JSON.parse(read('scripts/ci/required-checks.json')) as string[];
 const ordinaryContractSources = [...new Set(ciManifest.consumers
   .filter((consumer) => consumer.trustScope === 'ordinary-ci')
   .flatMap((consumer) => [
@@ -154,6 +156,31 @@ describe('CI workflow orchestration', () => {
     expect(boundaries).not.toContain('decide docs-only fast-path');
     expect(authorWorkflow).not.toContain('paths-ignore:');
     expect(authorWorkflow).not.toContain("- 'docs/**'");
+  });
+
+  it('keeps the required-check manifest and live-ruleset audit on the producer graph', () => {
+    expect(requiredChecks.length).toBeGreaterThan(0);
+    const workflowSources = [
+      ci,
+      boundaries,
+      pins,
+      mirror,
+      mirrorPublishDryrun,
+      runtimePublish,
+      authorWorkflow,
+    ].join('\n');
+    for (const context of requiredChecks) {
+      expect(workflowSources.split(`name: ${context}`).length - 1).toBe(1);
+    }
+    expect(jobBlock(ci, 'runner-policy')).toContain('bun scripts/ci/audit-required-checks-ruleset.mjs');
+  });
+
+  it('serializes every fixed-port Studio consumer across workflows', () => {
+    const group = 'forgeax-studio-interactive-linux-x64';
+    for (const block of [jobBlock(ci, 'sfc07-heavy'), jobBlock(ci, 'check'), jobBlock(sfc07, 'heavy')]) {
+      expect(block).toContain(`group: ${group}`);
+      expect(block).toContain('cancel-in-progress: false');
+    }
   });
 
   it('declares the ordinary recursive input contract at every ordinary action call', () => {
@@ -391,7 +418,7 @@ describe('CI workflow orchestration', () => {
 
   it('monitors every main validation and scopes recovery to the failed workflow', () => {
     expect(postMergeMonitor).toContain(
-      'workflows: [ci, boundaries, submodule-pins, mirror-multi]',
+      'workflows: [ci, boundaries, submodule-pins, mirror-multi, Publish Game Runtime npm packages]',
     );
     expect(postMergeMonitor).toContain('github.event.workflow_run.workflow_id');
     expect(postMergeMonitor).toContain("core.setOutput('workflowName', wr.name)");

@@ -11,7 +11,7 @@
     "games:sync": "node scripts/sync-games.mjs --ensure",
     "lint:layers": "bun scripts/check-layers.ts --strict && bun scripts/check-architecture-language.ts",
     "lint": "bun run lint:layers && bun run lint:boundaries",
-    "test:layers": "bash scripts/ci-workflows.behavior.test.sh && bun test --timeout 30000 scripts/check-layers.spec.ts scripts/check-architecture-language.spec.ts scripts/check-asset-canvas-fork.spec.ts scripts/mirror/private-isolation.spec.ts scripts/ci-workflows.spec.ts scripts/ci/check-repo-ownership.spec.ts scripts/ci/check-runner-policy.test.ts scripts/games-floating-contract.test.ts scripts/website/build-marketplace.test.mjs",
+    "test:layers": "bash scripts/ci-workflows.behavior.test.sh && bun test scripts/ci/audit-required-checks-ruleset.test.mjs && bun test --timeout 30000 scripts/check-layers.spec.ts scripts/check-architecture-language.spec.ts scripts/check-asset-canvas-fork.spec.ts scripts/mirror/private-isolation.spec.ts scripts/ci-workflows.spec.ts scripts/ci/check-repo-ownership.spec.ts scripts/ci/check-runner-policy.test.ts scripts/games-floating-contract.test.ts scripts/website/build-marketplace.test.mjs",
     "lint:npc-contracts": "bun --cwd packages/contracts/types check:npc-schema-drift",
     "test:npc-contracts": "bun --cwd packages/contracts/types test",
     "test:npc-client": "bun --cwd packages/npc-client typecheck && bun --cwd packages/npc-client test && bun --cwd packages/npc-client smoke:pack",

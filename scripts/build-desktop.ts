@@ -165,6 +165,7 @@ function copyTree(
     return;
   }
   const isExcluded = (base: string): boolean => {
+    if (DESKTOP_CONTROL_PATH_EXCLUDES.has(base)) return true;
     for (const pat of exclude) {
       if (pat.startsWith('*.')) {
         if (base.endsWith(pat.slice(1))) return true;
@@ -242,6 +243,13 @@ const THIRD_PARTY_DENYLIST = new Set(['typescript', '@types', 'happy-dom', 'vite
 // produce the same Runtime tree from the same pinned source graph.
 const ENGINE_RUNTIME_COPY_EXCLUDES = new Set(['.gitignore']);
 const PREVIEW_PACKAGE_COPY_EXCLUDES = new Set(['node_modules', 'target', '.git', '.gitignore']);
+
+// Harness state is developer evidence (loop ledgers, screenshots, checkpoints),
+// never runtime input. Some engine asset packages carry it below otherwise
+// shippable directories, so enforce this at the shared copy boundary instead of
+// relying on every caller to remember an exclusion. Besides wasting hundreds of
+// files, those evidence paths can exceed the path length makensis accepts.
+const DESKTOP_CONTROL_PATH_EXCLUDES = new Set(['.forgeax-harness']);
 
 // ── 0 hoisted root node_modules ─────────────────────────────────────────────
 // Step 3 copies $ROOT/node_modules/* into the bundle, which needs a HOISTED root

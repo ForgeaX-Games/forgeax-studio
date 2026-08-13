@@ -3573,12 +3573,12 @@ function scannedProductCombo(root: string, pinSource: string, noGit: boolean = f
   if (pinSource === 'live') return pinned;
   if (noGit) return pinned;
 
-  // Root HEAD may advance for docs/scanner/gate work. Prove that no product
+  // Root HEAD may advance for harness-doc/scanner/gate work. Prove that no product
   // path changed before retaining the original product SHA in the combo.
   const rootChanges = git(root, ['diff', '--name-only', pinned.studio, 'HEAD', '--'])
     .split('\n')
     .filter(Boolean)
-    .filter((path) => path !== 'package.json' && !path.startsWith('docs/') && !path.startsWith('scripts/'));
+    .filter((path) => path !== 'package.json' && !path.startsWith('.forgeax-harness/docs/') && !path.startsWith('scripts/'));
   if (rootChanges.length > 0) {
     throw new Error(`root product code differs from pinned ${pinned.studio}: ${rootChanges.join(', ')}`);
   }
@@ -3786,7 +3786,7 @@ function previousBaselineControlDiff(
   aliasMap: AliasMap,
   previousBaselineId: string | null,
 ): BaselineControlDiff | null {
-  const parent = join(root, 'docs/ai-native/baseline');
+  const parent = join(root, '.forgeax-harness/docs/ai-native/baseline');
   if (!existsSync(parent) || previousBaselineId === null) return null;
   if (previousBaselineId === baselineId || !existsSync(join(parent, previousBaselineId, 'controls.jsonl'))) return null;
   const previous = readFileSync(join(parent, previousBaselineId, 'controls.jsonl'), 'utf8')
@@ -3972,8 +3972,8 @@ function summaryMarkdown(
     `- Command-palette rows derive from all ${stats.sourceCounts['action-palette'] ?? 0} statically declared ActionRegistry entries; each row's file/line is its real \`registerAction\` call.\n` +
     `- Every control has one scalar \`repo\`; canonical effects use a sorted \`repo\` array because one effect may aggregate declarations, routes, or control edges from multiple repositories.\n` +
     `- Tool equivalence records the offline loader boundary. Marketplace manifests are intentionally not parsed; \`agent_equiv.tool.runtime_fill\` points to the runtime \`GET /api/tools\` fill.\n` +
-    `- Known long-tail and out-of-scope collector patterns are registered in \`docs/ai-native/known-collector-gaps.md\`; detected unresolved owned entries stay in the manual pool.\n` +
-    `- Product-code identity comes from \`meta.json.scanned_product_combo\`; \`artifact_commit\` is informational and ignored during byte verification. The recursive pin snapshot is \`docs/ai-native/PINNED-submodule-status.txt\`.\n` +
+    `- Known long-tail and out-of-scope collector patterns are registered in \`.forgeax-harness/docs/ai-native/known-collector-gaps.md\`; detected unresolved owned entries stay in the manual pool.\n` +
+    `- Product-code identity comes from \`meta.json.scanned_product_combo\`; \`artifact_commit\` is informational and ignored during byte verification. The recursive pin snapshot is \`.forgeax-harness/docs/ai-native/PINNED-submodule-status.txt\`.\n` +
     `- Evidence line numbers are audit pointers only and are not part of \`control_id\`.\n`;
 }
 
@@ -4172,7 +4172,7 @@ export async function buildInventory(options: BuildOptions = {}): Promise<Invent
     scanned_product_combo: productCombo,
     scanner_configuration_fingerprint: computeScannerConfigurationFingerprint(root),
     artifact_commit: options.noGit ? productCombo.studio : artifactCommit(root),
-    pinned_submodule_status: 'docs/ai-native/PINNED-submodule-status.txt',
+    pinned_submodule_status: '.forgeax-harness/docs/ai-native/PINNED-submodule-status.txt',
   };
   const baselineDiff = previousBaselineControlDiff(
     root,

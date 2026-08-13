@@ -22,9 +22,12 @@ node_modules
 /state/
 /workspace.json
 # .forgeax-harness is a floating clone of forgeax-studio-harness (the studio
-# closed-loop state repo), NOT a submodule and NOT tracked here. Materialised
-# by scripts/sync-harness.mjs (npm run harness:sync / bootstrap.sh / deploy.sh).
-/.forgeax-harness/
+# closed-loop state and documentation repo), NOT a submodule and NEVER tracked
+# here. Do not force-add loop state or docs from this directory. The no-slash
+# pattern also protects a local symlink used to point at an alternate clone.
+# Materialised by scripts/sync-harness.mjs (npm run harness:sync / bootstrap.sh /
+# deploy.sh).
+/.forgeax-harness
 .self-evolve/
 .playwright-mcp/
 # playwright-cli session scratch (console logs, snapshot yml, screenshots).

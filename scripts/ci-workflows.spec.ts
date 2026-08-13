@@ -50,7 +50,7 @@ const jobBlock = (workflow: string, name: string): string => {
   return workflow.slice(start, next === -1 ? undefined : bodyStart + next);
 };
 
-const requiredDocsOnlyJobs = [
+const requiredValidationJobs = [
   [ci, 'check', 'typecheck + build + script smoke'],
   [boundaries, 'lint-boundaries', 'dependency-cruiser boundary lint'],
   [pins, 'check', 'submodule pin reachability + main-ancestry'],
@@ -59,21 +59,19 @@ const requiredDocsOnlyJobs = [
 ] as const;
 
 describe('CI workflow orchestration', () => {
-  it('uses one fail-closed required job and zero validation for docs-only PRs', () => {
-    for (const [workflow, job, context] of requiredDocsOnlyJobs) {
+  it('runs source validation for Studio PRs without a root-docs shortcut', () => {
+    for (const [workflow, job, context] of requiredValidationJobs) {
       const block = jobBlock(workflow, job);
       expect(block).toContain(`name: ${context}`);
-      expect(block).toContain('uses: dorny/paths-filter@v3');
-      expect(block).toContain("- '!docs/**'");
-      expect(block).toContain('id: scope');
-      expect(block).toContain("steps.scope.outputs.run == 'true'");
-      expect(block).toContain('docs-only fast-path — no repository validation executed');
+      expect(block).not.toContain('uses: dorny/paths-filter@v3');
+      expect(block).not.toContain('docs-only');
+      expect(block).not.toContain('docs/**');
     }
 
     expect(ci).not.toContain('decide docs-only fast-path');
     expect(boundaries).not.toContain('decide docs-only fast-path');
-    expect(authorWorkflow).toContain('paths-ignore:');
-    expect(authorWorkflow).toContain("- 'docs/**'");
+    expect(authorWorkflow).not.toContain('paths-ignore:');
+    expect(authorWorkflow).not.toContain("- 'docs/**'");
   });
 
   it('declares the ordinary recursive input contract at every ordinary action call', () => {
@@ -216,11 +214,11 @@ describe('CI workflow orchestration', () => {
     expect(pins).toContain('ok (no gitlink, .gitmodules, or validator change)');
   });
 
-  it('runs mirror assembly only on the full validation path', () => {
+  it('runs mirror assembly on every PR validation path', () => {
     for (const workflow of [mirror, mirrorTemplate]) {
       expect(workflow).not.toContain('Assemble + scrub + gate (docs-only)');
       expect(workflow).toMatch(
-        /name: Mirror install smoke \(assemble \+ recursive-clone layout \+ bun install\)\n\s+if: steps\.scope\.outputs\.run == 'true'\n\s+run: bash scripts\/mirror\/smoke-install\.sh/,
+        /name: Mirror install smoke \(assemble \+ recursive-clone layout \+ bun install\)\n\s+run: bash scripts\/mirror\/smoke-install\.sh/,
       );
     }
   });

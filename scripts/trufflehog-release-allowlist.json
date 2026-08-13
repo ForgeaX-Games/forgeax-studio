@@ -48,7 +48,7 @@
       "decoders": ["PLAIN"],
       "verified": false,
       "raw": "https://username:password@proxy.example.com:8080",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-uri-local-proxy",
@@ -60,7 +60,7 @@
       "decoders": ["PLAIN", "HTML"],
       "verified": false,
       "raw": "https://username:password@127.0.0.1:8080",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-uri-scope-registry",
@@ -72,7 +72,7 @@
       "decoders": ["PLAIN"],
       "verified": false,
       "raw": "https://username:password@registry.myorg.com",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-uri-registry-scope",
@@ -84,7 +84,7 @@
       "decoders": ["PLAIN"],
       "verified": false,
       "raw": "https://usertitle:password@registry.myorg.com",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-uri-registry-example",
@@ -96,7 +96,7 @@
       "decoders": ["HTML", "PLAIN"],
       "verified": false,
       "raw": "https://username:password@registry.myorg.com",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-postgres-neon-serverless",
@@ -108,7 +108,7 @@
       "decoders": ["PLAIN"],
       "verified": false,
       "raw": "postgresql://usertitle:password@ep-adj-noun-guid.us-east-1.aws.neon.tech:5432",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-postgres-neon-drizzle",
@@ -120,7 +120,7 @@
       "decoders": ["PLAIN"],
       "verified": false,
       "raw": "postgresql://usertitle:password@ep-adj-noun-guid.us-east-1.aws.neon.tech:5432",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-gcp-service-account-placeholder",
@@ -132,7 +132,7 @@
       "decoders": ["HTML", "PLAIN"],
       "verified": false,
       "raw": "{\"type\":\"service_account\",\"project_id\":\"your-project-id\",\"private_key_id\":\"your-private-key-id\",\"private_key\":\"your-private-key\",\"client_email\":\"your-client-email\",\"client_id\":\"your-client-id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://accounts.google.com/o/oauth2/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_x509_cert_url\":\"your-cert-url\"}",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-uri-tldts-example",
@@ -144,7 +144,7 @@
       "decoders": ["HTML", "PLAIN"],
       "verified": false,
       "raw": "https://user:password@example.co.uk:8080/some/path",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-uri-tldts-secure-example",
@@ -156,7 +156,7 @@
       "decoders": ["PLAIN", "HTML"],
       "verified": false,
       "raw": "https://user:password@secure.example.co.uk:443/some/path",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     },
     {
       "id": "runtime-linux-x64-uri-bun-proxy-type",
@@ -168,7 +168,7 @@
       "decoders": ["PLAIN", "HTML"],
       "verified": false,
       "raw": "http://user:pass@proxy.example.com:8080",
-      "sha256": "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d"
+      "sha256": "7043e127ebe299f128c182e116a47640cfacba0160b96506ef6dcaa0e531e955"
     }
   ]
 }

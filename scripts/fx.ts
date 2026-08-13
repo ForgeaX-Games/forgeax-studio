@@ -808,14 +808,59 @@ function ci(args: string[]): never {
     console.error('usage: bun fx ci');
     process.exit(2);
   }
+  const validPort = (candidate: string | undefined, fallback: number): string => {
+    const value = Number(candidate);
+    return Number.isInteger(value) && value > 0 && value < 65_536
+      ? String(value)
+      : String(fallback);
+  };
+  const e2eHostPort = validPort(
+    process.env.FORGEAX_E2E_PORT ?? process.env.FORGEAX_STANDALONE_PORT,
+    18_990,
+  );
+  const e2eHostNumber = Number(e2eHostPort);
   const ciEnv = {
     ...process.env,
-    // Match the non-interactive CI setup while keeping harness state outside
-    // this fast local projection.
+    // Match the non-interactive CI setup while keeping prepare-time skill
+    // installation and optional game checkout outside this local projection.
+    // CI also disables Playwright's reuseExistingServer path. The private
+    // projection ports below keep a running developer stack out of the gate.
+    CI: process.env.CI ?? 'true',
     FORGEAX_SKIP_HARNESS: '1',
     FORGEAX_SKIP_GAMES: '1',
     FORGEAX_SKIP_BOOTSTRAP: '1',
+    FORGEAX_E2E_PORT: e2eHostPort,
+    FORGEAX_E2E_EDIT_PORT: validPort(
+      process.env.FORGEAX_E2E_EDIT_PORT ?? process.env.FORGEAX_EDIT_RUNTIME_PORT,
+      e2eHostNumber - 10,
+    ),
+    FORGEAX_E2E_API_PORT: validPort(
+      process.env.FORGEAX_E2E_API_PORT ?? process.env.FORGEAX_GAME_API_PORT,
+      e2eHostNumber - 9,
+    ),
+    FORGEAX_E2E_ENGINE_PORT: validPort(
+      process.env.FORGEAX_E2E_ENGINE_PORT ?? process.env.FORGEAX_PLAY_RUNTIME_PORT,
+      e2eHostNumber - 17,
+    ),
+    FORGEAX_E2E_BRIDGE_PORT: validPort(
+      process.env.FORGEAX_E2E_BRIDGE_PORT ?? process.env.FORGEAX_BRIDGE_PORT,
+      e2eHostNumber + 6,
+    ),
+    FORGEAX_E2E_TEMPLATE_PORT: validPort(undefined, e2eHostNumber + 100),
+    FORGEAX_E2E_TEMPLATE_EDIT_PORT: validPort(undefined, e2eHostNumber + 90),
+    FORGEAX_E2E_TEMPLATE_API_PORT: validPort(undefined, e2eHostNumber + 91),
+    FORGEAX_E2E_TEMPLATE_ENGINE_PORT: validPort(undefined, e2eHostNumber + 83),
+    FORGEAX_E2E_TEMPLATE_BRIDGE_PORT: validPort(undefined, e2eHostNumber + 106),
   };
+  const harness = spawnSync(BUN, [script('sync-package-harness.mjs'), '--ensure'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: ciEnv,
+  });
+  if ((harness.status ?? 1) !== 0) {
+    console.error('[ci] FAIL: source Studio harness checkout is unavailable');
+    process.exit(harness.status ?? 1);
+  }
   const steps: readonly [string, string, string[], string][] = [
     ['recursive submodule checkout', 'git', ['submodule', 'update', '--init', '--recursive'], ROOT],
     ['root frozen Bun install + prepare', BUN, ['install', '--frozen-lockfile'], ROOT],

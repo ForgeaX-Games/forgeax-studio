@@ -15,6 +15,11 @@ describe('bun fx ci local gate', () => {
     expect(source).toContain('test/workbench-link-idempotency.test.ts');
     expect(source).not.toContain('test/template-catalog.test.ts');
     expect(source).toContain('games floating checkout contract');
+    expect(source).toContain('sync-package-harness.mjs');
+    expect(source).toContain('source Studio harness checkout is unavailable');
+    expect(source).toContain("CI: process.env.CI ?? 'true'");
+    expect(source).toContain('FORGEAX_E2E_PORT');
+    expect(source).toContain('FORGEAX_E2E_TEMPLATE_PORT');
     expect(source).toContain('FORGEAX_SKIP_GAMES');
     expect(source).toContain('[ci] PASS: local Studio PR CI');
   });

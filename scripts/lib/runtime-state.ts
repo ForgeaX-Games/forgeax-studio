@@ -167,7 +167,7 @@ export function runtimeStateBelongsToInstance(
   if (state === null || state.startup.sourceLayout !== 'source') return false;
   const { startup } = state;
   if (
-    canonicalSourceResourceRoot(startup.resourceRoot) !== join(instance.root, 'packages')
+    !sourceResourceRootBelongsToInstance(startup.resourceRoot, instance.root)
     || startup.projectRoot !== instance.projectRoot
     || startup.stateFile !== instance.stateFile
     || startup.envFile !== instance.envFile
@@ -210,13 +210,27 @@ function sameStringSet(actual: readonly string[], expected: readonly string[]): 
     && actual.every((value) => expected.includes(value));
 }
 
-function canonicalSourceResourceRoot(resourceRoot: string): string | null {
-  // Source resourceRoot is `<checkout>/packages`; canonicalize its existing
-  // checkout parent so `/var` and `/private/var` spellings cannot bypass the
-  // instance boundary, while tests and partial checkouts need not materialize
-  // the packages directory itself.
+function sourceResourceRootBelongsToInstance(resourceRoot: string, instanceRoot: string): boolean {
+  // Canonicalize only the resource root's parent. This preserves the lexical
+  // instance mount boundary while tolerating macOS `/var` aliases and letting
+  // the package directory itself be a deliberate source mount.
   try {
-    return join(realpathSync(dirname(resourceRoot)), basename(resourceRoot));
+    const resolvedResourceRoot = resolvePath(resourceRoot);
+    return join(realpathSync(dirname(resolvedResourceRoot)), basename(resolvedResourceRoot))
+      === join(resolvePath(instanceRoot), 'packages');
+  } catch {
+    return false;
+  }
+}
+
+function canonicalSourceResourceRoot(resourceRoot: string): string | null {
+  // Source resourceRoot is `<checkout>/packages`. The lexical instance-root
+  // check in runtimeStateBelongsToInstance runs before this canonicalization;
+  // once that binding is proven, resolve the package mount itself so a CI
+  // workspace may symlink `packages/` to the source checkout without making
+  // its declared owners look cross-instance.
+  try {
+    return realpathSync(resourceRoot);
   } catch {
     return null;
   }

@@ -9,6 +9,7 @@ const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
 const ciManifest = loadCiContractFiles(ROOT).manifest;
 
 const ci = read('.github/workflows/ci.yml');
+const sfc07 = read('.github/workflows/sfc07.yml');
 const boundaries = read('.github/workflows/boundaries.yml');
 const pins = read('.github/workflows/submodule-pins.yml');
 const nightly = read('.github/workflows/nightly-e2e.yml');
@@ -59,6 +60,81 @@ const requiredValidationJobs = [
 ] as const;
 
 describe('CI workflow orchestration', () => {
+  it('keeps SFC-07 standard, heavy, and aggregate on distinct capability paths', () => {
+    const scope = jobBlock(ci, 'sfc07-scope');
+    const standard = jobBlock(ci, 'sfc07-standard');
+    const heavy = jobBlock(ci, 'sfc07-heavy');
+    const aggregate = jobBlock(ci, 'sfc07');
+
+    expect(scope).toContain('dorny/paths-filter@v3');
+    expect(scope).toContain('change-class=non-code');
+    expect(standard).toMatch(/runs-on: \[self-hosted, Linux, X64, standard\]/);
+    expect(standard).toContain('consumer-id: sfc07-standard');
+    expect(standard).toContain('sfc07 run --profile standard');
+    expect(standard).toContain('Stage recursive input manifest for SFC-07 aggregate');
+    expect(standard).toContain('bun-version-file: .bun-version');
+    expect(standard.indexOf('Setup Bun')).toBeLessThan(standard.indexOf('Fetch submodules'));
+    expect(standard).toContain('uses: actions/setup-node@v5');
+    expect(standard).toContain('id: pnpm-version');
+    expect(standard).toContain('uses: pnpm/action-setup@v5');
+    expect(standard.indexOf('Setup pnpm')).toBeLessThan(standard.indexOf('Install dependencies'));
+    expect(heavy).toMatch(/runs-on: \[self-hosted, Linux, X64, heavy\]/);
+    expect(heavy).toContain('consumer-id: sfc07-heavy');
+    expect(heavy).toContain('--samples 5 --retries 0 --base-url http://localhost:18920');
+    expect(heavy).toContain('Stage recursive input manifest for SFC-07 aggregate');
+    expect(heavy).toContain('bun-version-file: .bun-version');
+    expect(heavy.indexOf('Setup Bun')).toBeLessThan(heavy.indexOf('Fetch submodules'));
+    expect(heavy).toContain('uses: actions/setup-node@v5');
+    expect(heavy).toContain('id: pnpm-version');
+    expect(heavy).toContain('uses: pnpm/action-setup@v5');
+    expect(heavy.indexOf('Setup pnpm')).toBeLessThan(heavy.indexOf('Install dependencies'));
+    expect(heavy).toContain('dtolnay/rust-toolchain@stable');
+    expect(heavy).toContain("toolchain: '1.93'");
+    expect(heavy).toContain('targets: wasm32-unknown-unknown');
+    expect(heavy).toContain('wasm-pack@0.14.0');
+    expect(heavy).toContain('bun scripts/ci/ensure-engine-wgpu-wasm.ts');
+    expect(heavy).toContain('Touch engine artifacts for runtime freshness gates');
+    expect(heavy).toContain("FORGEAX_SKIP_GAMES: '1'");
+    expect(heavy).toContain("FORGEAX_VITE_FORCE_CLEAN: '1'");
+    expect(heavy).toContain('name: Install Chromium for SFC-07 assembled profile');
+    expect(heavy).toContain('chromium-headless-shell');
+    expect(heavy).toContain('verified SFC-07 Chromium headless launch/close');
+    expect(heavy.indexOf('Setup wasm-pack')).toBeLessThan(heavy.indexOf('Install dependencies'));
+    expect(heavy.indexOf('Install dependencies')).toBeLessThan(heavy.indexOf('Ensure Engine wgpu WASM'));
+    expect(aggregate).toContain('needs: [sfc07-scope, sfc07-standard, sfc07-heavy]');
+    expect(aggregate).toContain('--heavy-recursive-input-manifest');
+    expect(aggregate).toContain('standard/recursive-input-manifest.json');
+    expect(aggregate).toContain('heavy/recursive-input-manifest.json');
+    expect(aggregate).toContain('uses: actions/setup-node@v5');
+
+    for (const job of ['standard', 'heavy'] as const) {
+      const scheduled = jobBlock(sfc07, job);
+      expect(scheduled).toContain(`consumer-id: sfc07-scheduled-${job}`);
+      expect(scheduled).toContain('Stage recursive input manifest for scheduled aggregate');
+      expect(scheduled).toContain('requested-classes: source,large-file-storage');
+      expect(scheduled).toContain('bun-version-file: .bun-version');
+      expect(scheduled.indexOf('Setup Bun')).toBeLessThan(scheduled.indexOf('Fetch submodules'));
+      expect(scheduled).toContain('uses: actions/setup-node@v5');
+      expect(scheduled).toContain('id: pnpm-version');
+      expect(scheduled).toContain('uses: pnpm/action-setup@v5');
+      expect(scheduled.indexOf('Setup pnpm')).toBeLessThan(scheduled.indexOf('Install dependencies'));
+      if (job === 'heavy') {
+        expect(scheduled).toContain('dtolnay/rust-toolchain@stable');
+        expect(scheduled).toContain('wasm-pack@0.14.0');
+        expect(scheduled).toContain('bun scripts/ci/ensure-engine-wgpu-wasm.ts');
+        expect(scheduled).toContain('Touch engine artifacts for runtime freshness gates');
+        expect(scheduled).toContain("FORGEAX_VITE_FORCE_CLEAN: '1'");
+        expect(scheduled.indexOf('Setup wasm-pack')).toBeLessThan(scheduled.indexOf('Install dependencies'));
+        expect(scheduled.indexOf('Install dependencies')).toBeLessThan(scheduled.indexOf('Ensure Engine wgpu WASM'));
+      }
+    }
+    const scheduledAggregate = jobBlock(sfc07, 'aggregate');
+    expect(scheduledAggregate).toContain('uses: actions/setup-node@v5');
+    expect(scheduledAggregate).toContain('standard/recursive-input-manifest.json');
+    expect(scheduledAggregate).toContain('heavy/recursive-input-manifest.json');
+
+  });
+
   it('runs the floating-harness ownership gate before runner policy validation', () => {
     const runnerPolicy = jobBlock(ci, 'runner-policy');
     expect(runnerPolicy).toContain('name: Enforce floating harness ownership');

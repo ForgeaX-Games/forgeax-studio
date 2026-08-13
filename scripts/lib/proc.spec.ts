@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readPidfilePid } from './proc';
+import { isDefunctProcessState, readPidfilePid } from './proc';
 
 const roots: string[] = [];
 
@@ -31,5 +31,14 @@ describe('readPidfilePid', () => {
     const directory = join(root, 'not-a-file.pid');
     mkdirSync(directory);
     expect(() => readPidfilePid(directory)).toThrow();
+  });
+});
+
+describe('isDefunctProcessState', () => {
+  test('classifies POSIX zombie states as no longer live resources', () => {
+    expect(isDefunctProcessState('Z')).toBe(true);
+    expect(isDefunctProcessState('Z+')).toBe(true);
+    expect(isDefunctProcessState('S')).toBe(false);
+    expect(isDefunctProcessState('R+')).toBe(false);
   });
 });

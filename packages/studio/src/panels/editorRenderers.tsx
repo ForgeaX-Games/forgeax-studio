@@ -712,6 +712,8 @@ function ViewportBootOverlay({ slug, runtimeState }: { slug: string | null; runt
         gap: 14, background: '#16161a', color: '#c9c9d4', pointerEvents: 'none',
         font: '13px/1.5 system-ui, -apple-system, sans-serif',
       }}
+      data-testid="studio-editor-viewport-boot-overlay"
+      data-forgeax-viewport-boot-state="loading"
     >
       <div
         style={{

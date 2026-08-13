@@ -29,6 +29,25 @@ export interface StopDiscovery {
   blocked: boolean;
 }
 
+/** Wait for a kill target to disappear without treating a short process-table race as residue. */
+export async function waitForStopPids(
+  pids: Iterable<number>,
+  isAlive: (pid: number) => boolean,
+  delay: (ms: number) => Promise<void>,
+  options: { readonly timeoutMs?: number; readonly intervalMs?: number } = {},
+): Promise<number[]> {
+  const targets = [...new Set(pids)].filter((pid) => Number.isSafeInteger(pid) && pid > 0);
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  const intervalMs = options.intervalMs ?? 250;
+  const deadline = Date.now() + timeoutMs;
+  let survivors = targets.filter(isAlive);
+  while (survivors.length > 0 && Date.now() < deadline) {
+    await delay(Math.min(intervalMs, Math.max(1, deadline - Date.now())));
+    survivors = targets.filter(isAlive);
+  }
+  return survivors;
+}
+
 export function discoverStopTargets(scope: StopScope, deps: StopDiscoveryDeps): StopDiscovery {
   const found = new Map<number, string>();
   const refusedPorts = new Set<number>();

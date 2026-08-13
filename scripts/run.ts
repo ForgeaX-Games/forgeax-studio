@@ -53,7 +53,9 @@ import { consumeSourceRuntimeContext } from './lib/source-runtime-context.ts';
 import { vanityBanner, versionCheck, versionString, writeVersionJson } from './lib/version.ts';
 import { viteGuard, vitePurgeAll } from './lib/vite-cache.ts';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.env.FORGEAX_WORKSPACE_ROOT
+  ? resolve(process.env.FORGEAX_WORKSPACE_ROOT)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const has = (flag: string) => argv.includes(flag);
 const rhiDebug = has('--rhi-debug');

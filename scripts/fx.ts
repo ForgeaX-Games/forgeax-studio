@@ -67,7 +67,9 @@ type UpdateResult = {
 
 type StartPort = readonly [name: string, port: number];
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.env.FORGEAX_WORKSPACE_ROOT
+  ? resolve(process.env.FORGEAX_WORKSPACE_ROOT)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUN = process.execPath;
 
 // Floating checkouts are not visible to `git submodule foreach`, so their

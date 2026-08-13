@@ -18,7 +18,8 @@ fi
 
 rm -f "$binary" "$archive"
 curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-  --retry 3 --retry-all-errors --output "$archive" "$url"
+  --retry 8 --retry-delay 2 --retry-max-time 90 --retry-all-errors \
+  --output "$archive" "$url"
 printf '%s  %s\n' "$expected_sha256" "$archive" | sha256sum -c - >&2
 tar -xzf "$archive" -C "$install_dir" trufflehog
 chmod 0755 "$binary"

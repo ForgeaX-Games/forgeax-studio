@@ -4,6 +4,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
+import { resolveDesktopBundleProfile } from '../../scripts/lib/desktop-bundle-profile';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { vitePluginBrand } from './vite-plugin-brand';
@@ -35,6 +36,18 @@ if (existsSync(ROOT_ENV)) {
 const SERVER = process.env.FORGEAX_SERVER_URL ?? 'http://127.0.0.1:18900';
 const SERVER_WS = SERVER.replace(/^http/, 'ws');
 const ENGINE = process.env.FORGEAX_ENGINE_URL ?? 'http://127.0.0.1:15173';
+// The desktop builder owns the profile contract. VITE_* is accepted as the
+// equivalent build-time entry for direct Vite callers; the define below then
+// makes the resolved value visible to client code without a second profile
+// source of truth.
+const DESKTOP_BUNDLE = resolveDesktopBundleProfile({
+  FORGEAX_DESKTOP_BUNDLE:
+    process.env.FORGEAX_DESKTOP_BUNDLE ?? process.env.VITE_FORGEAX_DESKTOP_BUNDLE,
+});
+const INLINE_WORKBENCH_PANELS = resolve(
+  PACKAGE_DIR,
+  `src/panels/inline-workbench-panels.${DESKTOP_BUNDLE}.ts`,
+);
 const ENGINE_WS = ENGINE.replace(/^http/, 'ws');
 const REEL = process.env.FORGEAX_REEL_URL ?? 'http://127.0.0.1:15175';
 const STANDALONE_PROXY_ENABLED = process.env.FORGEAX_STANDALONE_PROXY === '1';
@@ -231,6 +244,10 @@ export default defineConfig(() => ({
   // Studio has no fixed game at build time. The active game and every asset URL
   // arrive at runtime as one server-confirmed binding.
   define: {
+    // Keep the profile visible to client code for future profile-aware shell
+    // decisions; module selection itself is done by resolve.alias below so
+    // Vite can eliminate the full glob module before parsing it.
+    'import.meta.env.VITE_FORGEAX_DESKTOP_BUNDLE': JSON.stringify(DESKTOP_BUNDLE),
     __FORGEAX_GAME_SLUG__: JSON.stringify(null),
     __FORGEAX_GAME_DIR_ABS__: JSON.stringify(null),
     // Content Browser path projection remains a Studio concern; it is not an
@@ -260,6 +277,10 @@ export default defineConfig(() => ({
     dedupe: ['react', 'react-dom'],
     preserveSymlinks: enginePreset.resolve.preserveSymlinks,
     alias: {
+      // Profile-selected boundary for product-owned inline panels. In lite,
+      // this resolves to a zero-source module and therefore never reaches the
+      // marketplace extension glob or wb-game-video-specific UI graph.
+      '@forgeax/studio-inline-workbench-panels': INLINE_WORKBENCH_PANELS,
       // More specific subpaths first — Vite matches string aliases by prefix
       // and uses the first hit, so '@forgeax/design' must come last.
       //

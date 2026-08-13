@@ -923,37 +923,10 @@ const filesExplorerPanelExtension: AppExtension = {
   },
 };
 
-/** ADR 0025 M4 — derive the inline workbench panel map from manifests instead
- *  of a hand-written import table. Rule (mirrors WorkbenchExtensionHost's
- *  fallthrough): kind=workbench + `entry.frontend: './src/panel.tsx'` + no
- *  `entry.standalone` ⇒ inline; the panel module's default export is the
- *  component. Placeholder shims (admin / wb-code / …) export no default and
- *  drop out. Globs are eager — Vite resolves them at build time, so a new
- *  inline extension needs zero studio edits (§2.5). */
-function deriveInlineWorkbenchPanels(): PanelRenderers['workbenchPanels'] {
-  const importMeta = import.meta as ImportMeta & {
-    glob?: (pattern: string, options: { eager: boolean }) => Record<string, unknown>;
-  };
-  if (typeof importMeta.glob !== 'function') return {};
-  // Flat `extensions/<slug>/` only — kind-bucketed `extensions/<kind>/<slug>/`
-  // was rolled back; do not reintroduce nested globs here.
-  const manifests = importMeta.glob(
-    '../../../marketplace/extensions/*/forgeax-extension.json',
-    { eager: true },
-  ) as Record<string, { id?: string; kind?: string; entry?: { frontend?: string; standalone?: unknown } }>;
-  const panels = importMeta.glob(
-    '../../../marketplace/extensions/*/src/panel.tsx',
-    { eager: true },
-  ) as Record<string, { default?: () => ReactNode }>;
-  const map: NonNullable<PanelRenderers['workbenchPanels']> = {};
-  for (const [mPath, m] of Object.entries(manifests)) {
-    if (m.kind !== 'workbench' || !m.id || m.entry?.standalone) continue;
-    if (m.entry?.frontend !== './src/panel.tsx') continue;
-    const panel = panels[mPath.replace(/forgeax-extension\.json$/, 'src/panel.tsx')];
-    if (panel?.default) map[m.id] = panel.default;
-  }
-  return map;
-}
+// The concrete implementation is selected by Vite's profile alias. Keeping
+// this import at a stable package boundary lets full retain the historical
+// eager manifest/panel map while lite resolves a zero-source implementation.
+import { deriveInlineWorkbenchPanels } from '@forgeax/studio-inline-workbench-panels';
 
 /** Fields no interface factory covers: workbench layout seed, the editor
  *  bridge hooks, and the host-sdk port factories. One custom extension keeps

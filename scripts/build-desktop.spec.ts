@@ -9,6 +9,16 @@ import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 describe('desktop build pack scan scope', () => {
+  it('keeps nested payload installs independent of private harness state', () => {
+    const workflow = readFileSync(
+      join(root, '.github/workflows/desktop-build.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toMatch(/^\s{2}FORGEAX_SKIP_HARNESS: '1'$/m);
+    expect(workflow).toMatch(/^\s{2}FORGEAX_SKIP_BOOTSTRAP: '1'$/m);
+  });
+
   it('builds a generic play shell without a sibling-games asset producer', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
     const playRuntimeViteConfig = readFileSync(

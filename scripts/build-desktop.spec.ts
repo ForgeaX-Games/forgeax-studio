@@ -48,7 +48,7 @@ describe('desktop server runtime closure', () => {
     expect(buildScript).toContain('Object.keys(serverPkg.dependencies ?? {})');
     expect(buildScript).toContain('Object.keys(pj.dependencies ?? {})');
     expect(buildScript).toContain("if (dep.startsWith('@forgeax/')) queue.push(dep)");
-    expect(buildScript).toContain("copyTree(join(ROOT, 'brand'), join(RES, 'brand')");
+    expect(buildScript).toContain("copyTree(join(ROOT, 'packages/brand'), join(RES, 'brand')");
   });
 
   it('does not package generated Engine build-control markers', () => {

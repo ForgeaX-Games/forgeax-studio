@@ -326,7 +326,7 @@ if (existsSync(join(activeServer.packageDir, 'builtin'))) {
   copyTree(join(activeServer.packageDir, 'builtin'), join(serverDest, 'builtin'), new Set());
 }
 cpSync(join(activeServer.packageDir, 'package.json'), join(serverDest, 'package.json'));
-copyTree(join(ROOT, 'brand'), join(RES, 'brand'), new Set());
+copyTree(join(ROOT, 'packages/brand'), join(RES, 'brand'), new Set());
 
 // tsconfig carries the path aliases bun honors at RUN time. Keep the src-relative
 // ones (@/*, @server-lib/*, @forgeax/bus); strip the cross-package @forgeax/*

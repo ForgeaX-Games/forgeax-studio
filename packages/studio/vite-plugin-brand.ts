@@ -3,7 +3,7 @@
  *
  * Behaviour:
  *   1. Resolve the brand pack at vite startup using the same algorithm as
- *      `packages/server/src/brand/loader.ts` (env → symlink → 'forgeax').
+ *      `packages/orchestrator/src/brand/loader.ts` (env → symlink → 'forgeax').
  *   2. Replace `%BRAND_PRODUCT_NAME%`, `%BRAND_SPLASH_TITLE%`,
  *      `%BRAND_SPLASH_SUBTITLE%`, `%BRAND_ID%`, `%BRAND_ASSISTANT_NAME%`
  *      placeholders in index.html with literal strings.
@@ -60,17 +60,9 @@ function locateBrandRoot(packageDir: string): string {
     }
     return resolve(override);
   }
-  const candidates = [
-    resolve(packageDir, '..', '..', 'brand'),  // packages/interface → repo root → brand
-    resolve(packageDir, '..', 'brand'),
-    resolve(process.cwd(), 'brand'),
-    resolve(process.cwd(), '..', 'brand'),
-    resolve(process.cwd(), '..', '..', 'brand'),
-  ];
-  for (const dir of candidates) {
-    if (existsSync(join(dir, 'defaults.forgeax.json'))) return dir;
-  }
-  throw new Error(`[brand] brand/ directory not found. Tried: ${candidates.join(', ')}`);
+  const dir = resolve(packageDir, '..', 'brand');
+  if (existsSync(join(dir, 'defaults.forgeax.json'))) return dir;
+  throw new Error(`[brand] shared package brand directory not found: ${dir}`);
 }
 
 function pickBrandId(brandRoot: string): { id: string; source: BrandSource } {
@@ -155,7 +147,7 @@ function applyPlaceholders(html: string, brand: BrandConfig): string {
 }
 
 export interface BrandPluginOptions {
-  /** Absolute path to the interface package root (where vite.config.ts lives). */
+  /** Absolute path to the Studio package root (where vite.config.ts lives). */
   packageDir: string;
 }
 

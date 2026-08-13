@@ -42,13 +42,13 @@ drop into a visual editor to tweak the scene directly at any time.
 - **Web and desktop from one codebase.** The same UI runs in the browser and as a native
   desktop app via Tauri 2.
 
-## 🆕 What's new in v0.3.23
+## 🆕 What's new in v0.3.27
 
-- **Asset Canvas workflow** — shared Workbench Host integration unifies asset orchestration, model services, and media adapters.
-- **Stronger scene authoring** — scene creation, duplication, deletion, default scenes, and field editing now have clearer, safer boundaries.
-- **Game-based projects** — games are now the project unit, with video-game and `wb-game-video` workflows on a stable integration path.
-- **Headless AI carrier support** — a carrier supervisor and Wave 1 gameplay compatibility improve local runtime workflows.
-- **Desktop and Play fixes** — native Open Project navigation, local directories outside gameroot, Play startup, preview assets, WebGL2 FXAA fallback, and scene saving are more reliable.
+- **More reliable extension setup** — Studio follows each extension's declared package manager and lockfile, so plugin installation uses the toolchain the plugin expects.
+- **Windows marketplace links fixed** — plugin directories are normalized into usable directory links, preventing child-process plugins from failing on symlink placeholders.
+- **Material, mesh, and VFX previews in Studio** — the editor facade now registers the preview viewports consistently for Studio hosts.
+- **Canonical asset paths** — asset imports and catalog-backed file operations use the editor gateway's path mapping, keeping editor paths aligned with files on disk.
+- **Independently published Game Runtime packages** — game hosts can consume the runtime surface without taking on the entire Studio build.
 
 → Full notes on the [Releases](https://github.com/ForgeaX-Games/forgeax-studio/releases) page.
 

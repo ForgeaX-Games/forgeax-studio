@@ -59,6 +59,12 @@ const requiredValidationJobs = [
 ] as const;
 
 describe('CI workflow orchestration', () => {
+  it('runs the floating-harness ownership gate before runner policy validation', () => {
+    const runnerPolicy = jobBlock(ci, 'runner-policy');
+    expect(runnerPolicy).toContain('name: Enforce floating harness ownership');
+    expect(runnerPolicy).toContain('bun scripts/ci/check-repo-ownership.ts');
+  });
+
   it('runs source validation for Studio PRs without a root-docs shortcut', () => {
     for (const [workflow, job, context] of requiredValidationJobs) {
       const block = jobBlock(workflow, job);
@@ -115,7 +121,14 @@ describe('CI workflow orchestration', () => {
   });
 
   it('keeps the forgeax-build-game contract in the required non-docs boundary workflow', () => {
-    expect(jobBlock(boundaries, 'lint-boundaries')).toContain('run: bun run test:forgeax-build-game');
+    const boundaryJob = jobBlock(boundaries, 'lint-boundaries');
+    expect(boundaryJob).toContain('name: Sync floating Studio harness');
+    expect(boundaryJob).toContain('GH_TOKEN: ${{ secrets.INTERNAL_TOKEN }}');
+    expect(boundaryJob).toContain('run: bun scripts/sync-harness.mjs');
+    expect(boundaryJob).toContain('run: bun run test:forgeax-build-game');
+    expect(boundaryJob.indexOf('run: bun scripts/sync-harness.mjs')).toBeLessThan(
+      boundaryJob.indexOf('run: bun run test:forgeax-build-game'),
+    );
   });
 
   it('keeps post-merge tree reuse in one permission-complete workflow', () => {

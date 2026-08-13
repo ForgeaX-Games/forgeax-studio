@@ -8,3 +8,11 @@
 // submodule's own edit-runtime/src/globals.d.ts, which studio's program can't see.
 declare const __FORGEAX_GAME_DIR_ABS__: string | null;
 declare const __FORGEAX_GAME_SLUG__: string | null;
+
+// The workspace symlink exposes the editor's viewport source to Studio's
+// TypeScript program, so repeat the editor-owned Vite shader module contract
+// at this integration boundary.
+declare module '*.wgsl' {
+  const artifact: { readonly hash: string; readonly wgsl: string };
+  export default artifact;
+}

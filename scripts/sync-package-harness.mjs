@@ -51,6 +51,17 @@ function isGitRepo() {
     && git(['-C', DIR, 'rev-parse', '--git-dir']).status === 0;
 }
 
+function fetchArgs() {
+  // An existing checkout already has an authenticated origin from --ensure.
+  // Reusing it avoids a fresh SSH auth probe on every `bun fx update` while
+  // preserving cloneUrl() as the fallback for unusual local checkouts.
+  const origin = git(['-C', DIR, 'remote', 'get-url', 'origin']);
+  if (origin.status === 0 && origin.stdout?.trim()) {
+    return ['-C', DIR, 'fetch', '--quiet', '--no-tags', 'origin', 'main'];
+  }
+  return ['-C', DIR, 'fetch', '--quiet', '--no-tags', cloneUrl(), 'main'];
+}
+
 function gitError(result) {
   return `${result.stderr ?? ''}`.trim() || `git exited with status ${result.status ?? 1}`;
 }
@@ -77,11 +88,16 @@ function ensure() {
 }
 
 function update(dryRun) {
-  if (!existsSync(DIR) || (!isGitRepo() && readdirSync(DIR).length === 0)) {
+  if (!existsSync(DIR)) {
     process.stdout.write('[harness:package] checkout absent; update skipped\n');
     return 0;
   }
-  if (!isGitRepo()) {
+  const gitRepo = isGitRepo();
+  if (!gitRepo && readdirSync(DIR).length === 0) {
+    process.stdout.write('[harness:package] checkout absent; update skipped\n');
+    return 0;
+  }
+  if (!gitRepo) {
     process.stderr.write('[harness:package] packages/harness exists but is not a git checkout\n');
     return 1;
   }
@@ -95,7 +111,7 @@ function update(dryRun) {
     return 1;
   }
 
-  const fetch = git(['-C', DIR, 'fetch', '--quiet', '--no-tags', cloneUrl(), 'main']);
+  const fetch = git(fetchArgs());
   if (fetch.status !== 0) {
     process.stderr.write(`[harness:package] fetch failed: ${gitError(fetch)}\n`);
     return 1;

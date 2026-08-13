@@ -317,6 +317,17 @@ describe('scripts/fx.ts command routing', () => {
     expect(readFileSync(script('prepare.ts'), 'utf8')).toContain('syncPackageHarness();');
   });
 
+  it('updates independent floating repos concurrently', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const floatingBlock = source.slice(
+      source.indexOf('// These checkouts are independent.'),
+      source.indexOf("console.log('[update] Updating submodules')"),
+    );
+    expect(floatingBlock).toContain('Promise.all');
+    expect(floatingBlock).toContain('updateFloatingHarness(dryRun)');
+    expect(floatingBlock).toContain('updateFloatingGames(dryRun)');
+  });
+
   it('updates submodules explicitly after updating the root repo', () => {
     expect(parseSubmodulePaths([
       'submodule.packages/engine.path packages/engine',

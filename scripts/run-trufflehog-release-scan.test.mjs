@@ -211,7 +211,7 @@ test("prints only sanitized finding metadata when the scanner reports a finding"
 test("keeps the release scan allowlist explicit and content-bound", () => {
   const allowlist = JSON.parse(readFileSync(resolve(dirname(script), "trufflehog-release-allowlist.json"), "utf8"));
   assert.equal(allowlist.version, 1);
-  assert.equal(allowlist.entries.length, 14);
+  assert.equal(allowlist.entries.length, 15);
   const lobEntries = allowlist.entries.filter((entry) => entry.detector === "Lob");
   assert.equal(lobEntries.length, 3);
   for (const entry of lobEntries) {
@@ -227,13 +227,25 @@ test("keeps the release scan allowlist explicit and content-bound", () => {
   }
   assert.equal(allowlist.entries.some((entry) => entry.path.endsWith(".tar.gz")), false);
   const runtimeEntries = allowlist.entries.filter((entry) => entry.path.includes(".tar.gz.contents/"));
-  assert.equal(runtimeEntries.length, 11);
+  assert.equal(runtimeEntries.length, 12);
   assert.ok(runtimeEntries.every((entry) => entry.mode === "package"));
-  assert.ok(runtimeEntries.every((entry) => ["GCP", "Postgres", "URI"].includes(entry.detector)));
+  assert.ok(runtimeEntries.every((entry) => ["Aiven", "GCP", "Postgres", "URI"].includes(entry.detector)));
   assert.ok(runtimeEntries.every((entry) => Number.isInteger(entry.detectorType)));
   assert.ok(runtimeEntries.every((entry) => Array.isArray(entry.decoders) && entry.decoders.length > 0));
   assert.ok(runtimeEntries.every((entry) => entry.verified === false));
   assert.ok(runtimeEntries.every((entry) => /^[a-f0-9]{64}$/u.test(entry.sha256)));
+  assert.deepEqual(runtimeEntries.filter((entry) => entry.detector === "Aiven"), [{
+    id: "runtime-linux-x64-aiven-utf16-binary-false-positive",
+    mode: "package",
+    path: "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/bin/bun-x86_64-unknown-linux-gnu",
+    line: 69030,
+    detector: "Aiven",
+    detectorType: 917,
+    decoders: ["UTF16"],
+    verified: false,
+    raw: "aira na Nigirereal na Brasalerial na hIarineriel na Cambiderip Shr Lancarip na Sisaln-escudo na Silefhranc an Chongpheso Mheicsiceopheso na Bolaivepheso na Colimephunt San Hilinphunt na Sdinendollar Cheanadandollar Shuranamdhollar Cheanadadhollar Shuranamunsa tro airgidbpeso Mheicsiceobpeso na Bolaivebpeso na Colimebpunt San Hilinbpunt na Sdinebhfranc na GuineBirr na hA",
+    sha256: "a8f9ebd1770ddc8e55dab7a68d4ec1ec1eebf374bb97cc65cf2c3cb373fc6791",
+  }]);
 });
 
 test("fails before Docker when the scan root cannot be resolved", () => {

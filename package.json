@@ -105,9 +105,6 @@
     "@forgeax/agent-runtime": "workspace:*",
     "@forgeax/platform-io": "workspace:*",
     "@forgeax/agent-host": "workspace:*",
-    "@forgeax-extension/kino-video-provider": "0.2.1",
-    "@forgeax-extension/wb-asset-canvas": "0.2.1",
-    "@forgeax-extension/wb-game-video": "0.7.8",
     "@forgeax/workbench-host": "0.2.6"
   },
   "devDependencies": {

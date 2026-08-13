@@ -6,9 +6,14 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+import importlib.util
 
 
 SCRIPT = Path(__file__).with_name("verify-release-artifact.py")
+SPEC = importlib.util.spec_from_file_location("forgeax_verify_release_artifact", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
 
 
 class VerifyReleaseArtifactTests(unittest.TestCase):
@@ -135,6 +140,42 @@ class VerifyReleaseArtifactTests(unittest.TestCase):
             ("duplicate path", [(duplicate_one, b""), (duplicate_two, b"")])
         )
 
+        drive_relative = tarfile.TarInfo("package/C:escape")
+        drive_relative.size = 0
+        unsafe_members.append(("drive-relative path", [(drive_relative, b"")]))
+
+        alternate_data_stream = tarfile.TarInfo("package/file:stream")
+        alternate_data_stream.size = 0
+        unsafe_members.append(("alternate data stream", [(alternate_data_stream, b"")]))
+
+        device_name = tarfile.TarInfo("package/CON")
+        device_name.size = 0
+        unsafe_members.append(("Windows device name", [(device_name, b"")]))
+
+        extended_device_name = tarfile.TarInfo("package/CONIN$.txt")
+        extended_device_name.size = 0
+        unsafe_members.append(("extended Windows device name", [(extended_device_name, b"")]))
+
+        superscript_device_name = tarfile.TarInfo("package/COM¹.txt")
+        superscript_device_name.size = 0
+        unsafe_members.append(("superscript Windows device name", [(superscript_device_name, b"")]))
+
+        case_collision_one = tarfile.TarInfo("package/Foo")
+        case_collision_one.size = 0
+        case_collision_two = tarfile.TarInfo("package/foo")
+        case_collision_two.size = 0
+        unsafe_members.append(
+            ("case-insensitive collision", [(case_collision_one, b""), (case_collision_two, b"")])
+        )
+
+        file_prefix = tarfile.TarInfo("package/runtime")
+        file_prefix.size = 0
+        file_prefix_child = tarfile.TarInfo("package/runtime/child")
+        file_prefix_child.size = 0
+        unsafe_members.append(
+            ("file-prefix collision", [(file_prefix, b""), (file_prefix_child, b"")])
+        )
+
         for label, members in unsafe_members:
             with self.subTest(label=label):
                 for child in self.candidate.iterdir():
@@ -144,6 +185,14 @@ class VerifyReleaseArtifactTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.extract_to.exists())
                 self.assertFalse((self.root / "escape").exists())
+
+    def test_rejects_sparse_pax_metadata(self):
+        with self.assertRaises(SystemExit):
+            MODULE._validate_pax_extension(b"31 GNU.sparse.realsize=16777216\n")
+
+    def test_rejects_surrogate_archive_paths_without_traceback(self):
+        with self.assertRaises(SystemExit):
+            MODULE._portable_path("package/\udcff", "package")
 
 
 if __name__ == "__main__":

@@ -35,13 +35,13 @@
   几秒就活。
 - **一份代码,Web 与桌面通吃。** 同一个 UI 既跑浏览器,也通过 Tauri 2 作为原生桌面应用运行。
 
-## 🆕 v0.3.23 更新
+## 🆕 v0.3.27 更新
 
-- **Asset Canvas 工作流** —— 集成共享 Workbench Host,统一资产编排、模型服务和媒体适配能力。
-- **场景创作增强** —— 场景创建、复制、删除、默认场景和字段编辑拥有更清晰、更安全的边界。
-- **游戏项目单位** —— 游戏成为项目单位,视频游戏与 `wb-game-video` 工作流进入稳定集成链路。
-- **无头 AI Carrier 支持** —— Carrier 管理器与 Wave 1 gameplay 兼容链路改善本地运行流程。
-- **桌面与 Play 修复** —— 原生“打开项目”、gameroot 外目录、Play 启动、预览资源、WebGL2 FXAA 回退和场景保存更加可靠。
+- **插件安装更可靠** —— Studio 遵循每个插件声明的包管理器和锁文件，按插件预期的工具链完成安装。
+- **修复 Windows Marketplace 目录链接** —— 插件目录会被整理为可用的目录链接，避免子进程插件因符号链接占位目录而启动失败。
+- **Studio 补齐材质、Mesh 与 VFX 预览** —— 通过 editor facade 统一注册预览视口，让 Studio 宿主获得一致的预览能力。
+- **资产路径统一** —— 资产导入与基于 catalog 的文件操作统一经过 editor gateway 的路径映射，让编辑器路径与磁盘文件保持一致。
+- **Game Runtime 独立发布** —— 游戏宿主可以直接使用运行时发布面，不必承担完整的 Studio 构建。
 
 → 完整说明见 [Releases](https://github.com/ForgeaX-Games/forgeax-studio/releases) 页。
 

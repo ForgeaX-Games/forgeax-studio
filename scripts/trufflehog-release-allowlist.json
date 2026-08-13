@@ -87,6 +87,18 @@
       "sha256": "2eb361e576a139af31bb962a0b24bc4e24409974da336a59f704e509b935d766"
     },
     {
+      "id": "runtime-linux-x64-uri-scopes-registries-doc",
+      "mode": "package",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/docs/pm/scopes-registries.mdx",
+      "line": 23,
+      "detector": "URI",
+      "detectorType": 17,
+      "decoders": ["PLAIN"],
+      "verified": false,
+      "raw": "https://username:password@registry.myorg.com/",
+      "sha256": "f017dfe1213813cb6be7313b22e7de4a03b3a39fedb5debe9926ba8e3ae94791"
+    },
+    {
       "id": "runtime-linux-x64-uri-registry-example",
       "mode": "package",
       "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/docs/runtime/bunfig.mdx",

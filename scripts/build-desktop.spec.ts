@@ -154,6 +154,20 @@ describe('desktop server runtime closure', () => {
     expect(buildScript).toContain(
       "copyTree(pkgdir, join(ENG, 'node_modules', pj.name), PREVIEW_PACKAGE_COPY_EXCLUDES)",
     );
+    expect(buildScript).toContain(
+      "const DESKTOP_CONTROL_PATH_EXCLUDES = new Set(['.forgeax-harness'])",
+    );
+    expect(buildScript).toContain('if (DESKTOP_CONTROL_PATH_EXCLUDES.has(base)) return true');
+  });
+
+  it('rejects private harness state if payload assembly ever regresses', () => {
+    const workflow = readFileSync(
+      join(root, '.github/workflows/desktop-build.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain("-Filter '.forgeax-harness'");
+    expect(workflow).toContain('private harness-state directories');
   });
 });
 

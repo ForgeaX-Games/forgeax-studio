@@ -309,6 +309,51 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 
 ---
 
+## v0.3.28 — 2026-08-13 · Nightly Release
+
+### 新特性
+
+- feat: bootstrap complete worktrees (#908)
+- feat(studio): adopt shared panel windowing (#903)
+- feat(studio-qa): prove profile comparison on real carrier (#887)
+
+### 修复
+
+- fix(desktop): restore animated agent avatars (#916)
+- fix: bootstrap published contracts in trusted mirror smoke (#918)
+- fix(ci): prevent cross-run interactive check eviction (#912)
+- fix(ci): make required checks and post-merge validation authoritative (#910)
+- fix(ci): stabilize local gate and runtime archive scan (#907)
+- fix(vfx): consume scoped editor preview runtime
+- fix(ci): preserve SFC-07 identity across push contract tests (#901)
+- fix: harden SFC-07 standard/heavy CI journeys (#876)
+- fix(mirror): include relocated brand package in public snapshot (#898)
+- fix(mirror): start public smoke through fx (#890)
+- fix(mirror): preserve parity source directories (#889)
+- fix(mirror): preserve engine source build modules (#888)
+- fix(ci): make Runtime archive and runner routing deterministic (#885)
+- fix(mirror): force-add reviewed generation artifacts (#884)
+- fix(mirror): copy the video generation facade after filtering (#883)
+- fix(mirror): preserve bundled generation facade files (#882)
+- fix(ci): scope local contract to full validation (#881)
+
+### 其他
+
+- chore: consume Studio source assets from harness (#899)
+- chore(studio): pin editor capture capability fix
+- chore: enforce floating harness ownership
+- docs(mirror): update public README release notes to v0.3.27 (#896)
+- chore: move brand source under packages (#894)
+- chore: move Studio docs into floating harness (#891)
+- chore: organize root layout (#893)
+- perf: speed up floating repo updates (#892)
+- docs: finalize Runtime CI parity info report (#886)
+- ci: materialize the Runtime Linux platform matrix (#871)
+
+
+---
+
+
 ## v0.3.27 — 2026-08-12 · Nightly Release
 
 ### 新特性

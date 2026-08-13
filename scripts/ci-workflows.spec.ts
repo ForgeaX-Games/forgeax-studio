@@ -175,12 +175,13 @@ describe('CI workflow orchestration', () => {
     expect(jobBlock(ci, 'runner-policy')).toContain('bun scripts/ci/audit-required-checks-ruleset.mjs');
   });
 
-  it('serializes every fixed-port Studio consumer across workflows', () => {
-    const group = 'forgeax-studio-interactive-linux-x64';
+  it('serializes fixed-port Studio consumers per workflow run without cross-run eviction', () => {
+    const group = 'group: forgeax-studio-interactive-linux-x64-${{ github.run_id }}';
     for (const block of [jobBlock(ci, 'sfc07-heavy'), jobBlock(ci, 'check'), jobBlock(sfc07, 'heavy')]) {
-      expect(block).toContain(`group: ${group}`);
+      expect(block).toContain(group);
       expect(block).toContain('cancel-in-progress: false');
     }
+    expect([ci, sfc07].join('\n')).not.toContain('group: forgeax-studio-interactive-linux-x64\n');
   });
 
   it('declares the ordinary recursive input contract at every ordinary action call', () => {

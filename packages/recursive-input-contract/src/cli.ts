@@ -100,7 +100,7 @@ export function recursiveInputHelp(command?: string): string {
   if (command && command !== 'recursive-inputs' && command !== 'help') {
     return `Usage: bun fx recursive-inputs ${command}\n\nUnknown recursive-inputs command.`;
   }
-  return `Recursive input contract\n\nUsage:\n  bun fx recursive-inputs <command> [options]\n\nCommands:\n  materialize  Produce and persist the current recursive input result\n  verify       Validate the current result before source-owned work\n  status       Inspect current readiness without changing state\n  schema       Print the schema identity, classes, trust scopes, and error index\n\nShortest path:\n  bun fx recursive-inputs materialize --classes source\n  bun fx recursive-inputs verify\n  bun fx recursive-inputs status\n  bun fx recursive-inputs schema\n\nMachine output is JSON on stdout; human diagnostics are on stderr.\nRead the contract: .forgeax-harness/docs/contracts/recursive-inputs.md`;
+  return `Recursive input contract\n\nUsage:\n  bun fx recursive-inputs <command> [options]\n\nCommands:\n  materialize  Produce and persist the current recursive input result\n  verify       Validate the current result before source-owned work\n  status       Inspect current readiness without changing state\n  schema       Print the schema identity, classes, trust scopes, and error index\n\nShortest path:\n  bun fx recursive-inputs materialize --classes source\n  bun fx recursive-inputs verify\n  bun fx recursive-inputs status\n  bun fx recursive-inputs schema\n\nMachine output is JSON on stdout; human diagnostics are on stderr.\nRead the contract: packages/harness/docs/contracts/recursive-inputs.md`;
 }
 
 function parseOptions(args: string[]): {
@@ -230,7 +230,7 @@ function schemaDiscovery(): Record<string, unknown> {
       'recursive-input.trust-scope-mismatch',
       'recursive-input.result-not-ready',
     ],
-    docsPath: '.forgeax-harness/docs/contracts/recursive-inputs.md',
+    docsPath: 'packages/harness/docs/contracts/recursive-inputs.md',
   };
 }
 

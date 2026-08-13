@@ -203,12 +203,13 @@ test("keeps the release scan allowlist explicit and content-bound", () => {
   assert.ok(runtimeEntries.every((entry) => Number.isInteger(entry.detectorType)));
   assert.ok(runtimeEntries.every((entry) => Array.isArray(entry.decoders) && entry.decoders.length > 0));
   assert.ok(runtimeEntries.every((entry) => entry.verified === false));
-  assert.ok(runtimeEntries.every((entry) => Array.isArray(entry.sha256) && entry.sha256.length === 2));
+  assert.ok(runtimeEntries.every((entry) => Array.isArray(entry.sha256) && entry.sha256.length === 3));
   assert.ok(runtimeEntries.every((entry) => entry.sha256.every((digest) => /^[a-f0-9]{64}$/u.test(digest))));
   assert.deepEqual(
     new Set(runtimeEntries.flatMap((entry) => entry.sha256)),
     new Set([
       "adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f",
+      "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c",
       "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d",
     ]),
   );

@@ -6,7 +6,7 @@
     "approved_content_commit": "ac9695fcba6d482ab50f50c42938f827889548a7",
     "baseline_bytes_sha256": "1e4e36af07f8fffed489ae29751c26f11ff76e564c38c950101d77fe40dfe41d",
     "baseline_id": "b1-2026-07-26-0.7.3",
-    "decision_evidence": ".forgeax-harness/docs/ai-native/evidence/2026-07-25-user-decisions-phase2.md",
+    "decision_evidence": "packages/harness/docs/ai-native/evidence/2026-07-25-user-decisions-phase2.md",
     "decision_evidence_sha256": "86d3dafedaa2d6f19334efcaf648523b843e300c4b127cf982c287ab825fc653",
     "status": "approved"
   },

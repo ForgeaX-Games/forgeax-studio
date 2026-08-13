@@ -39,7 +39,7 @@ Two mode caveats worth internalizing:
   must be **repackaged** (`bun fx build desktop`) to pick anything up.
 - **desktop-dev and the `.app` are both WKWebView** → 3D rendering is bounded by
   **WebKit WebGPU** (weaker than Chrome's Dawn). Details:
-  [`.forgeax-harness/docs/deploy-notes.md`](./.forgeax-harness/docs/deploy-notes.md) §".app 渲染: WebKit WebGPU vs 新引擎".
+  [`packages/harness/docs/deploy-notes.md`](./packages/harness/docs/deploy-notes.md) §".app 渲染: WebKit WebGPU vs 新引擎".
 
 ## Prerequisites
 
@@ -186,7 +186,7 @@ publishes Common → platform packages → Universal. `@forgeax/game@0.1.3` is r
 from its own repository only after Universal `0.3.27` is visible in npm.
 
 For local structural verification, use the Runtime commands in
-[`.forgeax-harness/docs/testing.md`](./.forgeax-harness/docs/testing.md). Do not infer Windows/Linux native readiness
+[`packages/harness/docs/testing.md`](./packages/harness/docs/testing.md). Do not infer Windows/Linux native readiness
 from a local Darwin run, and do not hand-create a registry lock before the packages
 exist.
 

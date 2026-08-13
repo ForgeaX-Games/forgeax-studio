@@ -123,7 +123,7 @@ function buildMode(): void {
   if (IS_WIN) ensureCcToolchain();
   const r1 = spawnSync(process.execPath, [join(ROOT, 'scripts/build-desktop.ts')], { stdio: 'inherit', cwd: ROOT, windowsHide: true });
   if (r1.status !== 0) process.exit(r1.status ?? 1);
-  // bundle_dmg.sh uses AppleScript/Finder and fails on headless CI (see .forgeax-harness/docs/desktop-tauri-howto.md).
+  // bundle_dmg.sh uses AppleScript/Finder and fails on headless CI (see packages/harness/docs/desktop-tauri-howto.md).
   const tauriBuildArgs = ['run', 'tauri', 'build'];
   if (!IS_WIN && inCi) tauriBuildArgs.push('--', '--bundles', 'app');
   const r2 = spawnSync(process.execPath, tauriBuildArgs, { cwd: ifaceDir, stdio: 'inherit', windowsHide: true });

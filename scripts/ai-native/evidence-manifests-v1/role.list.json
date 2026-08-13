@@ -35,7 +35,7 @@
   "direct_call_residual": {
     "status": "none",
     "evidence_refs": [
-      ".forgeax-harness/docs/ai-native/baseline/b1-2026-07-26-0.7.3/edges.jsonl:206 — The complete b1 effect edge set routes the only role.list control through action:role.list.",
+      "packages/harness/docs/ai-native/baseline/b1-2026-07-26-0.7.3/edges.jsonl:206 — The complete b1 effect edge set routes the only role.list control through action:role.list.",
       "packages/interface/src/lib/builtin-actions.ts:207 — The current control entry is the role.list ActionRegistry declaration."
     ]
   },

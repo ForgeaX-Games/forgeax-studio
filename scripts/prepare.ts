@@ -335,7 +335,8 @@ if (!publicDistribution) {
   }
 }
 
-// .forgeax-harness floating clone + skill install. Dev-only convenience —
+// .forgeax-harness floating state clone + package harness + skill install.
+// Dev-only convenience —
 // gate behind FORGEAX_SKIP_HARNESS so CI and bare `bun install` (which triggers
 // prepare on every run) don't re-clone the harness + re-run the Python skill
 // install into the agent dirs each time. Non-fatal either way.

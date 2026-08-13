@@ -6,7 +6,7 @@ import { assertIntegrityDomainGenerated } from './integrity-domain.ts';
 /** Immutable product-combo pin consumed by the scanner's --no-git audit path.
  * The wider pin/approval machinery that once lived here is retired; what
  * remains is the pin location plus the scanner configuration fingerprint. */
-export const RUNTIME_PIN_PATH = '.forgeax-harness/docs/ai-native/pins/m2-2026-07-23.json';
+export const RUNTIME_PIN_PATH = 'packages/harness/docs/ai-native/pins/m2-2026-07-23.json';
 
 export interface ScannerConfigurationFingerprint {
   schema_version: 1;
@@ -56,7 +56,7 @@ export function computeScannerConfigurationFingerprint(repoRoot: string): Scanne
     }
     const domain = path === 'scripts/ai-native/alias-map.json'
       ? 'identity-aliases'
-      : path === '.forgeax-harness/docs/ai-native/other-team-gap-ownership.md'
+      : path === 'packages/harness/docs/ai-native/other-team-gap-ownership.md'
         ? 'ownership-adjudication'
         : 'scanner-configuration';
     return { domain, path, sha256: sha256(readFileSync(target)) };

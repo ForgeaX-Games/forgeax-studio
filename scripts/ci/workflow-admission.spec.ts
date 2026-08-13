@@ -37,7 +37,7 @@ describe('workflow parser admission', () => {
   it('derives every checked-in workflow and mirrored source from the landed graph contract', () => {
     const paths = discoverWorkflowSourcePaths(root);
     expect(paths).toEqual(trackedWorkflowSources());
-    expect(paths).toHaveLength(17);
+    expect(paths).toHaveLength(18);
     expect(paths).toContain('.github/workflows/mirror-publish-dryrun.yml');
     expect(paths).toContain('scripts/mirror/ci/mirror-publish-dryrun.yml');
     expect(WORKFLOW_PARSER_CONTRACT.sourceSet.directories).toEqual([

@@ -33,6 +33,21 @@ describe('desktop build pack scan scope', () => {
     expect(workflow).not.toContain('|| echo "::warning::Failed to upload');
   });
 
+  it('uses the NSIS Windows installer instead of the large-payload WiX linker', () => {
+    const workflow = readFileSync(
+      join(root, '.github/workflows/desktop-build.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('"ext":"exe"');
+    expect(workflow).toContain('"tauri_args":"--bundles nsis"');
+    expect(workflow).not.toContain('"ext":"msi"');
+    expect(workflow).toContain('Measure Windows desktop payload');
+    expect(workflow).toContain('Payload: {0:N2} GiB across {1:N0} files');
+    expect(workflow).toContain('windows_only:');
+    expect(workflow).not.toContain('macos-13');
+  });
+
   it('builds a generic play shell without a sibling-games asset producer', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
     const playRuntimeViteConfig = readFileSync(

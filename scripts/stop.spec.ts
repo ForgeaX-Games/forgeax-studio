@@ -7,7 +7,7 @@ import { resolveRuntimeInstance, runtimeInstanceProcessEnv, writeRuntimeInstance
 import { cleanupStopArtifacts, instanceStopCleanupPaths, resolveInstanceStopScope } from './lib/stop-scope.ts';
 import { RuntimeStateStore } from './lib/runtime-state.ts';
 import { resolveStartupEnvironment } from './lib/startup-environment.ts';
-import { canFinalizeStop, discoverStopTargets } from './lib/stop-execution.ts';
+import { canFinalizeStop, discoverStopTargets, waitForStopPids } from './lib/stop-execution.ts';
 import { runtimeProcessBelongsToInstance } from './lib/runtime-process-owner.ts';
 import { readStartLockOwner, StartLock } from './lib/startlock.ts';
 
@@ -78,6 +78,25 @@ function writeLock(target: ReturnType<typeof resolveRuntimeInstance>, pid: numbe
 }
 
 describe('instance-scoped stop discovery', () => {
+  test('waits for killed process IDs to disappear before declaring residue', async () => {
+    const alive = new Map([[701, true], [702, true]]);
+    const probes: number[] = [];
+    const survivors = await waitForStopPids(
+      [701, 702, 701],
+      (pid) => {
+        probes.push(pid);
+        return alive.get(pid) ?? false;
+      },
+      async () => {
+        alive.set(701, false);
+      },
+      { timeoutMs: 100, intervalMs: 1 },
+    );
+    expect(survivors).toEqual([702]);
+    expect(probes).toContain(701);
+    expect(probes).toContain(702);
+  });
+
   test('slot 1 without state scans only slot 1 derived ports, never slot 0', () => {
     const slot1 = instance(1);
     const slot0 = instance(0);

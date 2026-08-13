@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -180,6 +180,28 @@ describe('RuntimeState contract', () => {
       ...state,
       owners: { ...state.owners, server: { ...state.owners.server, packageDir: join(owner.instance.root, 'outside') } },
     })).toBe(false);
+  });
+
+  test('accepts a source runtime whose instance mounts packages through a symlink', () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'forgeax-runtime-state-source-'));
+    roots.push(sourceRoot);
+    writeServerRole(sourceRoot, 'server', 'src/main.ts');
+
+    const mountedRoot = mkdtempSync(join(tmpdir(), 'forgeax-runtime-state-mounted-'));
+    roots.push(mountedRoot);
+    symlinkSync(join(sourceRoot, 'packages'), join(mountedRoot, 'packages'), 'dir');
+    writeRuntimeInstanceConfig({ root: mountedRoot, slot: 2 });
+    const instance = resolveRuntimeInstance({ root: mountedRoot });
+    const startup = resolveStartupEnvironment({
+      root: mountedRoot,
+      profile: 'anydev-web',
+      env: { ...runtimeInstanceProcessEnv(instance), FORGEAX_BRIDGE: '0' },
+    });
+
+    const state = new RuntimeStateStore(startup, 123).writeStarting();
+
+    expect(startup.resourceRoot).toBe(join(mountedRoot, 'packages'));
+    expect(runtimeStateBelongsToInstance(instance, state)).toBe(true);
   });
 
   test('authorizes only the base role or exact declared override metadata', () => {

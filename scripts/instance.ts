@@ -8,7 +8,9 @@ import {
 } from './lib/runtime-instance.ts';
 import { StartLock } from './lib/startlock.ts';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.env.FORGEAX_WORKSPACE_ROOT
+  ? resolve(process.env.FORGEAX_WORKSPACE_ROOT)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export function runInstanceCommand(argv: readonly string[], root = ROOT): void {
   const [command, ...args] = argv;

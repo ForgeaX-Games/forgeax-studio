@@ -146,6 +146,10 @@ export function selfAndAncestors(pid: number = process.pid): Set<number> {
 }
 
 /** True if the process is still alive. */
+export function isDefunctProcessState(state: string): boolean {
+  return /^\s*Z/.test(state);
+}
+
 export function isAlive(pid: number): boolean {
   if (!pid) return false;
   if (IS_WIN) {
@@ -157,10 +161,22 @@ export function isAlive(pid: number): boolean {
   }
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  // The Linux runner is the platform where detached Bun/Node trees can leave
+  // a zombie visible after SIGKILL. On Darwin, Bun test workers can report a
+  // PID that the child `ps` process cannot resolve, so keep the kill(0)
+  // result instead of turning an unknown inspection into "dead".
+  if (process.platform !== 'linux') return true;
+  // `kill(pid, 0)` also succeeds for a zombie. A defunct child owns no live
+  // socket or executable, but treating it as alive makes stop.ts reject clean
+  // teardown after SIGKILL when the parent has not reaped it yet. Keep the
+  // fail-closed behavior when the state probe itself is unavailable.
+  const state = spawnSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' });
+  if (state.status !== 0 || state.error) return true;
+  const processState = (state.stdout ?? '').trim();
+  return processState !== '' && !isDefunctProcessState(processState);
 }
 
 // ── port-owner discovery ────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ import {
   resolveInstanceStopScope,
 } from './lib/stop-scope.ts';
 import { readRuntimeProcessSnapshot, runtimeProcessBelongsToInstance } from './lib/runtime-process-owner.ts';
-import { canFinalizeStop, discoverStopTargets } from './lib/stop-execution.ts';
+import { canFinalizeStop, discoverStopTargets, waitForStopPids } from './lib/stop-execution.ts';
 import {
   clearPidfiles,
   IS_WIN,
@@ -41,7 +41,9 @@ import { resolveActiveServerRole } from './lib/server-role.ts';
 import { readRuntimeState, runtimeStateBelongsToInstance } from './lib/runtime-state.ts';
 import { vitePurgeAll } from './lib/vite-cache.ts';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.env.FORGEAX_WORKSPACE_ROOT
+  ? resolve(process.env.FORGEAX_WORKSPACE_ROOT)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const instance = resolveRuntimeInstance({ root: ROOT });
 const runtimeState = readRuntimeState(instance.stateFile);
 let activeServer = {
@@ -190,6 +192,14 @@ for (let tick = 0; tick < 10; tick++) {
   await sleep(500);
 }
 
+// A SIGKILL can release the socket before Linux has removed every detached
+// process from its table. Give the declared targets the same bounded cleanup
+// grace, otherwise a transient process-table race is reported as residue.
+const postKillSurvivors = await waitForStopPids(found.keys(), isAlive, sleep);
+if (postKillSurvivors.length > 0) {
+  console.error(`[stop] process survivors after bounded cleanup wait: ${postKillSurvivors.join(', ')}`);
+}
+
 // ── final verification ───────────────────────────────────────────────────────
 console.log();
 console.log('[stop] final port state:');
@@ -204,7 +214,27 @@ for (let i = 0; i < ports.length; i++) {
 }
 
 const elapsed = Math.round((performance.now() - startTs) / 1000);
-if (anyBusy || !canFinalizeStop(scoped, { ...discovery, found }, { isAlive, isPortBusy })) {
+const finalizable = canFinalizeStop(scoped, { ...discovery, found }, { isAlive, isPortBusy });
+if (anyBusy || !finalizable) {
+  const busyDeclaredPorts = scoped.ports.filter(({ port }) => isPortBusy(port)).map(({ port, key }) => `${key}:${port}`);
+  const liveDeclaredPids = scoped.pids.filter(({ pid }) => isAlive(pid)).map(({ pid, key }) => `${key}:${pid}`);
+  const liveUnprovenPids = scoped.unprovenPids.filter(isAlive);
+  const busyUnprovenPorts = scoped.unprovenPorts.filter(isPortBusy);
+  const liveRefusedPids = [...discovery.refusedPids].filter(isAlive);
+  const busyRefusedPorts = [...discovery.refusedPorts].filter(isPortBusy);
+  console.error(`[stop] final residue diagnostics: ${JSON.stringify({
+    scopeUntrusted: scoped.untrusted,
+    discoveryBlocked: discovery.blocked,
+    busyDeclaredPorts,
+    unprovenPorts: scoped.unprovenPorts,
+    liveDeclaredPids,
+    liveUnprovenPids,
+    busyUnprovenPorts,
+    refusedPorts: [...discovery.refusedPorts],
+    liveRefusedPids,
+    busyRefusedPorts,
+    liveFoundPids: postKillSurvivors,
+  })}`);
   console.error(`[stop] done in ${elapsed}s — a scoped port, PID, or declared resource survived; refusing cleanup`);
   process.exit(1);
 }

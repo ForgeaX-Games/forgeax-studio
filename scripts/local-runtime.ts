@@ -15,7 +15,9 @@ import {
   type StartupProfile,
 } from './lib/startup-environment.ts';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = process.env.FORGEAX_WORKSPACE_ROOT
+  ? resolve(process.env.FORGEAX_WORKSPACE_ROOT)
+  : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export function requestedStartupProfile(
   argv: readonly string[],

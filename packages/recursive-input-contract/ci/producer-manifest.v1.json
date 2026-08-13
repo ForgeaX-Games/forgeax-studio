@@ -25,7 +25,7 @@
       "producerId": "fetch-submodules-ordinary",
       "trustScope": "ordinary-ci",
       "workflow": ".github/workflows/ci.yml",
-      "job": "build",
+      "job": "check",
       "validationBoundary": "before first source-owned command",
       "sourceWork": "bun install"
     },
@@ -34,9 +34,45 @@
       "producerId": "fetch-submodules-ordinary",
       "trustScope": "ordinary-ci",
       "workflow": ".github/workflows/boundaries.yml",
-      "job": "full-boundaries",
+      "job": "lint-boundaries",
       "validationBoundary": "before first source-owned command",
       "sourceWork": "bun run lint:layers"
+    },
+    {
+      "consumerId": "sfc07-standard",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "sfc07-standard",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "bun install --frozen-lockfile"
+    },
+    {
+      "consumerId": "sfc07-heavy",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "sfc07-heavy",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "bun install --frozen-lockfile"
+    },
+    {
+      "consumerId": "sfc07-scheduled-standard",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/sfc07.yml",
+      "job": "standard",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "bun install --frozen-lockfile"
+    },
+    {
+      "consumerId": "sfc07-scheduled-heavy",
+      "producerId": "fetch-submodules-ordinary",
+      "trustScope": "ordinary-ci",
+      "workflow": ".github/workflows/sfc07.yml",
+      "job": "heavy",
+      "validationBoundary": "before first source-owned command",
+      "sourceWork": "bun install --frozen-lockfile"
     },
     {
       "consumerId": "nightly-e2e",

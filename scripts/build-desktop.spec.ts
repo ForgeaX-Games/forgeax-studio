@@ -19,6 +19,20 @@ describe('desktop build pack scan scope', () => {
     expect(workflow).toMatch(/^\s{2}FORGEAX_SKIP_BOOTSTRAP: '1'$/m);
   });
 
+  it('syncs the shipping version and preserves installer paths containing spaces', () => {
+    const workflow = readFileSync(
+      join(root, '.github/workflows/desktop-build.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('syncReleaseVersion');
+    expect(workflow).toContain('test "v${ROOT_VERSION}" = "${{ github.event.inputs.version }}"');
+    expect(workflow).toContain("while IFS= read -r -d '' f; do");
+    expect(workflow).toContain('-print0');
+    expect(workflow).not.toContain('for f in $(find "$BUNDLE_DIR"');
+    expect(workflow).not.toContain('|| echo "::warning::Failed to upload');
+  });
+
   it('builds a generic play shell without a sibling-games asset producer', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
     const playRuntimeViteConfig = readFileSync(

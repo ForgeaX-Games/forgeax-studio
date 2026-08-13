@@ -9,7 +9,7 @@
       "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml"
     ],
     "originalFalsifier": "A deliberately malformed workflow must return non-zero and prevent the later synthetic reporter from emitting success.",
-    "studioDelta": "Studio has ordinary pull_request workflows plus trusted-base mirror sources and five required aggregate contexts; this round is a collector and does not install the parser gate.",
+    "studioDelta": "Studio has ordinary pull_request workflows plus trusted-base mirror sources and a source-controlled required-check manifest; this round is a collector and does not install the parser gate.",
     "focusedTransferProof": "The collector parses every selected Studio workflow source and rejects the malformed workflow fixture before graph or history output is emitted."
   },
   {
@@ -100,7 +100,7 @@
       "studio@6b344ca0c8686c0727e1f4bec619af6265bfe128:.github/workflows/ci.yml"
     ],
     "originalFalsifier": "Missing or extra required contexts must fail before a synthetic success can be reported.",
-    "studioDelta": "Studio's live ruleset names five aggregate contexts across ordinary and trusted-base workflows; sfc-11 owns active drift admission.",
+    "studioDelta": "Studio's runner-policy job audits the live ruleset against the source-controlled required-check manifest; the collector remains observational and does not mutate governance.",
     "focusedTransferProof": "The collector records ruleset contexts and marks each parsed job context required or not-required without mutating governance or declaring drift green."
   },
   {

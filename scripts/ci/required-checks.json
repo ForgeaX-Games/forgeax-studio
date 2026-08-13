@@ -1,0 +1,10 @@
+[
+  "typecheck + build + script smoke",
+  "SFC-07 stable aggregate",
+  "Runtime validation aggregate",
+  "dependency-cruiser boundary lint",
+  "mirror dry-run (assemble + scrub + gate)",
+  "submodule pin reachability + main-ancestry",
+  "mirror publish dry-run (external push)",
+  "every commit has a human author"
+]

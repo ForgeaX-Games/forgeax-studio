@@ -803,6 +803,32 @@ function restartStack(args: string[]): never {
 // projection of the remote CI surface: install the pinned graph, run the root
 // contracts, verify the engine-owned template path, then delegate the editor
 // leaf's own CI to its checked-out CLI.
+function editorCiEnvironment(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const instance = resolveRuntimeInstance({ root: ROOT });
+  // The editor's broad Playwright config has developer-friendly fixed defaults
+  // and reuses them outside CI. The Studio gate must be CI-shaped even on a
+  // machine that already has the Studio stack running, so project every
+  // editor-only port into a private range derived from this checkout's
+  // authoritative RuntimeInstance. Keep the root Studio process untouched.
+  const offset = 1_000;
+  const host = instance.ports.interface + offset;
+  const engine = instance.ports.engine + offset;
+  return {
+    ...baseEnv,
+    CI: '1',
+    FORGEAX_E2E_PORT: String(host),
+    FORGEAX_E2E_EDIT_PORT: String(host - 10),
+    FORGEAX_E2E_API_PORT: String(host - 9),
+    FORGEAX_E2E_ENGINE_PORT: String(engine),
+    FORGEAX_E2E_BRIDGE_PORT: String(host + 6),
+    FORGEAX_E2E_TEMPLATE_PORT: String(host + 2),
+    FORGEAX_E2E_TEMPLATE_EDIT_PORT: String(host - 8),
+    FORGEAX_E2E_TEMPLATE_API_PORT: String(host - 7),
+    FORGEAX_E2E_TEMPLATE_ENGINE_PORT: String(engine - 1),
+    FORGEAX_E2E_TEMPLATE_BRIDGE_PORT: String(host + 106),
+  };
+}
+
 function ci(args: string[]): never {
   if (args.length > 0) {
     console.error('usage: bun fx ci');
@@ -865,6 +891,7 @@ function ci(args: string[]): never {
     ['recursive submodule checkout', 'git', ['submodule', 'update', '--init', '--recursive'], ROOT],
     ['root frozen Bun install + prepare', BUN, ['install', '--frozen-lockfile'], ROOT],
     ['root repository gates', BUN, [script('repos.ts'), 'check', '.'], ROOT],
+    ['required-checks ruleset audit', BUN, ['scripts/ci/audit-required-checks-ruleset.mjs'], ROOT],
     ['games floating checkout contract', BUN, ['test', 'scripts/games-floating-contract.test.ts'], ROOT],
     ['bun fx command contract', BUN, ['test', 'scripts/fx-ci-contract.test.ts'], ROOT],
     ['Studio editor smoke contract', BUN, ['run', 'test:studio-smoke-contract'], ROOT],
@@ -879,11 +906,13 @@ function ci(args: string[]): never {
       ],
       join(ROOT, 'packages', 'server'),
     ],
+    ['editor engine setup', BUN, ['scripts/fx.ts', 'setup'], join(ROOT, 'packages', 'editor')],
     ['editor PR CI projection', BUN, ['scripts/fx.ts', 'ci'], join(ROOT, 'packages', 'editor')],
   ];
   for (const [name, command, argv, cwd] of steps) {
     console.log(`\n[ci] ${name}`);
-    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env: ciEnv });
+    const env = name === 'editor PR CI projection' ? editorCiEnvironment(ciEnv) : ciEnv;
+    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env });
     if ((result.status ?? 1) !== 0) {
       console.error(`[ci] FAIL: ${name}`);
       process.exit(result.status ?? 1);

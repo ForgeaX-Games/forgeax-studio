@@ -113,6 +113,28 @@ describe('Game Runtime publish workflow', () => {
     expect(security).toContain('uses: ./.github/actions/fetch-submodules');
   });
 
+  test('publishes only after the complete Runtime validation aggregate passes', () => {
+    const aggregate = job('runtime-validation');
+    expect(aggregate).toContain('name: Runtime validation aggregate');
+    expect(aggregate).toContain('if: ${{ !cancelled() }}');
+    for (const producer of [
+      'source-security',
+      'build-common',
+      'build-platform',
+      'build-universal',
+      'scan-common',
+      'scan-platform-darwin-arm64',
+      'scan-platform-win32-x64',
+      'scan-platform-linux-x64',
+      'scan-universal',
+    ]) {
+      expect(aggregate).toContain(`- ${producer}`);
+      expect(aggregate).toContain(`needs.${producer}.result`);
+    }
+    expect(aggregate).toContain('Runtime validation graph is not green');
+    expect(job('publish')).toContain('- runtime-validation');
+  });
+
   test('materializes the recursive pin graph before any Runtime source work', () => {
     for (const name of ['source-security', 'build-common', 'build-platform', 'build-universal']) {
       const block = job(name);

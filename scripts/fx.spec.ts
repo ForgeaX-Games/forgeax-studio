@@ -11,6 +11,7 @@ import {
   formatUpdateReport,
   floatingRepoExclusionArgs,
   hasActiveGitProcess,
+  localCiEnvironment,
   lifecycleProcessEnv,
   parseSubmodulePaths,
   resolveCommand,
@@ -112,6 +113,24 @@ describe('scripts/fx.ts command routing', () => {
     ]);
   });
 
+  it('isolates editor CI web servers from the current Studio runtime', () => {
+    const instance = resolveRuntimeInstance({ root: ROOT });
+    const projected = localCiEnvironment({ FORGEAX_E2E_PORT: '41020', EXTRA_CI_FLAG: 'kept' });
+
+    expect(projected.CI).toBe('1');
+    expect(projected.EXTRA_CI_FLAG).toBe('kept');
+    expect(projected.FORGEAX_E2E_PORT).toBe('41020');
+    expect(projected.FORGEAX_E2E_EDIT_PORT).toBe(String(instance.ports.interface + 101));
+    expect(projected.FORGEAX_E2E_API_PORT).toBe(String(instance.ports.server + 100));
+    expect(projected.FORGEAX_E2E_ENGINE_PORT).toBe(String(instance.ports.engine + 100));
+    expect(projected.FORGEAX_E2E_TEMPLATE_PORT).toBe(String(instance.ports.interface + 102));
+    expect(projected.FORGEAX_E2E_TEMPLATE_EDIT_PORT).toBe(String(instance.ports.interface + 103));
+    expect(projected.FORGEAX_E2E_TEMPLATE_API_PORT).toBe(String(instance.ports.server + 102));
+    expect(projected.FORGEAX_E2E_TEMPLATE_ENGINE_PORT).toBe(String(instance.ports.engine + 102));
+    expect(projected.FORGEAX_E2E_BRIDGE_PORT).toBe(String(instance.ports.interface + 106));
+    expect(projected.FORGEAX_E2E_TEMPLATE_BRIDGE_PORT).toBe(String(instance.ports.interface + 108));
+  });
+
   it('does not declare or launch the retired Studio-owned gateway relay', () => {
     const runSource = readFileSync(script('run.ts'), 'utf8');
     const portsSource = readFileSync(resolve(ROOT, 'scripts', 'lib', 'ports.ts'), 'utf8');
@@ -145,6 +164,19 @@ describe('scripts/fx.ts command routing', () => {
       type: 'script',
       script: script('instance.ts'),
       args: ['show'],
+    });
+  });
+
+  it('routes complete Studio worktree creation through the dedicated bootstrap CLI', () => {
+    expect(resolveCommand(['worktree', 'feature-name'])).toEqual({
+      type: 'script',
+      script: script('worktree.ts'),
+      args: ['feature-name'],
+    });
+    expect(resolveCommand(['wt', 'feature-name', '--fast'])).toEqual({
+      type: 'script',
+      script: script('worktree.ts'),
+      args: ['feature-name', '--fast'],
     });
   });
 

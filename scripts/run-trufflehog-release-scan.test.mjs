@@ -100,6 +100,35 @@ test("package mode scans without directory exclusions", () => {
   }
 });
 
+test("package mode expands runtime archives instead of scanning compressed bytes", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "forgeax-trufflehog-package-view-"));
+  const source = join(fixture, "source");
+  const staging = join(fixture, "staging");
+  const destination = join(fixture, "destination");
+  const archiveDirectory = join(source, "assets", "runtime", "linux-x64");
+  mkdirSync(archiveDirectory, { recursive: true });
+  mkdirSync(join(staging, "bin"), { recursive: true });
+  writeFileSync(join(staging, "bin", "forgeax-runtime"), "runtime payload");
+  const archive = join(archiveDirectory, "forgeax-game-runtime-linux-x64.tar.gz");
+  const packed = spawnSync("tar", ["-czf", archive, "-C", staging, "bin"], { encoding: "utf8" });
+  assert.equal(packed.status, 0, packed.stderr);
+  const prepared = spawnSync("python3", [
+    resolve(dirname(script), "prepare-trufflehog-package-scan.py"),
+    "--source", source,
+    "--destination", destination,
+  ], { encoding: "utf8" });
+  try {
+    assert.equal(prepared.status, 0, prepared.stderr);
+    assert.equal(existsSync(join(destination, "assets", "runtime", "linux-x64", "forgeax-game-runtime-linux-x64.tar.gz")), false);
+    assert.equal(
+      readFileSync(join(destination, "assets", "runtime", "linux-x64", "forgeax-game-runtime-linux-x64.tar.gz.contents", "bin", "forgeax-runtime"), "utf8"),
+      "runtime payload",
+    );
+  } finally {
+    rmSync(fixture, { force: true, recursive: true });
+  }
+});
+
 test("uses a configured host scanner and preserves native source paths", () => {
   const fixture = runWithFakeScanner({
     mode: "source",
@@ -182,7 +211,7 @@ test("prints only sanitized finding metadata when the scanner reports a finding"
 test("keeps the release scan allowlist explicit and content-bound", () => {
   const allowlist = JSON.parse(readFileSync(resolve(dirname(script), "trufflehog-release-allowlist.json"), "utf8"));
   assert.equal(allowlist.version, 1);
-  assert.equal(allowlist.entries.length, 14);
+  assert.equal(allowlist.entries.length, 13);
   const lobEntries = allowlist.entries.filter((entry) => entry.detector === "Lob");
   assert.equal(lobEntries.length, 3);
   for (const entry of lobEntries) {
@@ -196,28 +225,15 @@ test("keeps the release scan allowlist explicit and content-bound", () => {
     assert.match(entry.sha256, /^[a-f0-9]{64}$/u);
     assert.match(entry.raw, /^test_[a-z0-9_]+$/u);
   }
-  const runtimeEntries = allowlist.entries.filter((entry) => entry.path === "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz");
-  assert.equal(runtimeEntries.length, 11);
+  assert.equal(allowlist.entries.some((entry) => entry.path.endsWith(".tar.gz")), false);
+  const runtimeEntries = allowlist.entries.filter((entry) => entry.path.includes(".tar.gz.contents/"));
+  assert.equal(runtimeEntries.length, 10);
   assert.ok(runtimeEntries.every((entry) => entry.mode === "package"));
   assert.ok(runtimeEntries.every((entry) => ["GCP", "Postgres", "URI"].includes(entry.detector)));
   assert.ok(runtimeEntries.every((entry) => Number.isInteger(entry.detectorType)));
   assert.ok(runtimeEntries.every((entry) => Array.isArray(entry.decoders) && entry.decoders.length > 0));
   assert.ok(runtimeEntries.every((entry) => entry.verified === false));
-  assert.ok(runtimeEntries.every((entry) => Array.isArray(entry.sha256) && entry.sha256.length === 4));
-  assert.ok(runtimeEntries.every((entry) => entry.sha256.every((digest) => /^[a-f0-9]{64}$/u.test(digest))));
-  assert.deepEqual(
-    new Set(runtimeEntries.flatMap((entry) => entry.sha256)),
-    new Set([
-      "adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f",
-      "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c",
-      "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d",
-      "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82",
-    ]),
-  );
-  assert.deepEqual(
-    new Set(runtimeEntries.map((entry) => entry.line)),
-    new Set([12, 14, 23, 24, 25, 595, 1945, 204, 257, 310, 4235]),
-  );
+  assert.ok(runtimeEntries.every((entry) => /^[a-f0-9]{64}$/u.test(entry.sha256)));
 });
 
 test("fails before Docker when the scan root cannot be resolved", () => {

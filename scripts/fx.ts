@@ -7,6 +7,7 @@
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSubmodulePaths } from './lib/repos.ts';
@@ -125,6 +126,8 @@ const SCRIPT_COMMANDS = new Map<string, string>([
   ['stop', 'stop.ts'],
   ['open', 'open-web.ts'],
   ['instance', 'instance.ts'],
+  ['worktree', 'worktree.ts'],
+  ['wt', 'worktree.ts'],
 
   // build / metadata helpers
   ['build:plugins', 'build-extensions.ts'],
@@ -202,6 +205,12 @@ Common commands:
   instance init --slot N [--isolate-user] [--env-file PATH]
                         Configure this worktree's isolated source-runtime slot
   instance show         Show this worktree's derived runtime contract
+  worktree <name> [options]
+                        Create a complete isolated worktree: recursive submodules,
+                        independent floating repos, dependencies, prepare, and a
+                        free RuntimeInstance slot. Options: --from REF, --slot N,
+                        --isolate-user, --env-file PATH, --no-setup/--fast, --jobs N.
+                        Alias: wt.
   start [web|desktop]   Start Studio services (default: web); does not open a browser
                         Add --rhi-debug to enable editor RHI capture; use
                         --skip-setup-check only to bypass a stale setup snapshot.
@@ -799,53 +808,164 @@ function restartStack(args: string[]): never {
   startStudio(args);
 }
 
+export function localCiEnvironment(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const instance = resolveRuntimeInstance({ root: ROOT });
+  const e2eHost = instance.ports.interface + 100;
+  const e2eApi = instance.ports.server + 100;
+  const e2eEngine = instance.ports.engine + 100;
+  return {
+    ...baseEnv,
+    CI: '1',
+    // The editor Playwright projection must never reuse a running Studio or
+    // another checkout's standalone stack. Keep its four web-server pairs in
+    // a slot-derived, separate port block while still allowing explicit CI
+    // overrides for runners that reserve their own ports.
+    FORGEAX_E2E_PORT: baseEnv.FORGEAX_E2E_PORT ?? String(e2eHost),
+    FORGEAX_E2E_EDIT_PORT: baseEnv.FORGEAX_E2E_EDIT_PORT ?? String(e2eHost + 1),
+    FORGEAX_E2E_API_PORT: baseEnv.FORGEAX_E2E_API_PORT ?? String(e2eApi),
+    FORGEAX_E2E_ENGINE_PORT: baseEnv.FORGEAX_E2E_ENGINE_PORT ?? String(e2eEngine),
+    FORGEAX_E2E_TEMPLATE_PORT: baseEnv.FORGEAX_E2E_TEMPLATE_PORT ?? String(e2eHost + 2),
+    FORGEAX_E2E_TEMPLATE_EDIT_PORT: baseEnv.FORGEAX_E2E_TEMPLATE_EDIT_PORT ?? String(e2eHost + 3),
+    FORGEAX_E2E_TEMPLATE_API_PORT: baseEnv.FORGEAX_E2E_TEMPLATE_API_PORT ?? String(e2eApi + 2),
+    FORGEAX_E2E_TEMPLATE_ENGINE_PORT: baseEnv.FORGEAX_E2E_TEMPLATE_ENGINE_PORT ?? String(e2eEngine + 2),
+    FORGEAX_E2E_BRIDGE_PORT: baseEnv.FORGEAX_E2E_BRIDGE_PORT ?? String(e2eHost + 6),
+    FORGEAX_E2E_TEMPLATE_BRIDGE_PORT: baseEnv.FORGEAX_E2E_TEMPLATE_BRIDGE_PORT ?? String(e2eHost + 8),
+  };
+}
+
+// Keep the editor-specific projection named at the CI boundary. The actual
+// defaults come from the shared RuntimeInstance projection above; the final
+// reserveLocalCiE2ePorts pass may move the whole block when a transient local
+// socket makes the first candidate unavailable.
+function editorCiEnvironment(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return localCiEnvironment(baseEnv);
+}
+
+const LOCAL_CI_E2E_PORT_KEYS = [
+  'FORGEAX_E2E_PORT',
+  'FORGEAX_E2E_EDIT_PORT',
+  'FORGEAX_E2E_API_PORT',
+  'FORGEAX_E2E_ENGINE_PORT',
+  'FORGEAX_E2E_TEMPLATE_PORT',
+  'FORGEAX_E2E_TEMPLATE_EDIT_PORT',
+  'FORGEAX_E2E_TEMPLATE_API_PORT',
+  'FORGEAX_E2E_TEMPLATE_ENGINE_PORT',
+  'FORGEAX_E2E_BRIDGE_PORT',
+  'FORGEAX_E2E_TEMPLATE_BRIDGE_PORT',
+] as const;
+
+type LocalCiPortKey = (typeof LOCAL_CI_E2E_PORT_KEYS)[number];
+
+function probeCiPort(port: number): Promise<ReturnType<typeof createServer> | null> {
+  return new Promise((resolveProbe) => {
+    const server = createServer();
+    let settled = false;
+    const finish = (reserved: boolean): void => {
+      if (settled) return;
+      settled = true;
+      resolveProbe(reserved ? server : null);
+    };
+    server.once('error', () => {
+      try { server.close(); } catch { /* already closed */ }
+      finish(false);
+    });
+    // Vite binds wildcard, so probe the same address. This catches not only
+    // LISTEN sockets but also outbound connections (for example a VPN can
+    // temporarily own a local ephemeral port that Vite cannot bind).
+    server.listen({ host: '0.0.0.0', port, exclusive: true }, () => finish(true));
+  });
+}
+
+/**
+ * Reserve the editor smoke block immediately before launching its child CI.
+ * Runtime-instance ports are stable for human services, but a long-lived
+ * process can still occupy one of the derived E2E ports as an outbound local
+ * socket between worktree creation and CI. Probe-and-release at the last
+ * possible moment and move the whole default block when necessary.
+ */
+async function reserveLocalCiE2ePorts(
+  projectedEnv: NodeJS.ProcessEnv,
+  inheritedEnv: NodeJS.ProcessEnv,
+): Promise<{ env: NodeJS.ProcessEnv; release: () => Promise<void>; offset: number }> {
+  const instance = resolveRuntimeInstance({ root: ROOT });
+  const hasExplicitPorts = LOCAL_CI_E2E_PORT_KEYS.some((key) => inheritedEnv[key] !== undefined);
+  const offsets = hasExplicitPorts
+    ? [0]
+    : Array.from({ length: 100 }, (_, index) => index * 100);
+
+  for (const offset of offsets) {
+    const candidate: NodeJS.ProcessEnv = { ...projectedEnv };
+    if (!hasExplicitPorts && offset !== 0) {
+      const e2eHost = instance.ports.interface + 100 + offset;
+      const e2eApi = instance.ports.server + 100 + offset;
+      const e2eEngine = instance.ports.engine + 100 + offset;
+      const defaults: Record<LocalCiPortKey, string> = {
+        FORGEAX_E2E_PORT: String(e2eHost),
+        FORGEAX_E2E_EDIT_PORT: String(e2eHost + 1),
+        FORGEAX_E2E_API_PORT: String(e2eApi),
+        FORGEAX_E2E_ENGINE_PORT: String(e2eEngine),
+        FORGEAX_E2E_TEMPLATE_PORT: String(e2eHost + 2),
+        FORGEAX_E2E_TEMPLATE_EDIT_PORT: String(e2eHost + 3),
+        FORGEAX_E2E_TEMPLATE_API_PORT: String(e2eApi + 2),
+        FORGEAX_E2E_TEMPLATE_ENGINE_PORT: String(e2eEngine + 2),
+        FORGEAX_E2E_BRIDGE_PORT: String(e2eHost + 6),
+        FORGEAX_E2E_TEMPLATE_BRIDGE_PORT: String(e2eHost + 8),
+      };
+      for (const key of LOCAL_CI_E2E_PORT_KEYS) candidate[key] = defaults[key];
+    }
+
+    const ports = [...new Set(LOCAL_CI_E2E_PORT_KEYS.map((key) => Number(candidate[key])))];
+    if (ports.some((port) => !Number.isInteger(port) || port < 1024 || port > 65535)) {
+      throw new Error('[ci] editor E2E port environment contains an invalid port');
+    }
+
+    const reservations: Array<ReturnType<typeof createServer>> = [];
+    let available = true;
+    for (const port of ports) {
+      const reservation = await probeCiPort(port);
+      if (reservation === null) {
+        available = false;
+        break;
+      }
+      reservations.push(reservation);
+    }
+    if (!available) {
+      await Promise.all(reservations.map((reservation) => new Promise<void>((resolveClose) => {
+        reservation.close(() => resolveClose());
+      })));
+      continue;
+    }
+
+    let released = false;
+    return {
+      env: candidate,
+      offset,
+      release: async () => {
+        if (released) return;
+        released = true;
+        await Promise.all(reservations.map((reservation) => new Promise<void>((resolveClose) => {
+          reservation.close(() => resolveClose());
+        })));
+      },
+    };
+  }
+
+  const hint = hasExplicitPorts
+    ? 'explicit FORGEAX_E2E_* ports are busy; choose a complete free port block'
+    : 'no free editor E2E port block found';
+  throw new Error(`[ci] ${hint}`);
+}
+
 // Local PR gate for the Studio superrepo. Keep this as a deterministic local
 // projection of the remote CI surface: install the pinned graph, run the root
 // contracts, verify the engine-owned template path, then delegate the editor
 // leaf's own CI to its checked-out CLI.
-function editorCiEnvironment(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const instance = resolveRuntimeInstance({ root: ROOT });
-  // The editor's broad Playwright config has developer-friendly fixed defaults
-  // and reuses them outside CI. The Studio gate must be CI-shaped even on a
-  // machine that already has the Studio stack running, so project every
-  // editor-only port into a private range derived from this checkout's
-  // authoritative RuntimeInstance. Keep the root Studio process untouched.
-  const offset = 1_000;
-  const host = instance.ports.interface + offset;
-  const engine = instance.ports.engine + offset;
-  return {
-    ...baseEnv,
-    CI: '1',
-    FORGEAX_E2E_PORT: String(host),
-    FORGEAX_E2E_EDIT_PORT: String(host - 10),
-    FORGEAX_E2E_API_PORT: String(host - 9),
-    FORGEAX_E2E_ENGINE_PORT: String(engine),
-    FORGEAX_E2E_BRIDGE_PORT: String(host + 6),
-    FORGEAX_E2E_TEMPLATE_PORT: String(host + 2),
-    FORGEAX_E2E_TEMPLATE_EDIT_PORT: String(host - 8),
-    FORGEAX_E2E_TEMPLATE_API_PORT: String(host - 7),
-    FORGEAX_E2E_TEMPLATE_ENGINE_PORT: String(engine - 1),
-    FORGEAX_E2E_TEMPLATE_BRIDGE_PORT: String(host + 106),
-  };
-}
-
-function ci(args: string[]): never {
+async function ci(args: string[]): Promise<never> {
   if (args.length > 0) {
     console.error('usage: bun fx ci');
     process.exit(2);
   }
-  const validPort = (candidate: string | undefined, fallback: number): string => {
-    const value = Number(candidate);
-    return Number.isInteger(value) && value > 0 && value < 65_536
-      ? String(value)
-      : String(fallback);
-  };
-  const e2eHostPort = validPort(
-    process.env.FORGEAX_E2E_PORT ?? process.env.FORGEAX_STANDALONE_PORT,
-    18_990,
-  );
-  const e2eHostNumber = Number(e2eHostPort);
-  const ciEnv = {
+  const ciEnv = editorCiEnvironment({
     ...process.env,
     // Match the non-interactive CI setup while keeping prepare-time skill
     // installation and optional game checkout outside this local projection.
@@ -855,29 +975,7 @@ function ci(args: string[]): never {
     FORGEAX_SKIP_HARNESS: '1',
     FORGEAX_SKIP_GAMES: '1',
     FORGEAX_SKIP_BOOTSTRAP: '1',
-    FORGEAX_E2E_PORT: e2eHostPort,
-    FORGEAX_E2E_EDIT_PORT: validPort(
-      process.env.FORGEAX_E2E_EDIT_PORT ?? process.env.FORGEAX_EDIT_RUNTIME_PORT,
-      e2eHostNumber - 10,
-    ),
-    FORGEAX_E2E_API_PORT: validPort(
-      process.env.FORGEAX_E2E_API_PORT ?? process.env.FORGEAX_GAME_API_PORT,
-      e2eHostNumber - 9,
-    ),
-    FORGEAX_E2E_ENGINE_PORT: validPort(
-      process.env.FORGEAX_E2E_ENGINE_PORT ?? process.env.FORGEAX_PLAY_RUNTIME_PORT,
-      e2eHostNumber - 17,
-    ),
-    FORGEAX_E2E_BRIDGE_PORT: validPort(
-      process.env.FORGEAX_E2E_BRIDGE_PORT ?? process.env.FORGEAX_BRIDGE_PORT,
-      e2eHostNumber + 6,
-    ),
-    FORGEAX_E2E_TEMPLATE_PORT: validPort(undefined, e2eHostNumber + 100),
-    FORGEAX_E2E_TEMPLATE_EDIT_PORT: validPort(undefined, e2eHostNumber + 90),
-    FORGEAX_E2E_TEMPLATE_API_PORT: validPort(undefined, e2eHostNumber + 91),
-    FORGEAX_E2E_TEMPLATE_ENGINE_PORT: validPort(undefined, e2eHostNumber + 83),
-    FORGEAX_E2E_TEMPLATE_BRIDGE_PORT: validPort(undefined, e2eHostNumber + 106),
-  };
+  });
   const harness = spawnSync(BUN, [script('sync-package-harness.mjs'), '--ensure'], {
     cwd: ROOT,
     stdio: 'inherit',
@@ -907,16 +1005,38 @@ function ci(args: string[]): never {
       join(ROOT, 'packages', 'server'),
     ],
     ['editor engine setup', BUN, ['scripts/fx.ts', 'setup'], join(ROOT, 'packages', 'editor')],
-    ['editor PR CI projection', BUN, ['scripts/fx.ts', 'ci'], join(ROOT, 'packages', 'editor')],
   ];
   for (const [name, command, argv, cwd] of steps) {
     console.log(`\n[ci] ${name}`);
-    const env = name === 'editor PR CI projection' ? editorCiEnvironment(ciEnv) : ciEnv;
-    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env });
+    const result = spawnSync(command, argv, { cwd, stdio: 'inherit', env: ciEnv });
     if ((result.status ?? 1) !== 0) {
       console.error(`[ci] FAIL: ${name}`);
       process.exit(result.status ?? 1);
     }
+  }
+
+  console.log('\n[ci] editor PR CI projection');
+  let editorPorts: Awaited<ReturnType<typeof reserveLocalCiE2ePorts>>;
+  try {
+    editorPorts = await reserveLocalCiE2ePorts(ciEnv, process.env);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  console.log(`[ci] editor E2E port block offset=${editorPorts.offset}`);
+  // The reservation closes immediately before spawn: it prevents selection
+  // against a transient outbound socket, while the child gets the actual
+  // ports. A second process can still race the handoff, but this is the only
+  // unavoidable window and is retried by the normal CI command if it occurs.
+  await editorPorts.release();
+  const editorResult = spawnSync(
+    BUN,
+    ['scripts/fx.ts', 'ci'],
+    { cwd: join(ROOT, 'packages', 'editor'), stdio: 'inherit', env: editorPorts.env },
+  );
+  if ((editorResult.status ?? 1) !== 0) {
+    console.error('[ci] FAIL: editor PR CI projection');
+    process.exit(editorResult.status ?? 1);
   }
   console.log('\n[ci] PASS: local Studio PR CI');
   process.exit(0);
@@ -1308,7 +1428,7 @@ async function main(): Promise<void> {
       clean(plan.args);
       break;
     case 'ci':
-      ci(plan.args);
+      await ci(plan.args);
       break;
     case 'restart':
       restartStack(plan.args);

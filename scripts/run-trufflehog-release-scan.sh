@@ -18,6 +18,23 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 allowlist="$script_dir/trufflehog-release-allowlist.json"
 report="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/trufflehog-release-scan.jsonl"
 errors="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/trufflehog-release-scan.stderr"
+package_scan_root=""
+
+cleanup() {
+  if [ -n "$package_scan_root" ]; then
+    rm -rf -- "$package_scan_root"
+  fi
+}
+trap cleanup EXIT
+
+if [ "$scan_mode" = "package" ]; then
+  package_scan_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/trufflehog-package-scan.XXXXXX")"
+  rmdir "$package_scan_root"
+  python3 "$script_dir/prepare-trufflehog-package-scan.py" \
+    --source "$scan_root" \
+    --destination "$package_scan_root"
+  scan_root="$package_scan_root"
+fi
 
 docker_args=(
   run --rm

@@ -10,7 +10,8 @@
 //
 // Env: FORGEAX_SKIP_PREPARE · FORGEAX_FORCE_PREPARE · FORGEAX_SKIP_PLUGINS ·
 // FORGEAX_SKIP_ENGINE_BUILD · FORGEAX_SUBMODULE_FULL · FORGEAX_SKIP_HARNESS_SYNC ·
-// FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_GAMES · FORGEAX_SKIP_BOOTSTRAP ·
+// FORGEAX_SKIP_SUBMODULE_INIT · FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_GAMES ·
+// FORGEAX_SKIP_BOOTSTRAP ·
 // FORGEAX_BOOTSTRAP_YES
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -96,6 +97,7 @@ if (process.env.FORGEAX_SKIP_PREPARE === '1') {
 }
 const force = process.env.FORGEAX_FORCE_PREPARE === '1';
 const skipPlugins = process.env.FORGEAX_SKIP_PLUGINS === '1';
+const skipSubmoduleInit = process.env.FORGEAX_SKIP_SUBMODULE_INIT === '1';
 const requireCompleteSetup = process.env.FORGEAX_REQUIRE_COMPLETE_SETUP === '1';
 // The public mirror deliberately excludes the private, development-only harness
 // repositories. The marker is assembled into every public repository so this
@@ -174,6 +176,8 @@ Env:
   FORGEAX_SKIP_PLUGINS=1       skip marketplace plugin install+build
   FORGEAX_SKIP_ENGINE_BUILD=1  skip engine package build when dist/ present
   FORGEAX_SUBMODULE_FULL=1     full (non-shallow) submodule clone
+  FORGEAX_SKIP_SUBMODULE_INIT=1
+                                trust a preceding worktree bootstrap's recursive materialization
   FORGEAX_SKIP_HARNESS_SYNC=1  skip .forgeax-harness floating-clone sync
   FORGEAX_SKIP_HARNESS=1       skip harness sync + skill install entirely (CI)
   FORGEAX_SKIP_GAMES=1         skip optional forgeax-games checkout + sample seeding (CI)
@@ -241,7 +245,15 @@ const noCredHelper = [...NO_CRED_ARGV];
 if (cred.branch === 'ssh-rewrite' || cred.branch === 'pat-rewrite') ok(cred.message!);
 else if (cred.branch === 'loud-warn-no-cred') warnY(cred.message!);
 const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
-if (publicDistribution) {
+if (skipSubmoduleInit) {
+  prepareResults.push({
+    repoType: 'submodule',
+    repo: '(recursive graph)',
+    result: 'skipped',
+    detail: 'materialized by bun fx worktree',
+  });
+  ok('submodules already materialized by worktree bootstrap');
+} else if (publicDistribution) {
   // The public superproject is assembled as an already-complete recursive
   // clone. Re-initialising submodules here is both redundant and invalid for
   // the mirror smoke's filesystem overlay (which intentionally has no .git).
@@ -304,12 +316,42 @@ if (!publicDistribution) {
   }
 }
 
+// The CLI consumes the in-workspace @forgeax/types and @forgeax/agent-runtime
+// packages. Build their exported dist files first: once Studio pins contracts
+// 0.1.1+, Bun correctly links those workspaces instead of retaining nested npm
+// copies, so the CLI can no longer rely on a downloaded package's prebuilt dist.
+{
+  bold('[1b/5] Building shared contracts');
+  const contractsDir = join(ROOT, 'packages/contracts');
+  const typesDist = join(contractsDir, 'types/dist/permission-rules.js');
+  const runtimeDist = join(contractsDir, 'agent-runtime/dist/index.js');
+  if (!existsSync(join(contractsDir, 'package.json'))) {
+    warnY('packages/contracts missing — skip shared contracts build');
+  } else if (
+    existsSync(typesDist)
+    && existsSync(runtimeDist)
+    && process.env.FORGEAX_FORCE_PREPARE !== '1'
+  ) {
+    ok('shared contracts dist present');
+  } else {
+    const r = spawnSync('node', ['scripts/build-packages.mjs'], {
+      cwd: contractsDir,
+      stdio: 'inherit',
+      env: { ...env, FORGEAX_SKIP_PREPARE: '1' },
+    });
+    if ((r.status ?? 1) !== 0 || !existsSync(typesDist) || !existsSync(runtimeDist)) {
+      fail('shared contracts build failed — @forgeax/cli dependencies are unavailable');
+    }
+    ok('shared contracts built');
+  }
+}
+
 // @forgeax/cli ships as a self-contained tarball: package.json `exports["./serve"]`
 // points at dist/cli/main.js. Server resolves that path to spawn the kernel
 // sidecar. Without a build, import.meta.resolve('@forgeax/cli/serve') fails and
 // chat stalls with "no first token / kernel=unknown".
 {
-  bold('[1b/5] Building @forgeax/cli (serve entry)');
+  bold('[1c/5] Building @forgeax/cli (serve entry)');
   const cliDir = join(ROOT, 'packages/cli');
   const serveDist = join(cliDir, 'dist/cli/main.js');
   const skipCliBuild = process.env.FORGEAX_SKIP_CLI_BUILD === '1';
@@ -517,6 +559,7 @@ const engineEntryPkgs = [
   'app',
   'runtime',
   'ecs',
+  'net',
   'font',
   'assets-runtime',
   'npc',
@@ -667,6 +710,8 @@ const missingEngineArtifacts = [
   codecEncoderMjs,
   ...engineEntryPkgs.flatMap((name) =>
     ENGINE_ENTRY_OUTPUTS.map((output) => join(enginePkgDir, name, 'dist', output))),
+  join(enginePkgDir, 'net-websocket', 'dist', 'browser.mjs'),
+  join(enginePkgDir, 'net-websocket', 'dist', 'node.mjs'),
 ].filter((path) => !existsSync(path));
 if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
   fail(`required engine artefacts missing after prepare:\n${missingEngineArtifacts.map((path) => `  - ${path}`).join('\n')}`);

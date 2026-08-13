@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rewritePackagedEngineViteConfig } from './lib/desktop-engine-config.ts';
 import { desktopServerEntryAdapter } from './lib/server-role.ts';
 import { sidecarNameForTriple } from './lib/runtime-resource-assembler.ts';
 
@@ -41,6 +42,19 @@ describe('desktop build pack scan scope', () => {
 });
 
 describe('desktop server runtime closure', () => {
+  it('rewrites play-runtime imports that cannot resolve after packaging', () => {
+    const playRuntimeViteConfig = readFileSync(
+      join(root, 'packages/editor/packages/play-runtime/vite.config.ts'),
+      'utf8',
+    );
+    const packaged = rewritePackagedEngineViteConfig(playRuntimeViteConfig);
+
+    expect(packaged).toContain("from './engine-vite-preset.mjs'");
+    expect(packaged).toContain("from '@forgeax/editor-core/asset-roots'");
+    expect(packaged).not.toContain("from '../../scripts/vite/engine-vite-preset'");
+    expect(packaged).not.toContain("from '../core/src/asset-roots'");
+  });
+
   it('seeds and recursively expands the active server workspace dependencies', () => {
     const buildScript = readFileSync(join(root, 'scripts/build-desktop.ts'), 'utf8');
 

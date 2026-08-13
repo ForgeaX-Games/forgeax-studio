@@ -92,6 +92,7 @@ describe('Game Runtime publish workflow', () => {
     expect(security).toContain('.github/workflows/game-runtime-publish.yml');
     expect(security).toContain('scripts/trufflehog-release-allowlist.json');
     expect(security).toContain('scripts/install-trufflehog-release-scanner.sh');
+    expect(security).toContain('scripts/prepare-trufflehog-package-scan.py');
     expect(security).toContain('bash scripts/run-trufflehog-release-scan.sh --mode source --path "$RUNTIME_SOURCE_ROOT"');
     expect(security.indexOf('run-trufflehog-release-scan.sh --mode source')).toBeLessThan(security.indexOf('bun install'));
     expect(security).toContain('bun install --frozen-lockfile --ignore-scripts');

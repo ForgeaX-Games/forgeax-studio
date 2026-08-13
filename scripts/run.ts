@@ -270,6 +270,7 @@ const engineEntryPkgs = [
   'app',
   'runtime',
   'ecs',
+  'net',
   'assets-runtime',
   'vfx',
   'vfx-compiler',

@@ -22,6 +22,8 @@ export const PREPARE_ENGINE_BUILD_FILTERS = [
   '@forgeax/engine-runtime...',
   '@forgeax/engine-ecs...',
   '@forgeax/engine-types...',
+  '@forgeax/engine-net...',
+  '@forgeax/engine-net-websocket...',
   '@forgeax/engine-assets-runtime...',
   '@forgeax/engine-vfx...',
   '@forgeax/engine-vfx-compiler...',

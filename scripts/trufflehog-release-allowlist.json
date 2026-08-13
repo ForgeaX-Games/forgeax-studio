@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "reason": "TruffleHog 3.96.0 reports reviewed test_* Rust names and third-party documentation placeholders as credentials; decoder classification can vary with filesystem scan chunking, so each exception is bound to the exact package path, line, raw match, and exact reviewed package archive hashes and remains fail-closed.",
+  "reason": "TruffleHog 3.96.0 reports reviewed test_* Rust names and third-party documentation placeholders as credentials; each exception is bound to the exact unpacked file path, line, raw match, and file digest and remains fail-closed. Nested Runtime archives are expanded before scanning, so compressed container bytes are never allowlisted.",
   "entries": [
     {
       "id": "engine-wgpu-wasm-rhi-test-shader-module",
@@ -39,136 +39,124 @@
       "sha256": "bc2fd3768130e988c1550a1dc6aa2a6ae60833eb8bf72b526096ed0151bee3c3"
     },
     {
+      "id": "runtime-linux-x64-uri-local-proxy",
+      "mode": "package",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/globals.d.ts",
+      "line": 1945,
+      "detector": "URI",
+      "detectorType": 17,
+      "decoders": ["HTML", "PLAIN"],
+      "verified": false,
+      "raw": "https://username:password@127.0.0.1:8080",
+      "sha256": "9d4a4290a3c4e3a270f0a71562ad4eb4660d570e28ce642b6bd9429844860d38"
+    },
+    {
       "id": "runtime-linux-x64-uri-proxy-example",
       "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/docs/guides/http/proxy.mdx",
       "line": 12,
       "detector": "URI",
       "detectorType": 17,
       "decoders": ["PLAIN"],
       "verified": false,
       "raw": "https://username:password@proxy.example.com:8080",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
+      "sha256": "5d175430c10e223fb9ce04a1b456fb9961ac3f8b714d88dc1e64c443708b3eab"
     },
     {
-      "id": "runtime-linux-x64-uri-local-proxy",
+      "id": "runtime-linux-x64-uri-bun-proxy-type",
       "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
-      "line": 1945,
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/bun.d.ts",
+      "line": 4235,
       "detector": "URI",
       "detectorType": 17,
-      "decoders": ["PLAIN", "HTML"],
+      "decoders": ["HTML", "PLAIN"],
       "verified": false,
-      "raw": "https://username:password@127.0.0.1:8080",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
-    },
-    {
-      "id": "runtime-linux-x64-uri-scope-registry",
-      "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
-      "line": 23,
-      "detector": "URI",
-      "detectorType": 17,
-      "decoders": ["PLAIN"],
-      "verified": false,
-      "raw": "https://username:password@registry.myorg.com",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
+      "raw": "http://user:pass@proxy.example.com:8080",
+      "sha256": "4e7a48d96c485eaafa9250f1e64d875f04eaec933b754728cd8bdd86103c171a"
     },
     {
       "id": "runtime-linux-x64-uri-registry-scope",
       "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/docs/guides/install/registry-scope.mdx",
       "line": 14,
       "detector": "URI",
       "detectorType": 17,
       "decoders": ["PLAIN"],
       "verified": false,
       "raw": "https://usertitle:password@registry.myorg.com",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
+      "sha256": "2eb361e576a139af31bb962a0b24bc4e24409974da336a59f704e509b935d766"
     },
     {
       "id": "runtime-linux-x64-uri-registry-example",
       "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/docs/runtime/bunfig.mdx",
       "line": 595,
       "detector": "URI",
       "detectorType": 17,
       "decoders": ["HTML", "PLAIN"],
       "verified": false,
       "raw": "https://username:password@registry.myorg.com",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
-    },
-    {
-      "id": "runtime-linux-x64-postgres-neon-serverless",
-      "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
-      "line": 25,
-      "detector": "Postgres",
-      "detectorType": 968,
-      "decoders": ["PLAIN"],
-      "verified": false,
-      "raw": "postgresql://usertitle:password@ep-adj-noun-guid.us-east-1.aws.neon.tech:5432",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
-    },
-    {
-      "id": "runtime-linux-x64-postgres-neon-drizzle",
-      "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
-      "line": 24,
-      "detector": "Postgres",
-      "detectorType": 968,
-      "decoders": ["PLAIN"],
-      "verified": false,
-      "raw": "postgresql://usertitle:password@ep-adj-noun-guid.us-east-1.aws.neon.tech:5432",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
+      "sha256": "440b4b836e5450cbdd7b650d054b1f83ba78750cef2f6a972a0de820f738cc8f"
     },
     {
       "id": "runtime-linux-x64-gcp-service-account-placeholder",
       "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/google-auth-library/README.md",
       "line": 310,
       "detector": "GCP",
       "detectorType": 6,
       "decoders": ["HTML", "PLAIN"],
       "verified": false,
       "raw": "{\"type\":\"service_account\",\"project_id\":\"your-project-id\",\"private_key_id\":\"your-private-key-id\",\"private_key\":\"your-private-key\",\"client_email\":\"your-client-email\",\"client_id\":\"your-client-id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://accounts.google.com/o/oauth2/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_x509_cert_url\":\"your-cert-url\"}",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
+      "sha256": "dec9310d0fbe0d67a0aa6af6f1a417d033ef1db401151f9b4c1f76b16e6d88c4"
+    },
+    {
+      "id": "runtime-linux-x64-postgres-neon-drizzle",
+      "mode": "package",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/docs/guides/ecosystem/neon-drizzle.mdx",
+      "line": 24,
+      "detector": "Postgres",
+      "detectorType": 968,
+      "decoders": ["PLAIN"],
+      "verified": false,
+      "raw": "postgresql://usertitle:password@ep-adj-noun-guid.us-east-1.aws.neon.tech:5432",
+      "sha256": "075427f2dc9b2c02b04a3893d647ae2d1cb4fc82b462efc7d89a078003129dce"
+    },
+    {
+      "id": "runtime-linux-x64-postgres-neon-serverless",
+      "mode": "package",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/bun-types/docs/guides/ecosystem/neon-serverless-postgres.mdx",
+      "line": 25,
+      "detector": "Postgres",
+      "detectorType": 968,
+      "decoders": ["PLAIN"],
+      "verified": false,
+      "raw": "postgresql://usertitle:password@ep-adj-noun-guid.us-east-1.aws.neon.tech:5432",
+      "sha256": "36ae2936246cf5b164e05e65cac468407c5b9cec2fbfc3ce933a8672e340fb00"
     },
     {
       "id": "runtime-linux-x64-uri-tldts-example",
       "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/tldts/README.md",
       "line": 204,
       "detector": "URI",
       "detectorType": 17,
       "decoders": ["HTML", "PLAIN"],
       "verified": false,
       "raw": "https://user:password@example.co.uk:8080/some/path",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
+      "sha256": "c3fcb46b6732fd9364fb0f7373e7372cdf1ed8be782b9bb13a6efd7d6b7e5ba4"
     },
     {
       "id": "runtime-linux-x64-uri-tldts-secure-example",
       "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
+      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz.contents/node_modules/tldts/README.md",
       "line": 257,
       "detector": "URI",
       "detectorType": 17,
-      "decoders": ["PLAIN", "HTML"],
+      "decoders": ["HTML", "PLAIN"],
       "verified": false,
       "raw": "https://user:password@secure.example.co.uk:443/some/path",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
-    },
-    {
-      "id": "runtime-linux-x64-uri-bun-proxy-type",
-      "mode": "package",
-      "path": "assets/runtime/linux-x64/forgeax-game-runtime-linux-x64.tar.gz",
-      "line": 4235,
-      "detector": "URI",
-      "detectorType": 17,
-      "decoders": ["PLAIN", "HTML"],
-      "verified": false,
-      "raw": "http://user:pass@proxy.example.com:8080",
-      "sha256": ["adc6ef6d097bf4d03e0597de7ad57be1a9f9e23a69a9b90f306073a78c46a06f", "54de405fcc09f0560b66742931c11579fc8f3c307c8281111fc60a356810432c", "ee1393dd994a0200ba31de057b7d8271f75a43e88df3676319fbd8c85ef5cc1d", "7562cab262a1b663e74d6cd1a5dfa04dca0aa4e6d4be2e71b1f4afa61249ce82"]
+      "sha256": "c3fcb46b6732fd9364fb0f7373e7372cdf1ed8be782b9bb13a6efd7d6b7e5ba4"
     }
   ]
 }

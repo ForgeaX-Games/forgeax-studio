@@ -46,8 +46,8 @@
     },
     "requiredContexts": {
       "type": "array",
-      "minItems": 5,
-      "maxItems": 5,
+      "minItems": 8,
+      "maxItems": 8,
       "items": {
         "type": "object",
         "additionalProperties": false,

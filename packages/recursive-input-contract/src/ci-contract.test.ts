@@ -12,7 +12,7 @@ import {
 const packageRoot = join(import.meta.dir, '..');
 
 describe('producer-owned CI contract', () => {
-  test('loads one closed manifest/schema pair and projects the exact five contexts', () => {
+  test('loads one closed manifest/schema pair and projects the exact required contexts', () => {
     const files = loadCiContractFiles(packageRoot);
     expect(validateCiSchemaDocument(files.schema).ok).toBe(true);
     expect(validateCiManifest(files.manifest).ok).toBe(true);

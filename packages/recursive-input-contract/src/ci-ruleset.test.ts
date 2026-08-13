@@ -25,15 +25,44 @@ function ruleset(overrides: Partial<ObservedRuleset> = {}): ObservedRuleset {
 }
 
 describe('read-only live ruleset probe', () => {
-  test('aligns only one unambiguous active source for every exact context', () => {
+  test('fails closed for every required-context and governance drift class', () => {
     const result = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: '2026-08-10T00:00:00Z', responseIdentity: 'fresh-response', rulesets: [ruleset()] }, expected);
     expect(result.status).toBe('aligned');
     expect(result.observation?.responseIdentity).toBe('fresh-response');
     expect(result.recoveryActions).toEqual([]);
 
-    expect(compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'r2', rulesets: [ruleset({ contexts: [...CI_REQUIRED_CONTEXTS, 'renamed'] })] }, expected).status).toBe('misaligned');
-    expect(compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'r3', rulesets: [ruleset(), ruleset({ id: 'shadow', contextSource: 'organization:ruleset:shadow' })] }, expected).status).toBe('misaligned');
-    expect(compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'r4', rulesets: [ruleset({ enforcement: 'evaluate' })] }, expected).status).toBe('misaligned');
+    const missing = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'missing', rulesets: [ruleset({ contexts: CI_REQUIRED_CONTEXTS.slice(0, -1) })] }, expected);
+    expect(missing.status).toBe('misaligned');
+    expect(missing.actual).toHaveProperty('missing', [CI_REQUIRED_CONTEXTS.at(-1)]);
+
+    const extra = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'extra', rulesets: [ruleset({ contexts: [...CI_REQUIRED_CONTEXTS, 'unowned'] })] }, expected);
+    expect(extra.status).toBe('misaligned');
+    expect(extra.actual).toHaveProperty('extra', ['unowned']);
+
+    const renamed = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'renamed', rulesets: [ruleset({ contexts: ['renamed', ...CI_REQUIRED_CONTEXTS.slice(1)] })] }, expected);
+    expect(renamed.status).toBe('misaligned');
+    expect(renamed.actual).toHaveProperty('missing', [CI_REQUIRED_CONTEXTS[0]]);
+    expect(renamed.actual).toHaveProperty('extra', ['renamed']);
+
+    const duplicate = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'duplicate', rulesets: [ruleset({ contexts: [...CI_REQUIRED_CONTEXTS, CI_REQUIRED_CONTEXTS[0]] })] }, expected);
+    expect(duplicate.status).toBe('misaligned');
+    expect(duplicate.actual).toHaveProperty('duplicate', [{ context: CI_REQUIRED_CONTEXTS[0], sources: ['repository:ruleset:16532229', 'repository:ruleset:16532229'] }]);
+
+    const shadowed = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'shadowed', rulesets: [ruleset(), ruleset({ id: 'shadow', source: 'organization', contextSource: 'organization:ruleset:shadow', contexts: [CI_REQUIRED_CONTEXTS[0]] })] }, expected);
+    expect(shadowed.status).toBe('misaligned');
+    expect(shadowed.actual).toHaveProperty('duplicate', [expect.objectContaining({ context: CI_REQUIRED_CONTEXTS[0] })]);
+
+    const inactive = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'inactive', rulesets: [ruleset({ enforcement: 'evaluate' })] }, expected);
+    expect(inactive.status).toBe('misaligned');
+    expect(inactive.actual).toHaveProperty('enforcement', [{ id: '16532229', source: 'repository', enforcement: 'evaluate' }]);
+
+    const bypass = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'bypass', rulesets: [ruleset({ bypassActors: ['actor:1'] })] }, expected);
+    expect(bypass.status).toBe('misaligned');
+    expect(bypass.actual).toHaveProperty('bypass', [{ ruleset: '16532229', actor: 'actor:1' }]);
+
+    const bypassCapability = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'bypass-capability', rulesets: [ruleset({ currentUserCanBypass: 'always' })] }, expected);
+    expect(bypassCapability.status).toBe('misaligned');
+    expect(bypassCapability.actual).toHaveProperty('bypassCapability', [{ id: '16532229', value: 'always' }]);
   });
 
   test('returns unverified for authentication failure and sends only GET requests', async () => {

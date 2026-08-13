@@ -141,6 +141,7 @@ function allowed(finding) {
     return undefined;
   }
   for (const entry of entries) {
+    const approvedDigests = Array.isArray(entry.sha256) ? entry.sha256 : [entry.sha256];
     if (
       entry.mode === scanMode &&
       entry.path === path &&
@@ -151,7 +152,7 @@ function allowed(finding) {
       entry.decoders.includes(info.decoder) &&
       entry.verified === info.verified &&
       entry.raw === raw &&
-      entry.sha256 === digest
+      approvedDigests.includes(digest)
     ) {
       return entry.id;
     }

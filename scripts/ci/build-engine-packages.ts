@@ -43,11 +43,23 @@ export const PREPARE_ENGINE_BUILD_FILTERS = [
   '@forgeax/engine-vite-plugin-rhi-debug...',
 ] as const;
 
-// Engine's aggregate tsconfig intentionally omits this package, even though
-// its public export includes ./dist/index.d.ts. Keep that declaration producer
-// explicit here so Runtime SDK generation does not silently lose the project
-// manifest contract.
-export const ENGINE_STANDALONE_DECLARATION_FILTERS = ['@forgeax/engine-project'] as const;
+// Engine's aggregate tsconfig intentionally omits these packages, even though
+// their public exports include ./dist/index.d.ts. Keep their declaration
+// producers explicit here so Runtime SDK generation does not silently lose
+// public package contracts. DevKit has no package-level typecheck script, so
+// its composite tsconfig is invoked directly below.
+export const ENGINE_STANDALONE_DECLARATION_FILTERS = [
+  '@forgeax/engine-project',
+  '@forgeax/engine-devkit',
+] as const;
+
+const ENGINE_STANDALONE_DECLARATION_COMMANDS: Record<
+  (typeof ENGINE_STANDALONE_DECLARATION_FILTERS)[number],
+  readonly string[]
+> = {
+  '@forgeax/engine-project': ['--filter', '@forgeax/engine-project', 'typecheck'],
+  '@forgeax/engine-devkit': ['exec', 'tsc', '-b', 'packages/devkit'],
+};
 
 export interface BuildEnginePackagesOptions {
   readonly engineRoot: string;
@@ -88,7 +100,7 @@ export function buildEngineDeclarations(options: BuildEnginePackagesOptions): bo
   const env = options.env ?? process.env;
   if (!runEngineCommand(options.engineRoot, ['exec', 'tsc', '-b'], env)) return false;
   return ENGINE_STANDALONE_DECLARATION_FILTERS.every((filter) =>
-    runEngineCommand(options.engineRoot, ['--filter', filter, 'typecheck'], env));
+    runEngineCommand(options.engineRoot, ENGINE_STANDALONE_DECLARATION_COMMANDS[filter], env));
 }
 
 if (import.meta.main) {

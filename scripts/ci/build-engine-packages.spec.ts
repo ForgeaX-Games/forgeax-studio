@@ -30,6 +30,14 @@ describe('Engine package build graph command', () => {
   });
 
   test('keeps declarations for Engine packages omitted from the aggregate tsconfig', () => {
-    expect(ENGINE_STANDALONE_DECLARATION_FILTERS).toEqual(['@forgeax/engine-project']);
+    expect(ENGINE_STANDALONE_DECLARATION_FILTERS).toEqual([
+      '@forgeax/engine-project',
+      '@forgeax/engine-devkit',
+    ]);
+  });
+
+  test('uses the Engine DevKit tsconfig when its package has no typecheck script', () => {
+    const source = readFileSync(join(import.meta.dir, 'build-engine-packages.ts'), 'utf8');
+    expect(source).toContain("['exec', 'tsc', '-b', 'packages/devkit']");
   });
 });

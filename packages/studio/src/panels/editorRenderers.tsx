@@ -417,9 +417,9 @@ function ViewportRuntimeWindowBridge() {
 //     releases the WebGPU device + resets the single-boot latch) and remount a
 //     fresh <ViewportComponent key={slug}> so the new game boots clean (physics
 //     backend + pack roots bind once at createApp, so a switch can't hot-swap).
-// viewportOnly is accepted for the surfaces.Edit ComponentType signature parity
-// but is a no-op — the in-process component always renders the full surface.
-function EditRealm(_props: { viewportOnly?: boolean } = {}) {
+// PanelShell owns all operation chrome; this component is always the pure
+// renderer surface regardless of whether its panel is docked or detached.
+function EditRealm() {
   const slug = useActiveSlug();
   const runtimeState = useShellStore((s) => s.activeGameRuntime);
   const runtimeBinding: RuntimeAssetBinding | undefined = (

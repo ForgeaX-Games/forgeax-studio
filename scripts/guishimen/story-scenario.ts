@@ -1,5 +1,5 @@
 // 鬼市门剧情线 —— 严格照《叙事流程》图翻译,纯 scenario 数据,零引擎依赖。
-// 类型用宽松别名(不 import 插件类型);字段名对齐 wb-game-video types.ts。
+// 类型用宽松别名(不 import 插件类型);字段名对齐 video-game types.ts。
 // 叩 = 单键QTE(kind:'qte',单 cue label"叩";qte_pass=按中→支线+奖励,qte_fail=超时→推进)。
 // 应/默 = 限时二选一(kind:'choice',decision.optType:'timed',defaultBranchId 超时兜底)。
 //

@@ -18,6 +18,7 @@ import type {
 import { publishRecursiveInputResult } from './publisher.ts';
 import { computeInputDigest } from './digest.ts';
 import { CI_OUTPUT_CONTRACT_VERSION } from './ci-contract.ts';
+import { loadCiContractFiles, producerForConsumer } from './ci-contract.ts';
 import {
   createRecursiveInputResult,
   validateCiResult,
@@ -226,4 +227,43 @@ export function runTrustedBaseInputCli(): void {
   if (!ciValidation.ok) process.exitCode = 3;
 }
 
-if (import.meta.main) runTrustedBaseInputCli();
+export function runSourceAdmissionCli(): void {
+  const workspace = requiredEnv('GITHUB_WORKSPACE');
+  const contractRoot = requiredEnv('CONTRACT_ROOT');
+  const manifestPath = requiredEnv('CONTRACT_MANIFEST_PATH');
+  const consumerId = requiredEnv('CONTRACT_CONSUMER_ID');
+  const trustScope = requiredEnv('CONTRACT_TRUST_SCOPE');
+  const attempt = requiredEnv('CONTRACT_ATTEMPT');
+  const job = requiredEnv('CONTRACT_JOB');
+  const classes = requestedClasses();
+  if (!manifestPath.startsWith('/')) throw new Error('CONTRACT_MANIFEST_PATH must be absolute');
+  if (!attempt.trim() || !job.trim()) throw new Error('source admission attempt and job are required');
+  const files = loadCiContractFiles(contractRoot);
+  const declaration = producerForConsumer(files.manifest, consumerId);
+  if (!declaration) throw new Error(`unknown recursive-input consumer: ${consumerId}`);
+  if (declaration.consumer.trustScope !== trustScope) throw new Error(`consumer trust scope mismatch: ${consumerId}`);
+  if (!declaration.producer.trustScopes.includes(trustScope as 'ordinary-ci' | 'trusted-base-ci')) throw new Error(`producer trust scope mismatch: ${declaration.producer.producerId}`);
+  if (classes.some((inputClass) => !declaration.producer.inputClasses.includes(inputClass))) throw new Error(`consumer input class mismatch: ${consumerId}`);
+  const graph = projectGitlinkGraph(readAuthoritativeGitGraph(workspace));
+  if (!graph.sourceIdentity.revision) throw new Error('source admission revision is missing');
+  const admission = {
+    status: 'admitted',
+    contract: 'recursive-input-ci.v1',
+    manifestPath,
+    consumerId,
+    producerId: declaration.producer.producerId,
+    trustScope,
+    requestedInputClasses: classes,
+    attempt,
+    job,
+    sourceRevision: graph.sourceIdentity.revision,
+    sourceWork: { status: 'suppressed-until-final-result' },
+  };
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `source-admission=passed\nsource-admission-status=admitted\n`);
+  process.stdout.write(`${JSON.stringify(admission)}\n`);
+}
+
+if (import.meta.main) {
+  if (process.env.CONTRACT_PRE_ADMISSION === '1') runSourceAdmissionCli();
+  else runTrustedBaseInputCli();
+}

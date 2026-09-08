@@ -11,21 +11,14 @@ describe('nightly contract owner roster', () => {
     const roster = deriveNightlyContractRoster(ROOT);
 
     expect(roster.map((entry) => entry.name)).toEqual([
-      '@forgeax/types',
-      '@forgeax/host-sdk',
-      '@forgeax/server',
+      '@forgeax/recursive-input-contract',
     ]);
     expect(roster.map((entry) => entry.testScript)).toEqual([
       'bun test',
-      'bun test',
-      'bun test',
     ]);
     expect(roster.map((entry) => entry.path)).toEqual([
-      'packages/contracts/types',
-      'packages/host-sdk',
-      'packages/server',
+      'packages/recursive-input-contract',
     ]);
-    expect(roster.map((entry) => entry.path)).not.toContain('packages/types');
   });
 
   test('fails closed when an owner workspace path has moved', () => {

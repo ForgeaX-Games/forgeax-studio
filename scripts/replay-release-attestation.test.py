@@ -99,6 +99,142 @@ class ReplayReleaseAttestationTests(unittest.TestCase):
         )
         return path
 
+    def runtime_candidate(self, candidate_id="runtime-candidate-1", surface="game-runtime"):
+        subjects = [
+            {
+                "subjectId": "@forgeax/game-runtime-common",
+                "name": "@forgeax/game-runtime-common",
+                "platform": "any",
+                "digest": "a" * 64,
+                "digestAlgorithm": "sha256",
+            },
+            {
+                "subjectId": "@forgeax/game-runtime-linux-x64",
+                "name": "@forgeax/game-runtime-linux-x64",
+                "platform": "linux-x64",
+                "digest": "b" * 64,
+                "digestAlgorithm": "sha256",
+            },
+        ]
+        return {
+            "schemaVersion": 1,
+            "candidateId": candidate_id,
+            "releaseSurface": surface,
+            "rootRevision": "1" * 40,
+            "attempt": "attempt-1",
+            "expectedSubjects": subjects,
+            "actualSubjects": subjects,
+            "criticalInputs": [
+                {
+                    "inputId": "runtime-workflow",
+                    "kind": "workflow",
+                    "identity": "game-runtime-publish.yml@" + "1" * 40,
+                    "status": "resolved",
+                }
+            ],
+        }
+
+    def runtime_evidence(self, candidate):
+        subjects = candidate["actualSubjects"]
+        evidence = {
+            "releaseSurface": candidate["releaseSurface"],
+            "candidateId": candidate["candidateId"],
+        }
+        for name in ["archive", "hash", "secretScan", "crossStage", "provenance"]:
+            evidence[name] = {
+                "status": "passed",
+                "candidateId": candidate["candidateId"],
+                "subjects": [dict(subject) for subject in subjects],
+                "evidenceRef": name + ":" + "c" * 64,
+            }
+        evidence["platformAggregate"] = {
+            "status": "passed",
+            "candidateId": candidate["candidateId"],
+            "evidenceRef": "platform-aggregate:" + "d" * 64,
+        }
+        return evidence
+
+    def test_runtime_projection_requires_complete_candidate_bound_evidence(self):
+        candidate = self.runtime_candidate()
+        evidence = self.runtime_evidence(candidate)
+
+        result = MODULE.project_runtime_result(candidate, evidence)
+
+        self.assertEqual(result["schemaVersion"], 1)
+        self.assertEqual(result["releaseSurface"], "game-runtime")
+        self.assertEqual(result["candidateId"], candidate["candidateId"])
+        self.assertEqual(result["status"], "fully-verified")
+        self.assertEqual(result["sourceWork"], {"status": "permitted"})
+        self.assertEqual(result["subjects"], candidate["actualSubjects"])
+        for kind in ["archive", "hash", "secretScan", "crossStage", "provenance", "platformAggregate"]:
+            if kind == "platformAggregate":
+                self.assertIn("platform-aggregate:", result["platformTrust"]["actual"])
+            else:
+                self.assertIn(kind + "=", result["contentIntegrity"]["actual"])
+
+        for missing in ["archive", "hash", "secretScan", "crossStage", "provenance"]:
+            incomplete = self.runtime_evidence(candidate)
+            del incomplete[missing]
+            with self.subTest(missing=missing):
+                with self.assertRaises(ValueError):
+                    MODULE.project_runtime_result(candidate, incomplete)
+
+    def test_runtime_projection_rejects_surface_candidate_and_subject_substitution(self):
+        candidate = self.runtime_candidate()
+        evidence = self.runtime_evidence(candidate)
+
+        for surface in ["mirror", "route-back", "desktop"]:
+            wrong_candidate = self.runtime_candidate(surface=surface)
+            with self.subTest(surface=surface):
+                with self.assertRaises(ValueError):
+                    MODULE.project_runtime_result(wrong_candidate, evidence)
+
+        wrong_evidence = self.runtime_evidence(candidate)
+        wrong_evidence["provenance"]["candidateId"] = "other-candidate"
+        with self.assertRaises(ValueError):
+            MODULE.project_runtime_result(candidate, wrong_evidence)
+
+    def test_runtime_projection_rejects_adjacent_release_signals_as_runtime_evidence(self):
+        candidate = self.runtime_candidate()
+        for replacement in ["mirror-digest", "release-attachment", "runtime-provenance", "static-manifest"]:
+            evidence = self.runtime_evidence(candidate)
+            evidence["provenance"] = {
+                "status": "passed",
+                "candidateId": candidate["candidateId"],
+                "subjects": [],
+                "evidenceRef": replacement,
+            }
+            with self.subTest(replacement=replacement):
+                with self.assertRaises(ValueError):
+                    MODULE.project_runtime_result(candidate, evidence)
+
+    def test_runtime_projection_rechecks_each_digest_dimension_and_attempt(self):
+        candidate = self.runtime_candidate()
+        evidence = self.runtime_evidence(candidate)
+        baseline = MODULE.project_runtime_result(candidate, evidence)
+
+        for kind in ["archive", "hash", "secretScan", "crossStage", "provenance"]:
+            changed = self.runtime_evidence(candidate)
+            changed[kind]["subjects"][0]["digest"] = "f" * 64
+            with self.subTest(kind=kind):
+                with self.assertRaises(ValueError):
+                    MODULE.project_runtime_result(candidate, changed)
+
+        changed_candidate = self.runtime_candidate(candidate_id="runtime-candidate-2")
+        changed_evidence = self.runtime_evidence(changed_candidate)
+        changed_result = MODULE.project_runtime_result(changed_candidate, changed_evidence)
+        self.assertNotEqual(changed_result, baseline)
+        self.assertEqual(changed_result["releaseSurface"], "game-runtime")
+        self.assertNotEqual(changed_result["candidateId"], baseline["candidateId"])
+
+        wrong_evidence = self.runtime_evidence(candidate)
+        wrong_evidence["archive"]["subjects"][0] = {
+            **wrong_evidence["archive"]["subjects"][0],
+            "digest": "e" * 64,
+        }
+        with self.assertRaises(ValueError):
+            MODULE.project_runtime_result(candidate, wrong_evidence)
+
     def test_equal_candidates_are_deterministic_and_sanitized(self):
         left = self.write_candidate()
         right = self.root / "right"

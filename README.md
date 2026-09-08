@@ -86,7 +86,7 @@ pin graph; materialise it locally with `bun games:sync` when you need its sample
 | [`interface`](https://github.com/ForgeaX-Games/forgeax-interface) | three-column Studio UI + Tauri 2 desktop shell |
 | [`editor`](https://github.com/ForgeaX-Games/forgeax-editor) | visual scene editor — Edit/Play on one disk-backed scene |
 | [`orchestrator`](https://github.com/ForgeaX-Games/forgeax-orchestrator) | multi-agent orchestration layer — AgentTree, XML ledger, slot prompts |
-| [`marketplace`](https://github.com/ForgeaX-Games/forgeax-marketplace) | persona agents · skills · visual workbench plugins (content-as-data) |
+| [`marketplace`](https://github.com/ForgeaX-Games/forgeax-marketplace) | persona agents · skills · extension identity metadata |
 | [`build`](https://github.com/ForgeaX-Games/forgeax-build) | build & packaging — recipe + validator pipeline |
 
 ## 🖥️ Runtime forms

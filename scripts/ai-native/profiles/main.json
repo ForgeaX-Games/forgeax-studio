@@ -182,19 +182,14 @@
         "trajectory.read"
       ]
     },
-    "ui_act_workbench_list_plugins": {
+    "ui_act_extension_list": {
       "mapped_effects": [
-        "workbench.list_plugins"
+        "extension.list"
       ]
     },
-    "ui_act_workbench_open": {
+    "ui_act_extension_open": {
       "mapped_effects": [
-        "workbench.open"
-      ]
-    },
-    "ui_act_workbench_open_plugin": {
-      "mapped_effects": [
-        "workbench.open_plugin"
+        "extension.open"
       ]
     },
     "ui_invoke": {

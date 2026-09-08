@@ -49,7 +49,7 @@ export function renderStatus(s: StatusSnapshot): string {
     lines.push(`- status: installed (v${s.runtime.version ?? 'unknown'})`);
     if (s.runtime.root) lines.push(`- root: ${s.runtime.root}`);
   } else {
-    lines.push('- status: not installed (first run verifies and extracts the bundled Runtime automatically)');
+    lines.push('- status: not installed (first run verifies and extracts the selected Runtime package automatically)');
   }
   lines.push('');
 

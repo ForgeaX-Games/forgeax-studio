@@ -36,8 +36,12 @@ import {
   resolveProject,
   SLUG_RE,
 } from '../project/locate';
-import { installEngineSdk } from '../project/engine-sdk';
-import { runtimeCacheRoot } from '../runtime/cache';
+import {
+  installEngineSdk,
+  loadRuntimeManifest,
+  resolveInstalledRuntime,
+  runtimeCacheRoot,
+} from '@forgeax/game-runtime';
 import { ROUTING_TEXT } from '../routing';
 import {
   assertEngineProjectRoot,
@@ -46,13 +50,11 @@ import {
   serverBaseUrl,
   type Capabilities,
 } from '../services/probe';
-import { loadRuntimeManifest } from '../runtime/manifest';
-import { resolveInstalledRuntime } from '../runtime/manager';
 
 const HELP = `ForgeaX game development plugin
 
 Usage:
-  forgeax-game install [--ide codex,claude,cursor,trae,opencode,workbuddy] [--local]
+  forgeax-game install [--ide ${CLIENT_CHOICES.join(',')}] [--local]
   forgeax-game uninstall [--ide ...] [--purge]
   forgeax-game init [--game <slug>] [--ide ...]
   forgeax-game use <slug>
@@ -132,12 +134,16 @@ function removeAgentsBlock(root: string): { path: string; changed: boolean } {
   return { path, changed: true };
 }
 
-async function apiPost(path: string, body?: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function apiWrite(
+  method: 'POST' | 'PUT',
+  path: string,
+  body?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch(`${serverBaseUrl()}${path}`, {
-      method: 'POST',
+      method,
       headers: body ? { 'content-type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
@@ -166,6 +172,9 @@ async function apiPost(path: string, body?: Record<string, unknown>): Promise<Re
     clearTimeout(timer);
   }
 }
+
+const apiPost = (path: string, body?: Record<string, unknown>) => apiWrite('POST', path, body);
+const apiPut = (path: string, body?: Record<string, unknown>) => apiWrite('PUT', path, body);
 
 async function installCommand(args: readonly string[]): Promise<number> {
   const parsed = parseInstallArgs(args);
@@ -279,7 +288,7 @@ async function initCommand(args: readonly string[]): Promise<number> {
     // only after its identity has been checked, then let the server scaffold the
     // canonical template and active-game binding.
     if (!binding.root) ensureLocalProject(root);
-    const response = await apiPost('/api/workbench/games', { slug, name: slug, brief: '' });
+    const response = await apiPost('/api/projects', { slug, name: slug, brief: '' });
     if (!gameDir(root, slug)) {
       throw new Error(
         `server created ${JSON.stringify(response.gameDir ?? slug)}, but it is not under ${root}/.forgeax/games; run the CLI against the same instance root as the server`,
@@ -327,7 +336,7 @@ async function useCommand(args: readonly string[]): Promise<number> {
     throw new Error(`game ${JSON.stringify(slug)} not found. Available: ${listGames(root).join(', ') || '(none)'}`);
   }
   await assertServerProjectRoot(root);
-  await apiPost(`/api/workbench/games/${encodeURIComponent(slug)}/activate`);
+  await apiPut('/api/projects/active', { slug });
   process.stdout.write(`Active game: ${slug}\n`);
   return 0;
 }

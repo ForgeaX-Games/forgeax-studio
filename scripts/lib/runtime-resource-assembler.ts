@@ -1,5 +1,5 @@
 import { cpSync, existsSync, readdirSync, rmSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 
 export type RuntimeTargetId = 'darwin-arm64' | 'win32-x64' | 'linux-x64';
 
@@ -66,30 +66,23 @@ export function assertNativeRuntimeTarget(target: RuntimeTarget): void {
   }
 }
 
-const PRODUCT_ONLY_PATHS = [
-  'interface',
-  'games',
-  'marketplace/extensions',
-  'node_modules/@forgeax/server/vendor/forgeax-wb-game-video-0.2.1.tgz',
-  'node_modules/@forgeax/wb-game-video',
-  'node_modules/@forgeax-extension',
-] as const;
-
-const UNUSED_DEPENDENCIES = [
-  'node_modules/@opentelemetry',
-  'node_modules/typescript',
-  'engine/node_modules/typescript',
-  'engine/node_modules/esbuild',
-  'node_modules/playwright',
-  'node_modules/playwright-core',
-  'node_modules/@dimforge',
-  'node_modules/es-toolkit',
-  'node_modules/web-streams-polyfill',
-] as const;
-
 const DROP_DIRECTORIES = new Set(['__tests__', 'test', 'tests', 'learn-opengl', 'khronos-gltf-samples']);
 const DROP_FILES = new Set(['bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']);
 const DROP_MEDIA = new Set(['.mp4', '.mov', '.webm', '.avi', '.mkv']);
+const PLAY_RUNTIME_GENERATED_PATHS = new Set([
+  '.forgeax',
+  '.vite',
+  'engine-assets',
+  'engine-template-ui',
+  'host-games',
+  'shared-assets',
+]);
+const SHARED_PREVIEW_DEPENDENCIES = [
+  '@bokuweb/zstd-wasm',
+  '@dimforge/rapier2d-compat',
+  '@dimforge/rapier3d-compat',
+  'fzstd',
+] as const;
 
 export interface AssembleRuntimeResourcesOptions {
   readonly sourceRoot: string;
@@ -106,7 +99,30 @@ export function assembleRuntimeResources(options: AssembleRuntimeResourcesOption
   const destinationRoot = resolve(options.destinationRoot);
   if (!existsSync(sourceRoot)) throw new Error(`desktop resource source is missing: ${sourceRoot}`);
   rmSync(destinationRoot, { recursive: true, force: true });
-  cpSync(sourceRoot, destinationRoot, { recursive: true, dereference: true, force: true });
+  const engineSource = join(sourceRoot, 'engine');
+  if (!existsSync(engineSource)) throw new Error(`preview Engine resource is missing: ${engineSource}`);
+  cpSync(engineSource, join(destinationRoot, 'engine'), {
+    recursive: true,
+    dereference: true,
+    force: true,
+    filter: (source) => {
+      const path = relative(engineSource, source).split('\\').join('/');
+      const marker = 'node_modules/@forgeax/editor-play-runtime/';
+      if (!path.startsWith(marker)) return true;
+      const first = path.slice(marker.length).split('/')[0];
+      return !first || !PLAY_RUNTIME_GENERATED_PATHS.has(first);
+    },
+  });
+  for (const dependency of SHARED_PREVIEW_DEPENDENCIES) {
+    const source = join(sourceRoot, 'node_modules', dependency);
+    if (!existsSync(source)) throw new Error(`preview dependency is missing: ${dependency}`);
+    cpSync(source, join(destinationRoot, 'engine', 'node_modules', dependency), {
+      recursive: true,
+      dereference: true,
+      force: true,
+      filter: (path) => basename(path) !== 'node_modules',
+    });
+  }
 
   let removedEntries = 0;
   const discard = (path: string): void => {
@@ -114,10 +130,6 @@ export function assembleRuntimeResources(options: AssembleRuntimeResourcesOption
     rmSync(path, { recursive: true, force: true });
     removedEntries += 1;
   };
-  for (const relative of [...PRODUCT_ONLY_PATHS, ...UNUSED_DEPENDENCIES]) {
-    discard(join(destinationRoot, relative));
-  }
-
   const sweep = (directory: string): void => {
     if (!existsSync(directory)) return;
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -136,7 +148,7 @@ export function assembleRuntimeResources(options: AssembleRuntimeResourcesOption
   };
   sweep(destinationRoot);
 
-  for (const required of ['runtime/local-runtime.mjs', 'server', 'engine']) {
+  for (const required of ['engine', 'engine/vite.config.ts', 'engine/engine-vite-preset.mjs']) {
     if (!existsSync(join(destinationRoot, required))) {
       throw new Error(`assembled Runtime is missing required resource: ${required}`);
     }

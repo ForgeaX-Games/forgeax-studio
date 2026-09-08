@@ -1,6 +1,6 @@
 import { readFileSync, renameSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   deriveRecursiveInputJsonSchema,
   INPUT_CLASSES,
@@ -18,6 +18,22 @@ import { CI_OUTPUT_CONTRACT_VERSION, CI_REQUIRED_CONTEXTS, ciSchemaDiscovery, lo
 import { inspectCiSourceFiles } from './ci-source.ts';
 import { probeLiveRulesetsSync } from './ci-ruleset.ts';
 import { reduceCiStatus } from './ci-status.ts';
+import {
+  deriveReleaseCandidateJsonSchema,
+  RELEASE_SURFACES,
+  validateReleaseCandidate,
+  type ReleaseCandidate,
+  type ReleaseSurface,
+} from './release/candidate.ts';
+import {
+  deriveReleaseIntegrityResultJsonSchema,
+  createReleaseIntegrityResult,
+  resultFromReleaseIntegrityError,
+  validateReleaseIntegrityResult,
+  type ReleaseIntegrityResult,
+} from './release/result.ts';
+import { deriveReleaseTrustDagJsonSchema } from './release/trust-dag.ts';
+import { releaseIntegrityError } from './release/errors.ts';
 
 export const RECURSIVE_INPUT_EXIT_CODES = {
   ok: 0,
@@ -54,6 +70,23 @@ export type RecursiveInputCliResult = {
   stdout: string;
   stderr: string;
 };
+
+export type ReleaseIntegrityCommand = 'help' | 'schema' | 'status' | 'verify' | 'route-back' | 'unsupported';
+
+export type ParsedReleaseIntegrityArgs = {
+  command: ReleaseIntegrityCommand;
+  args: string[];
+};
+
+export type ReleaseIntegrityCliDependencies = {
+  root: string;
+  readCandidate?: (path: string) => unknown;
+  readResult?: () => unknown;
+  readResultPath?: (path: string) => unknown;
+  runRouteBackAdapter?: (args: string[]) => ReleaseIntegrityCliResult;
+};
+
+export type ReleaseIntegrityCliResult = RecursiveInputCliResult;
 
 export function recursiveInputResultPath(root: string): string {
   return join(root, '.forgeax', 'recursive-input-result.json');
@@ -96,11 +129,171 @@ export function parseRecursiveInputArgs(argv: string[]): ParsedRecursiveInputArg
   return { command: 'unsupported', args: [first, ...args] };
 }
 
+export function parseReleaseIntegrityArgs(argv: string[]): ParsedReleaseIntegrityArgs {
+  const [first, ...args] = argv;
+  if (!first || first === '--help' || first === '-h' || first === 'help' || first === 'release-integrity') return { command: 'help', args: first === 'help' ? args : [] };
+  if (first === 'schema' || first === 'status' || first === 'verify' || first === 'route-back') return { command: first, args };
+  return { command: 'unsupported', args: [first, ...args] };
+}
+
+export function releaseIntegrityHelp(): string {
+  return `Release integrity contract\n\nUsage:\n  bun fx release-integrity <command> [options]\n\nCommands:\n  schema       Print release-candidate.v1, release-integrity-result.v1, and trust DAG schemas\n  status       Read the last local result without changing state [--result <path>]\n  verify       Validate one candidate and emit a read-only result\n  route-back   Adapt one route-back candidate through the canonical result contract\n\nMachine output is versioned JSON on stdout; human diagnostics are on stderr.\nErrors expose code, gate, expected, actual, and recoveryActions.\nUnknown external inputs remain unverified and suppress source-owned work.\nOmitted --result reads .forgeax/release-integrity-result.json; explicit paths are root-relative.\nRead the contract: .forgeax-harness/docs/contracts/release-integrity.md`;
+}
+
+function releaseIntegrityOption(args: string[], name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const inline = args.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = args.indexOf(`--${name}`);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+function releaseIntegritySurfaceOption(args: string[]): { provided: boolean; value?: string } {
+  const inline = args.find((arg) => arg.startsWith('--surface='));
+  if (inline) return { provided: true, value: inline.slice('--surface='.length) };
+  const index = args.indexOf('--surface');
+  if (index < 0) return { provided: false };
+  const value = args[index + 1];
+  return { provided: true, value: value && !value.startsWith('--') ? value : undefined };
+}
+
+function releaseIntegrityPathOption(args: string[], name: string): { provided: boolean; value?: string } {
+  const inline = args.find((arg) => arg.startsWith(`--${name}=`));
+  if (inline) return { provided: true, value: inline.slice(name.length + 3) || undefined };
+  const index = args.indexOf(`--${name}`);
+  if (index < 0) return { provided: false };
+  const value = args[index + 1];
+  return { provided: true, value: value && !value.startsWith('--') ? value : undefined };
+}
+
+function readReleaseJson(root: string, path: string): unknown {
+  const rootPath = resolve(root);
+  if (isAbsolute(path)) return null;
+  const resolved = resolve(rootPath, path);
+  const relativePath = relative(rootPath, resolved);
+  if (!relativePath || relativePath === '..' || relativePath.startsWith(`..${sep}`)) return null;
+  try { return JSON.parse(readFileSync(resolved, 'utf8')) as unknown; } catch { return null; }
+}
+
+export function createReleaseIntegrityCliDependencies(root: string): ReleaseIntegrityCliDependencies {
+  return {
+    root,
+    readCandidate: (path) => readReleaseJson(root, path),
+    readResult: () => readReleaseJson(root, '.forgeax/release-integrity-result.json'),
+    readResultPath: (path) => readReleaseJson(root, path),
+  };
+}
+
+function releaseIntegritySchemaDiscovery(): Record<string, unknown> {
+  return {
+    operation: 'schema',
+    schemaVersion: 1,
+    candidateSchema: deriveReleaseCandidateJsonSchema(),
+    resultSchema: deriveReleaseIntegrityResultJsonSchema(),
+    trustDagSchema: deriveReleaseTrustDagJsonSchema(),
+    releaseSurfaces: ['mirror-forward', 'trusted-dry-run', 'route-back', 'desktop', 'game-runtime'],
+    gateStatuses: ['passed', 'failed', 'unverified'],
+    errorNamespace: 'release-integrity.*',
+    docsPath: '.forgeax-harness/docs/contracts/release-integrity.md',
+    routeBackAdapter: {
+      command: 'route-back',
+      input: ['--candidate <route-back-candidate.json>', '--permission <observed-permission.json>'],
+      output: 'release-integrity-result.v1',
+      implementation: 'scripts/mirror/route-back-contract.ts',
+      mutation: 'read-only',
+      incompleteExternalOutcome: ['not-observed', 'unknown', 'read-only-reconcile'],
+    },
+    nonReplacementRules: ['ordinary-ci', 'main-checkout', 'artifact-upload', 'release-attachment', 'static-manifest', 'adjacent-release-surface'],
+  };
+}
+
+function releaseIntegrityErrorOutput(error: ReturnType<typeof releaseIntegrityError>, candidateId = 'unknown'): ReleaseIntegrityCliResult {
+  const result = resultFromReleaseIntegrityError(error, candidateId);
+  return { exitCode: RECURSIVE_INPUT_EXIT_CODES.nonReady, stdout: `${JSON.stringify(result, null, 2)}\n`, stderr: `${error.code}: ${error.gate} requires recovery\n` };
+}
+
+function releaseIntegrityResultOutput(result: ReleaseIntegrityResult): ReleaseIntegrityCliResult {
+  const exitCode = result.status === 'fully-verified' ? RECURSIVE_INPUT_EXIT_CODES.ok : RECURSIVE_INPUT_EXIT_CODES.nonReady;
+  const failedGate = [result.sourceAdmission, result.contentIntegrity, result.platformTrust].find((gate) => gate.status !== 'passed');
+  return {
+    exitCode,
+    stdout: `${JSON.stringify(result, null, 2)}\n`,
+    stderr: failedGate?.code ? `${failedGate.code}: release candidate is not ready\n` : '',
+  };
+}
+
+export function executeReleaseIntegrityCli(
+  argv: string[],
+  dependencies: ReleaseIntegrityCliDependencies,
+): ReleaseIntegrityCliResult {
+  const parsed = parseReleaseIntegrityArgs(argv);
+  if (parsed.command === 'help') return { exitCode: RECURSIVE_INPUT_EXIT_CODES.ok, stdout: `${releaseIntegrityHelp()}\n`, stderr: '' };
+  if (parsed.command === 'unsupported') return { exitCode: RECURSIVE_INPUT_EXIT_CODES.unsupported, stdout: '', stderr: `unsupported release-integrity command: ${parsed.args[0]}\n${releaseIntegrityHelp()}\n` };
+  if (parsed.command === 'schema') return { exitCode: RECURSIVE_INPUT_EXIT_CODES.ok, stdout: `${JSON.stringify(releaseIntegritySchemaDiscovery(), null, 2)}\n`, stderr: '' };
+  if (parsed.command === 'route-back') {
+    if (dependencies.runRouteBackAdapter) return dependencies.runRouteBackAdapter(parsed.args);
+    return releaseIntegrityErrorOutput(releaseIntegrityError('route-back-adapter-unavailable', 'adapter-discovery', 'canonical route-back adapter', 'adapter runner is unavailable', { status: 'unverified', recoveryActions: ['run-from-studio-cli', 'handoff-route-back-adapter'] }));
+  }
+  if (parsed.command === 'status') {
+    const resultOption = releaseIntegrityPathOption(parsed.args, 'result');
+    if (resultOption.provided && !resultOption.value) {
+      return releaseIntegrityErrorOutput(releaseIntegrityError(
+        'result-path-missing',
+        'result-observation',
+        'explicit --result path',
+        'missing',
+        { status: 'unverified', retryable: true, recoveryActions: ['provide-result-path'] },
+      ));
+    }
+    const value = resultOption.value
+      ? dependencies.readResultPath?.(resultOption.value)
+      : dependencies.readResult?.();
+    if (!value) return releaseIntegrityErrorOutput(releaseIntegrityError('result-unreadable', 'result-observation', 'existing versioned result', 'result is absent', { status: 'unverified', retryable: true, recoveryActions: ['run-read-only-verify', 'handoff-missing-result'] }));
+    const validation = validateReleaseIntegrityResult(value);
+    if (!validation.ok) return releaseIntegrityErrorOutput(validation.error, typeof value === 'object' && value !== null && 'candidateId' in value ? String((value as { candidateId?: unknown }).candidateId) : 'unknown');
+    return releaseIntegrityResultOutput(validation.value);
+  }
+  const surfaceOption = releaseIntegritySurfaceOption(parsed.args);
+  if (surfaceOption.provided && (!surfaceOption.value || !RELEASE_SURFACES.includes(surfaceOption.value as ReleaseSurface))) {
+    return releaseIntegrityErrorOutput(releaseIntegrityError(
+      'surface-invalid',
+      'surface-binding',
+      RELEASE_SURFACES.join(','),
+      surfaceOption.value ?? 'missing',
+      { recoveryActions: ['select-declared-release-surface'] },
+    ));
+  }
+  const candidatePath = releaseIntegrityOption(parsed.args, 'candidate');
+  if (!candidatePath) return releaseIntegrityErrorOutput(releaseIntegrityError('candidate-path-missing', 'candidate-observation', 'explicit --candidate path', 'missing', { recoveryActions: ['provide-candidate-path'] }));
+  const candidate = dependencies.readCandidate?.(candidatePath);
+  if (!candidate) return releaseIntegrityErrorOutput(releaseIntegrityError('candidate-unreadable', 'candidate-observation', 'readable release-candidate.v1 JSON', candidatePath, { status: 'unverified', retryable: true, recoveryActions: ['produce-candidate', 'provide-candidate-path'] }));
+  const validation = validateReleaseCandidate(candidate);
+  if (!validation.ok) return releaseIntegrityErrorOutput(validation.error, typeof candidate === 'object' && candidate !== null && 'candidateId' in candidate ? String((candidate as { candidateId?: unknown }).candidateId) : 'unknown');
+  if (surfaceOption.value && validation.value.releaseSurface !== surfaceOption.value) {
+    return releaseIntegrityErrorOutput(releaseIntegrityError(
+      'surface-mismatch',
+      'surface-binding',
+      validation.value.releaseSurface,
+      surfaceOption.value,
+      {
+        candidateId: validation.value.candidateId,
+        recoveryActions: ['use-candidate-release-surface', 'rebuild-candidate'],
+      },
+    ), validation.value.candidateId);
+  }
+  const result = createReleaseIntegrityResult(validation.value, {
+    sourceAdmission: { status: 'unverified', code: 'release-integrity.source-admission-unverified', expected: 'candidate-bound trusted admission evidence', actual: 'not supplied to read-only CLI', recoveryActions: ['provide-source-admission-evidence'] },
+    contentIntegrity: { status: 'passed' },
+    platformTrust: { status: 'unverified', code: 'release-integrity.platform-trust-unverified', expected: 'platform trust evidence', actual: 'not supplied to read-only CLI', recoveryActions: ['provide-platform-trust-evidence'] },
+  });
+  return releaseIntegrityResultOutput(result);
+}
+
 export function recursiveInputHelp(command?: string): string {
   if (command && command !== 'recursive-inputs' && command !== 'help') {
     return `Usage: bun fx recursive-inputs ${command}\n\nUnknown recursive-inputs command.`;
   }
-  return `Recursive input contract\n\nUsage:\n  bun fx recursive-inputs <command> [options]\n\nCommands:\n  materialize  Produce and persist the current recursive input result\n  verify       Validate the current result before source-owned work\n  status       Inspect current readiness without changing state\n  schema       Print the schema identity, classes, trust scopes, and error index\n\nShortest path:\n  bun fx recursive-inputs materialize --classes source\n  bun fx recursive-inputs verify\n  bun fx recursive-inputs status\n  bun fx recursive-inputs schema\n\nMachine output is JSON on stdout; human diagnostics are on stderr.\nRead the contract: packages/harness/docs/contracts/recursive-inputs.md`;
+  return `Recursive input contract\n\nUsage:\n  bun fx recursive-inputs <command> [options]\n\nCommands:\n  materialize  Produce and persist the current recursive input result\n  verify       Validate the current result before source-owned work\n  status       Inspect current readiness without changing state\n  schema       Print the schema identity, classes, trust scopes, and error index\n\nShortest path:\n  bun fx recursive-inputs materialize --classes source\n  bun fx recursive-inputs verify\n  bun fx recursive-inputs status\n  bun fx recursive-inputs schema\n\nMachine output is JSON on stdout; human diagnostics are on stderr.\nRead the contract: .forgeax-harness/docs/contracts/recursive-inputs.md`;
 }
 
 function parseOptions(args: string[]): {
@@ -230,7 +423,7 @@ function schemaDiscovery(): Record<string, unknown> {
       'recursive-input.trust-scope-mismatch',
       'recursive-input.result-not-ready',
     ],
-    docsPath: 'packages/harness/docs/contracts/recursive-inputs.md',
+    docsPath: '.forgeax-harness/docs/contracts/recursive-inputs.md',
   };
 }
 

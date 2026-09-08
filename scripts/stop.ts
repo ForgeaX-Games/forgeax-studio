@@ -89,7 +89,7 @@ for (const a of process.argv.slice(2)) {
 }
 
 // ── resolve this instance's state (fail closed on copied/cross-root state) ──
-const interfaceDir = join(instance.root, 'packages', process.env.STUDIO === '0' ? 'interface' : 'studio');
+const interfaceDir = join(instance.root, 'packages', 'ide');
 const scoped = resolveInstanceStopScope(instance, runtimeState, { activeServer, interfaceDir });
 if (scoped.lockConflict) {
   console.error('[stop] runtime state and run.lock name different launchers; refusing to kill or clean up during a possible handoff.');

@@ -122,7 +122,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml', 'packages/marketplace/extensions/*/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
@@ -130,7 +130,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'packages/marketplace/extensions/*/bun.lock') }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
 
@@ -162,26 +162,6 @@ jobs:
       # Marketplace plugin dist cache — keyed on the marketplace submodule SHA.
       # Touch restored dist before prepare.ts so its per-plugin freshness check skips
       # the rebuild (checkout stamps source to "now"; cached dist must look newer).
-      - name: Resolve marketplace submodule SHA
-        id: marketplace-sha
-        run: echo "sha=$(git -C packages/marketplace rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache marketplace plugin dist (vite/tsc output)
-        id: plugin-dist
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/marketplace/extensions/*/dist
-            packages/marketplace/extensions/node-editor/apps/*/frontend/dist
-            packages/marketplace/extensions/node-editor/apps/*/backend/dist
-            packages/marketplace/extensions/node-editor/apps/*/vendor/dist
-            packages/marketplace/extensions/node-editor/packages/*/dist
-          key: ${{ runner.os }}-plugin-dist-${{ steps.marketplace-sha.outputs.sha }}
-
-      - name: Touch plugin dist on cache hit (pre-setup)
-        if: steps.plugin-dist.outputs.cache-hit == 'true'
-        run: find packages/marketplace/extensions -name node_modules -prune -o -type d -name dist -exec touch {} +
-
       # ── Seed .env before prepare (non-interactive) ────────────────────
       # prepare.ts scaffolds .env from .env.example silently when missing;
       # pre-seed a dummy key so smoke never depends on interactive prompts.
@@ -243,7 +223,7 @@ jobs:
       - name: Typecheck each studio package
         run: |
           set -eu
-          for p in agent-runtime design host-sdk types editor server interface studio chat dashboard settings workbench; do
+          for p in agent-runtime design types editor server interface studio chat dashboard settings; do
             echo "::group::typecheck @forgeax/$p"
             if [ -f "packages/$p/package.json" ]; then
               if node -e "p=require('./packages/$p/package.json');process.exit(p.scripts&&p.scripts.typecheck?0:1)"; then

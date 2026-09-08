@@ -11,6 +11,8 @@ export interface RuntimeProcessSnapshot {
   readonly pid: number;
   readonly commandLine: string | null;
   readonly cwd: string | null;
+  /** OS process-birth marker used to prevent approval from following PID reuse. */
+  readonly startToken?: string;
   /** Windows-only fallback when Win32 cannot prove a process cwd. */
   readonly ancestorCommandLines?: readonly string[];
 }
@@ -100,6 +102,15 @@ function serviceSignatureMatches(
   if (service.requiredCommandPath && !hasCommandToken(commandLine, service.requiredCommandPath)) return false;
   if (service.pluginEvidence && !pluginEvidenceMatches(commandLine, request, service)) return false;
   if (service.pluginEvidence) return true;
+  // RuntimeState records the package-script wrapper while managed-port
+  // discovery sees its Vite child. Admit only the exact IDE wrapper in the
+  // state-only path; a port listener must still prove that it is Vite.
+  if (
+    request.service === 'interface'
+    && request.stateServiceKey === 'interface'
+    && request.managedPortKey === undefined
+    && interfaceDevWrapperMatches(commandLine)
+  ) return true;
   if (service.requiredCommandWord === 'vite' && !viteCommandMatches(commandLine, service.allowedCwds)) return false;
   if (service.requiredCommandWord && service.requiredCommandWord !== 'vite' && !hasCommandWord(commandLine, service.requiredCommandWord)) return false;
   if (request.stateServiceKey !== undefined && request.stateServiceKey !== service.stateServiceKey) return false;
@@ -108,6 +119,10 @@ function serviceSignatureMatches(
     && (service.managedPortKey === undefined || request.managedPortKey !== service.managedPortKey)
   ) return false;
   return true;
+}
+
+function interfaceDevWrapperMatches(commandLine: string): boolean {
+  return /^\s*(?:"(?:[^"]*[\\/])?bun(?:\.exe)?"|(?:[^\s"]*[\\/])?bun(?:\.exe)?)\s+run\s+dev:web(?:\s|$)/i.test(commandLine);
 }
 
 function windowsOwnershipFallback(
@@ -151,13 +166,18 @@ function serviceContract(root: string, request: RuntimeProcessOwnerRequest): Ser
       return contract(packageDir, entry, 'server', 'server');
     }
     case 'interface': {
-      const cwd = canonicalPath(request.interfaceDir ?? join(root, 'packages/studio'));
-      const allowed = [canonicalPath(join(root, 'packages/studio')), canonicalPath(join(root, 'packages/interface'))];
+      const cwd = canonicalPath(request.interfaceDir ?? join(root, 'packages/ide'));
+      const allowed = [canonicalPath(join(root, 'packages/ide'))];
       if (!allowed.includes(cwd)) return null;
       return contract(cwd, undefined, 'interface', 'interface', 'vite');
     }
     case 'engine':
-      return contract(join(root, 'packages/editor/packages/play-runtime'), undefined, 'engine', 'engine', 'vite');
+      return contract(
+        join(root, 'packages/editor/packages/play-runtime'),
+        join(root, 'packages/editor/node_modules/vite/bin/vite.js'),
+        'engine',
+        'engine',
+      );
     case 'narrative':
       return contract(join(root, 'packages/marketplace/extensions/wb-narrative'), undefined, 'narrative', 'narrative', 'src/api/server.ts');
     case 'rhi-debug-reviewer':
@@ -249,6 +269,7 @@ function pluginManagedChildMatches(
 ): boolean {
   if (service === 'plugin-frontend') {
     return hasCommandWord(commandLine, 'vite')
+      || hasCommandToken(commandLine, './node_modules/.bin/vite')
       || hasCommandToken(commandLine, join(pluginDir, 'node_modules/vite/bin/vite.js'))
       || hasCommandWord(commandLine, 'scripts/serve-dist.mjs');
   }
@@ -281,7 +302,9 @@ function readLinuxSnapshot(pid: number): RuntimeProcessSnapshot | null {
   try {
     const commandLine = readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim();
     const cwd = realpathSync(`/proc/${pid}/cwd`);
-    return commandLine && cwd ? { pid, commandLine, cwd } : null;
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8').trim();
+    const startToken = stat.slice(stat.lastIndexOf(')') + 2).split(/\s+/)[19];
+    return commandLine && cwd && startToken ? { pid, commandLine, cwd, startToken } : null;
   } catch {
     return null;
   }
@@ -289,12 +312,14 @@ function readLinuxSnapshot(pid: number): RuntimeProcessSnapshot | null {
 
 function readDarwinSnapshot(pid: number): RuntimeProcessSnapshot | null {
   const command = spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
+  const started = spawnSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8' });
   // lsof is the portable macOS source for a process working directory.  Do not
   // infer cwd from command arguments: that reintroduces the old root substring bug.
   const cwdResult = spawnSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8' });
   const cwd = (cwdResult.stdout ?? '').split('\n').find((line) => line.startsWith('n'))?.slice(1).trim();
   const commandLine = (command.stdout ?? '').trim();
-  return commandLine && cwd ? { pid, commandLine, cwd } : null;
+  const startToken = (started.stdout ?? '').trim();
+  return commandLine && cwd && startToken ? { pid, commandLine, cwd, startToken } : null;
 }
 
 function readWindowsSnapshot(pid: number): RuntimeProcessSnapshot | null {
@@ -385,6 +410,10 @@ function hasCommandToken(commandLine: string, path: string): boolean {
 function hasCommandWord(commandLine: string, word: string): boolean {
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?:^|\\s)${escaped}(?=$|\\s)`, 'i').test(commandLine);
+}
+
+function interfaceDevWrapperMatches(commandLine: string): boolean {
+  return /^\s*(?:"(?:[^"]*[\\/])?bun(?:\.exe)?"|(?:[^\s"]*[\\/])?bun(?:\.exe)?)\s+run\s+dev:web(?:\s|$)/i.test(commandLine);
 }
 
 /**

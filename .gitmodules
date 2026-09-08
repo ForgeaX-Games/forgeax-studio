@@ -1,60 +1,48 @@
-[submodule "packages/engine"]
-	path = packages/engine
-	url = https://github.com/ForgeaX-Games/forgeax-engine.git
+[submodule "packages/agent-host"]
+	path = packages/agent-host
+	url = https://github.com/ForgeaX-Games/forgeax-agent-host.git
 	branch = main
 [submodule "packages/build"]
 	path = packages/build
 	url = https://github.com/ForgeaX-Games/forgeax-build.git
 	branch = main
-[submodule "packages/orchestrator"]
-	path = packages/orchestrator
-	url = https://github.com/ForgeaX-Games/forgeax-orchestrator.git
-	branch = main
-[submodule "packages/server"]
-	path = packages/server
-	url = https://github.com/ForgeaX-Games/forgeax-server.git
-	branch = main
-[submodule "packages/interface"]
-	path = packages/interface
-	url = https://github.com/ForgeaX-Games/forgeax-interface.git
-	branch = main
-[submodule "packages/marketplace"]
-	path = packages/marketplace
-	url = https://github.com/ForgeaX-Games/forgeax-marketplace.git
-	branch = main
-[submodule "packages/editor"]
-	path = packages/editor
-	url = https://github.com/ForgeaX-Games/forgeax-editor.git
-	branch = main
-[submodule "packages/contracts"]
-	path = packages/contracts
-	url = https://github.com/ForgeaX-Games/forgeax-contracts.git
-	branch = main
-[submodule "packages/agent-host"]
-	path = packages/agent-host
-	url = https://github.com/ForgeaX-Games/forgeax-agent-host.git
-	branch = main
-[submodule "packages/platform-io"]
-	path = packages/platform-io
-	url = https://github.com/ForgeaX-Games/forgeax-platform-io.git
+[submodule "packages/chat"]
+	path = packages/chat
+	url = https://github.com/ForgeaX-Games/forgeax-chat.git
 	branch = main
 [submodule "packages/cli"]
 	path = packages/cli
 	url = https://github.com/ForgeaX-Games/forgeax-cli.git
 	branch = main
-[submodule "packages/chat"]
-	path = packages/chat
-	url = https://github.com/ForgeaX-Games/forgeax-chat.git
-	branch = main
 [submodule "packages/dashboard"]
 	path = packages/dashboard
 	url = https://github.com/ForgeaX-Games/forgeax-dashboard.git
 	branch = main
+[submodule "packages/editor"]
+	path = packages/editor
+	url = https://github.com/ForgeaX-Games/forgeax-editor.git
+	branch = main
+[submodule "packages/engine"]
+	path = packages/engine
+	url = https://github.com/ForgeaX-Games/forgeax-engine.git
+	branch = main
+[submodule "packages/interface"]
+	path = packages/interface
+	url = https://github.com/ForgeaX-Games/forgeax-interface.git
+	branch = main
+[submodule "packages/orchestrator"]
+	path = packages/orchestrator
+	url = https://github.com/ForgeaX-Games/forgeax-orchestrator.git
+	branch = main
+[submodule "packages/platform-io"]
+	path = packages/platform-io
+	url = https://github.com/ForgeaX-Games/forgeax-platform-io.git
+	branch = main
+[submodule "packages/server"]
+	path = packages/server
+	url = https://github.com/ForgeaX-Games/forgeax-server.git
+	branch = main
 [submodule "packages/settings"]
 	path = packages/settings
 	url = https://github.com/ForgeaX-Games/forgeax-settings.git
-	branch = main
-[submodule "packages/workbench"]
-	path = packages/workbench
-	url = https://github.com/ForgeaX-Games/forgeax-workbench.git
 	branch = main

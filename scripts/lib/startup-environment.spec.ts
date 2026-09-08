@@ -84,6 +84,26 @@ describe('startup environment', () => {
     expect(startup.allowedHosts).toBe('.example.test');
   });
 
+  test('enables the loopback Engine MCP endpoint only when explicitly requested', () => {
+    const startup = resolveStartupEnvironment({
+      root,
+      homeDir,
+      profile: 'anydev-web',
+      env: { FORGEAX_MCP_HTTP: '1', FORGEAX_MCP_PORT: '28940' },
+    });
+    const env = startupProcessEnv(startup, {});
+
+    expect(startup.mcp).toEqual({
+      enabled: true,
+      host: '127.0.0.1',
+      port: 28940,
+      healthPath: '/healthz',
+      publicPath: '/engine/mcp',
+    });
+    expect(env.FORGEAX_MCP_URL).toBe('http://127.0.0.1:28940');
+    expect(resolveStartupEnvironment({ root, homeDir, profile: 'web-dev', env: {} }).mcp.enabled).toBe(false);
+  });
+
   test('projects the resolved contract into child process environment', () => {
     const startup = resolveStartupEnvironment({ root, homeDir, profile: 'desktop-prod', env: {} });
     const env = startupProcessEnv(startup, { KEEP_ME: 'yes' });
@@ -99,6 +119,15 @@ describe('startup environment', () => {
       FORGEAX_SERVE_SPA: '1',
       FORGEAX_RUNTIME_STATE_FILE: startup.stateFile,
     });
+  });
+
+  test('keeps optional project MCP prewarm off the source readiness path unless explicitly enabled', () => {
+    const source = resolveStartupEnvironment({ root, homeDir, profile: 'web-dev', env: {} });
+    const bundled = resolveStartupEnvironment({ root, homeDir, profile: 'desktop-prod', env: {} });
+
+    expect(startupProcessEnv(source, {}).FORGEAX_PROJECT_MCP_PREWARM).toBe('0');
+    expect(startupProcessEnv(source, { FORGEAX_PROJECT_MCP_PREWARM: '1' }).FORGEAX_PROJECT_MCP_PREWARM).toBe('1');
+    expect(startupProcessEnv(bundled, {}).FORGEAX_PROJECT_MCP_PREWARM).toBeUndefined();
   });
 
   test('projects an isolated source instance including optional services and the actual UI CORS origin', () => {

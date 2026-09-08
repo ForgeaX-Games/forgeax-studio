@@ -19,14 +19,15 @@ import {
   waitForTier,
 } from '../services/probe';
 import { ensureRuntimeLauncher, launchGuidance, startStack } from '../services/launch';
-import { allocateRuntimePorts } from '../runtime/ports';
-import { resolveInstalledRuntime } from '../runtime/manager';
+import { allocateRuntimePorts, resolveInstalledRuntime } from '@forgeax/game-runtime';
 import {
   acquireStartLock,
+  readWatcherState,
   runtimeLogIsLive,
   runtimeLogPaths,
   updateWatcherState,
 } from './log-paths';
+import { buildAndStartStaticPreview } from './static-preview';
 
 export const RUN_TOOL_SCHEMA = {
   type: 'object',
@@ -70,7 +71,16 @@ interface RunArgs {
   start_services?: unknown;
 }
 
-export async function runCurrentGame(rawArgs: Record<string, unknown>, cwd: string): Promise<string> {
+export interface RunCurrentGameOptions {
+  /** A supervisor outside this plugin owns the Studio services; never install or spawn a second Runtime. */
+  readonly existingServicesOnly?: boolean;
+}
+
+export async function runCurrentGame(
+  rawArgs: Record<string, unknown>,
+  cwd: string,
+  options: RunCurrentGameOptions = {},
+): Promise<string> {
   const args = rawArgs as RunArgs;
   const dir = typeof args.target_dir === 'string' ? args.target_dir : cwd;
   const startServices = args.start_services !== false;
@@ -87,6 +97,10 @@ export async function runCurrentGame(rawArgs: Record<string, unknown>, cwd: stri
   const slug = resolveSlug(root, typeof args.game === 'string' ? args.game : undefined);
   if ('error' in slug) return slug.error;
 
+  if (!process.env.FORGEAX_START_COMMAND?.trim() && !options.existingServicesOnly) {
+    return runPackagedPreview(root, slug, startServices);
+  }
+
   const lines: string[] = [];
   let caps = await probeServices();
   if (tierAtLeast(caps.tier, 'backend')) {
@@ -99,6 +113,13 @@ export async function runCurrentGame(rawArgs: Record<string, unknown>, cwd: stri
   }
 
   if (!tierAtLeast(caps.tier, 'runtime')) {
+    if (options.existingServicesOnly) {
+      return [
+        `not running: the supervisor-owned Studio stack is at tier "${caps.tier}".`,
+        ...caps.services.filter((service) => !service.reachable)
+          .map((service) => `- ${service.name} ${service.url}: down (${service.reason ?? 'unreachable'})`),
+      ].join('\n');
+    }
     if (!startServices) {
       return [
         `not running: stack is at tier "${caps.tier}" and start_services was false.`,
@@ -212,6 +233,52 @@ export async function runCurrentGame(rawArgs: Record<string, unknown>, cwd: stri
   );
 
   return lines.join('\n');
+}
+
+async function runPackagedPreview(
+  root: string,
+  slug: Extract<SlugResolution, { slug: string }>,
+  startServices: boolean,
+): Promise<string> {
+  const paths = runtimeLogPaths(root);
+  if (!startServices) {
+    const state = readWatcherState(root);
+    return state?.previewUrl && runtimeLogIsLive(root)
+      ? `game: ${slug.slug}\ntier: runtime\npreview_url: ${state.previewUrl}`
+      : 'not running: static preview is down and start_services was false.';
+  }
+
+  const lock = acquireStartLock(root);
+  if (!lock.acquired) {
+    return 'another plugin request is already building this game preview; call forgeax_run_current_game again shortly.';
+  }
+  try {
+    const result = await buildAndStartStaticPreview(root, slug.dir, slug.slug);
+    return [
+      `game: ${slug.slug}`,
+      `source: ${slug.dir}`,
+      'tier: runtime',
+      `preview_url: ${result.previewUrl}`,
+      `runtime.version: ${result.runtime.version}`,
+      `engine_sdk.commit: ${result.runtime.engineCommit}`,
+      `preview.instance_root: ${result.health.projectRoot}`,
+      `preview.runtime_version: ${result.health.runtimeVersion}`,
+      `preview.engine_version: ${result.health.engineCommit}`,
+      `preview.build_hash: ${result.health.buildHash}`,
+      `engine.identity: runtime=${result.runtime.version} sdk=${result.runtime.engineCommit} project=${root}`,
+      `build.reused: ${result.reused}`,
+      '',
+      `runtime_logs.local_file: ${paths.logFile}`,
+      'Open that URL to see the prebuilt game preview. Call this tool again after edits to rebuild it.',
+    ].join('\n');
+  } catch (error) {
+    return [
+      `error: ${error instanceof Error ? error.message : String(error)}`,
+      `runtime_logs.local_file: ${paths.logFile}`,
+    ].join('\n');
+  } finally {
+    lock.release();
+  }
 }
 
 type SlugResolution = { slug: string; dir: string } | { error: string };

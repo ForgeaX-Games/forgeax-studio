@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:forgeax:release-integrity-result:v1",
+  "title": "ForgeaX release integrity result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "candidateId", "releaseSurface", "status", "sourceAdmission", "contentIntegrity", "platformTrust", "subjects", "criticalInputs", "sourceWork", "recoveryActions"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "releaseSurface": { "type": "string", "enum": ["mirror-forward", "trusted-dry-run", "route-back", "desktop", "game-runtime"] },
+    "status": { "type": "string", "enum": ["fully-verified", "non-ready", "unverified"] },
+    "sourceAdmission": { "$ref": "#/$defs/gate" },
+    "contentIntegrity": { "$ref": "#/$defs/gate" },
+    "platformTrust": { "$ref": "#/$defs/gate" },
+    "subjects": { "type": "array", "items": { "$ref": "#/$defs/subject" } },
+    "criticalInputs": { "type": "array", "items": { "$ref": "#/$defs/criticalInput" } },
+    "sourceWork": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["permitted", "suppressed"] } } },
+    "recoveryActions": { "type": "array", "items": { "type": "string" } },
+    "trustDag": { "$ref": "#/$defs/trustDag" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "fully-verified" } } },
+      "then": {
+        "properties": {
+          "sourceAdmission": { "properties": { "status": { "const": "passed" } } },
+          "contentIntegrity": { "properties": { "status": { "const": "passed" } } },
+          "platformTrust": { "properties": { "status": { "const": "passed" } } },
+          "sourceWork": { "properties": { "status": { "const": "permitted" } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["non-ready", "unverified"] } } },
+      "then": { "properties": { "sourceWork": { "properties": { "status": { "const": "suppressed" } } } } }
+    },
+    {
+      "if": { "properties": { "sourceWork": { "properties": { "status": { "const": "permitted" } } } } },
+      "then": { "properties": { "status": { "const": "fully-verified" } } }
+    }
+  ],
+  "$defs": {
+    "gate": { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "type": "string", "enum": ["passed", "failed", "unverified"] }, "code": { "type": "string" }, "expected": { "type": "string" }, "actual": { "type": "string" }, "recoveryActions": { "type": "array", "items": { "type": "string" } } } },
+    "subject": { "type": "object", "additionalProperties": false, "required": ["subjectId", "name", "digest", "digestAlgorithm"], "properties": { "subjectId": { "type": "string", "minLength": 1 }, "name": { "type": "string", "minLength": 1 }, "platform": { "type": "string" }, "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "digestAlgorithm": { "type": "string", "const": "sha256" }, "sbom": { "type": "object", "additionalProperties": false, "required": ["status", "subjectDigest"], "properties": { "status": { "type": "string", "enum": ["applicable", "inapplicable"] }, "subjectDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "reason": { "type": "string", "minLength": 1 } }, "allOf": [{ "if": { "properties": { "status": { "const": "inapplicable" } } }, "then": { "required": ["reason"] } }] } } },
+    "criticalInput": { "type": "object", "additionalProperties": false, "required": ["inputId", "kind", "identity", "status"], "properties": { "inputId": { "type": "string", "minLength": 1 }, "kind": { "type": "string", "enum": ["action", "cli", "sidecar", "scanner", "ruleset", "signing"] }, "identity": { "type": "string", "minLength": 1 }, "status": { "type": "string", "enum": ["resolved", "unverified"] } } },
+    "trustDag": { "type": "object", "additionalProperties": false, "required": ["status", "candidateId"], "properties": { "status": { "type": "string", "enum": ["verified", "unverified", "failed"] }, "candidateId": { "type": "string", "minLength": 1 } } }
+  }
+}

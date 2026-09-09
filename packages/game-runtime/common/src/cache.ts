@@ -18,7 +18,13 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
-import type { InstalledRuntime, RuntimeArtifact, RuntimeMachine } from './types';
+import { runtimeTarArgs } from './tar';
+import type {
+  InstalledRuntime,
+  RuntimeArtifact,
+  RuntimeCapabilities,
+  RuntimeMachine,
+} from './types';
 
 const LOCK_FILE = '.install.lock';
 const currentMachine = (): RuntimeMachine => ({ platform: process.platform, arch: process.arch });
@@ -57,7 +63,7 @@ export function sha256File(file: string): string {
 }
 
 interface ReadyMarker {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly runtimeId: string;
   readonly version: string;
   readonly format: 'archive' | 'file';
@@ -65,6 +71,8 @@ interface ReadyMarker {
   readonly command: string;
   readonly args: readonly string[];
   readonly sha256: string;
+  readonly engineCommit: string;
+  readonly capabilities: RuntimeCapabilities;
   readonly platform: string;
   readonly arch: string;
 }
@@ -76,7 +84,16 @@ function markerPath(root: string): string {
 function readMarker(root: string): ReadyMarker | undefined {
   try {
     const value = JSON.parse(readFileSync(markerPath(root), 'utf8')) as ReadyMarker;
-    if (value.schemaVersion !== 2 || !value.runtimeId || !value.version || !value.sha256 || !value.command) return undefined;
+    if (
+      value.schemaVersion !== 3
+      || !value.runtimeId
+      || !value.version
+      || !value.sha256
+      || !value.command
+      || !value.engineCommit
+      || !value.capabilities?.build?.script
+      || !value.capabilities?.serve?.script
+    ) return undefined;
     if (value.format !== 'archive' && value.format !== 'file') return undefined;
     if (value.format === 'file' && !value.artifactPath) return undefined;
     return value;
@@ -103,6 +120,8 @@ export function readInstalledRuntime(
 
   const commandPath = resolve(root, marker.command);
   if (!contained(root, commandPath)) return undefined;
+  if (!contained(root, resolve(root, marker.capabilities.build.script))) return undefined;
+  if (!contained(root, resolve(root, marker.capabilities.serve.script))) return undefined;
   let artifactPath: string | undefined;
   if (marker.format === 'file') {
     artifactPath = resolve(root, marker.artifactPath!);
@@ -121,6 +140,8 @@ export function readInstalledRuntime(
     command: marker.command,
     args: marker.args,
     sha256: marker.sha256,
+    engineCommit: marker.engineCommit,
+    capabilities: marker.capabilities,
     platform: marker.platform,
     arch: marker.arch,
   };
@@ -212,7 +233,10 @@ async function materializeSource(source: string, destination: string, sourceRoot
 function validateArchive(archive: string): void {
   // `-P` prevents tar from sanitizing traversal names in listing output before
   // this validator can reject them. Extraction itself never uses `-P`.
-  const listing = spawnSync('tar', ['-tzPf', archive], { encoding: 'utf8', maxBuffer: 512 * 1024 * 1024 });
+  const listing = spawnSync('tar', runtimeTarArgs(['-tzPf', archive]), {
+    encoding: 'utf8',
+    maxBuffer: 512 * 1024 * 1024,
+  });
   if (listing.status !== 0) {
     throw new Error(`runtime archive listing failed: ${listing.stderr?.trim() || 'tar exited unsuccessfully'}`);
   }
@@ -222,7 +246,10 @@ function validateArchive(archive: string): void {
       throw new Error(`runtime archive contains an unsafe path: ${entry}`);
     }
   }
-  const verbose = spawnSync('tar', ['-tvzPf', archive], { encoding: 'utf8', maxBuffer: 512 * 1024 * 1024 });
+  const verbose = spawnSync('tar', runtimeTarArgs(['-tvzPf', archive]), {
+    encoding: 'utf8',
+    maxBuffer: 512 * 1024 * 1024,
+  });
   if (verbose.status !== 0) throw new Error('runtime archive metadata listing failed');
   for (const line of verbose.stdout.split(/\r?\n/).filter(Boolean)) {
     if (line[0] !== '-' && line[0] !== 'd') {
@@ -237,7 +264,7 @@ function extractArchive(archive: string, destination: string): void {
   for (const entry of readdirSync(destination, { withFileTypes: true })) {
     if (!keep.has(entry.name)) rmSync(join(destination, entry.name), { recursive: true, force: true });
   }
-  const args = ['-xzf', archive, '-C', destination];
+  const args = runtimeTarArgs(['-xzf', archive, '-C', destination]);
   if (process.platform !== 'win32') args.push('--no-same-owner');
   const result = spawnSync('tar', args, { encoding: 'utf8' });
   if (result.status !== 0) {
@@ -295,7 +322,7 @@ export async function installRuntime(artifact: RuntimeArtifact, options: {
         throw new Error(`runtime command is missing from the installed artifact: ${command}`);
       }
       const marker: ReadyMarker = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         runtimeId,
         version: artifact.version,
         format: isArchive ? 'archive' : 'file',
@@ -303,6 +330,8 @@ export async function installRuntime(artifact: RuntimeArtifact, options: {
         command,
         args: artifact.args ?? [],
         sha256: digest,
+        engineCommit: artifact.engineCommit,
+        capabilities: artifact.capabilities,
         platform: machine.platform,
         arch: machine.arch,
       };

@@ -28,7 +28,7 @@ import {
   readWatcherState,
   type WatcherState,
 } from '../run/log-paths';
-import { resolveInstalledRuntime } from '../runtime/manager';
+import { resolveInstalledRuntime } from '@forgeax/game-runtime';
 
 export interface StatusSnapshot {
   readonly project: ProjectBinding;
@@ -103,7 +103,7 @@ function deriveNextAction(s: Omit<StatusSnapshot, 'nextAction'>): string {
     return `Engine authoring skills are incomplete (${s.devKit.engineSkills} of ${s.devKit.bundledEngineSkills} installed). Run \`forgeax-game devkit install\`, then start a new session so the host discovers them; without them the model has no authority for how this Engine is meant to be used.`;
   }
   if (!s.engineSdk.installed) {
-    return 'Bundled Engine SDK is not installed. Run `forgeax-game init` or `forgeax-game upgrade` to materialize the version-matched Engine types and examples.';
+    return 'Bundled Engine SDK is not installed. Run `forgeax-game init` or `forgeax-game upgrade` to materialize the version-matched Engine types, templates, skills, and source.';
   }
   if (s.agentsBlock.status === 'missing_file' || s.agentsBlock.status === 'missing_block') {
     return 'Project routing rules are not installed in AGENTS.md. Run `forgeax-game agents update`, then start a new session so the client re-reads the file.';
@@ -112,10 +112,13 @@ function deriveNextAction(s: Omit<StatusSnapshot, 'nextAction'>): string {
     return 'Project routing rules in AGENTS.md are stale. Run `forgeax-game agents update`, then start a new session so the client re-reads the file.';
   }
   if (!s.runtime.installed) {
-    return 'Managed ForgeaX Runtime is not installed. Call `forgeax_run_current_game`; it will verify, cache, and start the bundled Runtime from the plugin manifest.';
+    return 'Managed ForgeaX Runtime is not installed. Call `forgeax_run_current_game`; it will verify, cache, and build the selected npm Runtime package preview.';
+  }
+  if (s.runtimeLogs?.live && s.runtimeLogs.state?.previewUrl) {
+    return `Static preview is live for \`.forgeax/games/${s.activeGame}\`. Edit the game and call \`forgeax_run_current_game\` to rebuild it.`;
   }
   if (s.capabilities.tier !== 'runtime') {
-    return `Ready to edit \`.forgeax/games/${s.activeGame}/\`. To run or preview the game, call \`forgeax_run_current_game\` — it will start the services that are down.`;
+    return `Ready to edit \`.forgeax/games/${s.activeGame}/\`. To run or preview the game, call \`forgeax_run_current_game\` — it will build and serve a static preview.`;
   }
   return `Everything is up. Edit \`.forgeax/games/${s.activeGame}/\` and call \`forgeax_run_current_game\` to reload and preview.`;
 }

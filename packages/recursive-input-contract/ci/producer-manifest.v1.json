@@ -21,60 +21,6 @@
   ],
   "consumers": [
     {
-      "consumerId": "ci-build",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/ci.yml",
-      "job": "check",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "bun install"
-    },
-    {
-      "consumerId": "boundaries-full",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/boundaries.yml",
-      "job": "lint-boundaries",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "bun run lint:layers"
-    },
-    {
-      "consumerId": "sfc07-standard",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/ci.yml",
-      "job": "sfc07-standard",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "bun install --frozen-lockfile"
-    },
-    {
-      "consumerId": "sfc07-heavy",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/ci.yml",
-      "job": "sfc07-heavy",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "bun install --frozen-lockfile"
-    },
-    {
-      "consumerId": "sfc07-scheduled-standard",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/sfc07.yml",
-      "job": "standard",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "bun install --frozen-lockfile"
-    },
-    {
-      "consumerId": "sfc07-scheduled-heavy",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/sfc07.yml",
-      "job": "heavy",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "bun install --frozen-lockfile"
-    },
-    {
       "consumerId": "nightly-e2e",
       "producerId": "fetch-submodules-ordinary",
       "trustScope": "ordinary-ci",
@@ -82,33 +28,6 @@
       "job": "contract",
       "validationBoundary": "before first source-owned command",
       "sourceWork": "bun install"
-    },
-    {
-      "consumerId": "mirror-dryrun",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/mirror-multi.yml",
-      "job": "dryrun",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "scripts/mirror/smoke-install.sh"
-    },
-    {
-      "consumerId": "mirror-publish",
-      "producerId": "fetch-submodules-ordinary",
-      "trustScope": "ordinary-ci",
-      "workflow": ".github/workflows/mirror-multi.yml",
-      "job": "publish",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": "scripts/mirror/smoke-install.sh"
-    },
-    {
-      "consumerId": "mirror-publish-dryrun",
-      "producerId": "fetch-submodules-trusted",
-      "trustScope": "trusted-base-ci",
-      "workflow": ".github/workflows/mirror-publish-dryrun.yml",
-      "job": "publish-dryrun",
-      "validationBoundary": "before first source-owned command",
-      "sourceWork": ".trusted-base/scripts/mirror/publish-multi.sh push"
     }
   ],
   "requiredContexts": [
@@ -119,10 +38,10 @@
       "reporter": "thin-reporter"
     },
     {
-      "name": "SFC-07 stable aggregate",
+      "name": "Studio QA required gate",
       "source": ".github/workflows/ci.yml",
-      "job": "sfc07",
-      "reporter": "direct"
+      "job": "studio-qa-required-gate",
+      "reporter": "thin-reporter"
     },
     {
       "name": "Runtime validation aggregate",
@@ -165,7 +84,37 @@
     "repository": "ForgeaX-Games/forgeax-studio",
     "ref": "main",
     "enforcement": "active",
+    "strictRequiredStatusChecks": false,
     "bypassActors": [],
     "currentUserCanBypass": "never"
+  },
+  "releaseIntegrity": {
+    "manifestVersion": "release-integrity.v1",
+    "producers": [
+      { "producerId": "mirror-forward-producer", "releaseSurface": "mirror-forward", "owner": "producer:mirror-forward", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "mirror-forward candidate evidence" },
+      { "producerId": "trusted-dry-run-producer", "releaseSurface": "trusted-dry-run", "owner": "producer:trusted-dry-run", "resultVersion": "release-integrity-result.v1", "trustScope": "trusted-base-ci", "sourceWork": "trusted-dry-run candidate evidence" },
+      { "producerId": "route-back-producer", "releaseSurface": "route-back", "owner": "producer:route-back", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "route-back candidate evidence" },
+      { "producerId": "desktop-producer", "releaseSurface": "desktop", "owner": "producer:desktop", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "desktop candidate evidence" },
+      { "producerId": "game-runtime-producer", "releaseSurface": "game-runtime", "owner": "producer:game-runtime", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "game-runtime candidate evidence" }
+    ],
+    "consumers": [
+      { "consumerId": "mirror-forward-source-admission", "producerId": "mirror-forward-producer", "releaseSurface": "mirror-forward", "verifierId": "mirror-forward-verifier", "publisherId": "mirror-forward-publisher", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "mirror-forward source work" },
+      { "consumerId": "trusted-dry-run-source-admission", "producerId": "trusted-dry-run-producer", "releaseSurface": "trusted-dry-run", "verifierId": "trusted-dry-run-verifier", "publisherId": "trusted-dry-run-publisher", "resultVersion": "release-integrity-result.v1", "trustScope": "trusted-base-ci", "sourceWork": "trusted-dry-run source work" },
+      { "consumerId": "route-back-source-admission", "producerId": "route-back-producer", "releaseSurface": "route-back", "verifierId": "route-back-verifier", "publisherId": "route-back-publisher", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "route-back source work" },
+      { "consumerId": "desktop-source-admission", "producerId": "desktop-producer", "releaseSurface": "desktop", "verifierId": "desktop-verifier", "publisherId": "desktop-publisher", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "desktop payload source work" },
+      { "consumerId": "game-runtime-source-admission", "producerId": "game-runtime-producer", "releaseSurface": "game-runtime", "verifierId": "game-runtime-verifier", "publisherId": "game-runtime-publisher", "resultVersion": "release-integrity-result.v1", "trustScope": "ordinary-ci", "sourceWork": "game-runtime source work" }
+    ],
+    "edges": [
+      { "edgeId": "mirror-forward-source-admission-producer", "from": "mirror-forward-producer", "to": "mirror-forward-verifier", "kind": "verifier" },
+      { "edgeId": "mirror-forward-source-admission-publisher", "from": "mirror-forward-verifier", "to": "mirror-forward-publisher", "kind": "publisher" },
+      { "edgeId": "trusted-dry-run-source-admission-producer", "from": "trusted-dry-run-producer", "to": "trusted-dry-run-verifier", "kind": "verifier" },
+      { "edgeId": "trusted-dry-run-source-admission-publisher", "from": "trusted-dry-run-verifier", "to": "trusted-dry-run-publisher", "kind": "publisher" },
+      { "edgeId": "route-back-source-admission-producer", "from": "route-back-producer", "to": "route-back-verifier", "kind": "verifier" },
+      { "edgeId": "route-back-source-admission-publisher", "from": "route-back-verifier", "to": "route-back-publisher", "kind": "publisher" },
+      { "edgeId": "desktop-source-admission-producer", "from": "desktop-producer", "to": "desktop-verifier", "kind": "verifier" },
+      { "edgeId": "desktop-source-admission-publisher", "from": "desktop-verifier", "to": "desktop-publisher", "kind": "publisher" },
+      { "edgeId": "game-runtime-source-admission-producer", "from": "game-runtime-producer", "to": "game-runtime-verifier", "kind": "verifier" },
+      { "edgeId": "game-runtime-source-admission-publisher", "from": "game-runtime-verifier", "to": "game-runtime-publisher", "kind": "publisher" }
+    ]
   }
 }

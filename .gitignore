@@ -8,6 +8,7 @@ _drafts/
 .env
 .env.*
 !.env.example
+/.packages.local
 *.key
 key.txt
 llm_key.json
@@ -21,16 +22,17 @@ node_modules
 /projects/
 /state/
 /workspace.json
-# .forgeax-harness is a floating clone of forgeax-studio-harness (closed-loop
-# state only), NOT a submodule and NEVER tracked here. Do not force-add loop
-# state or source docs from this directory. The no-slash pattern also protects
-# a local symlink used to point at an alternate clone.
+# .forgeax-harness is a floating clone of forgeax-studio-harness (Studio
+# documentation, Studio-owned skills, and closed-loop state), NOT a submodule
+# and NEVER tracked here. Do not force-add its content. The no-slash pattern
+# also protects a local symlink used to point at an alternate clone.
 # Materialised by scripts/sync-harness.mjs (npm run harness:sync / bootstrap.sh /
 # deploy.sh).
 /.forgeax-harness
-# Studio source docs, rules, and skills live in the root forgeax-harness
-# repository and are consumed through packages/harness. Keep stale local mounts
-# out of the root tree; CI also rejects force-added copies.
+# Shared Harness rules and skills live in the root forgeax-harness repository
+# and are consumed through packages/harness; Studio-owned docs and skill packs
+# live in the floating checkout above. Keep stale local mounts out of the root
+# tree; CI also rejects force-added copies.
 /rules
 /skills
 .self-evolve/
@@ -54,7 +56,6 @@ __pycache__/
 .bc/
 .claude/
 # Ad-hoc screenshots dropped at repo root during dev/debug
-/wb-*.png
 /agent-*.png
 /matrix-*.png
 MyFile
@@ -75,7 +76,6 @@ forgeax-studio-ca.crt
 /packages/studio/.forgeax-debug/
 /packages/npc-client/dist/
 packages/editor
-packages/marketplace
 packages/server
 
 # parallel-track floating clones (own .git, may hold unpushed work — NOT regenerated, do not delete)
@@ -93,6 +93,21 @@ packages/kernel/
 # source graph. Materialise it only for local game-library work; CI sets
 # FORGEAX_SKIP_GAMES=1 and never clones it.
 /packages/games/
+
+# Floating integration/source checkouts declared in `.packages`, not Studio
+# submodule pins. Runtime consumers resolve their released npm packages.
+/packages/ide/
+/packages/extension-platform/
+/packages/app-shell/
+/packages/kino-video-provider/
+/packages/agents/
+
+# Retired source checkout; keep any existing local clone outside Studio Git.
+/packages/asset-canvas-core/
+
+# Independent extension source repositories are floating development checkouts
+# declared in `.packages`; product runtimes consume released extension packages.
+/packages/ex-*/
 
 # brainstorming visual companion mockups
 .superpowers/

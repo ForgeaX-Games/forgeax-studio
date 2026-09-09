@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "commands": {
+    "ide": "public repository command",
+    "versions": "public version metadata",
+    "teardown": "root-owned process teardown"
+  },
+  "diagnostics": {
+    "notMounted": "IDE_MOUNT_NOT_FOUND",
+    "internalPath": "ROOT_INTERNAL_PATH_FORBIDDEN"
+  },
+  "forbiddenPathFragments": [
+    "packages/ide/src",
+    "packages/server/src",
+    "packages/editor/src"
+  ]
+}

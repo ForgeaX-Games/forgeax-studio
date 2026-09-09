@@ -13,6 +13,7 @@ export type RulesetResponse = {
   body: unknown;
   request: RulesetRequest;
   requests?: RulesetRequest[];
+  transportError?: { code?: string; message: string };
 };
 
 export type RulesetClient = {
@@ -21,9 +22,10 @@ export type RulesetClient = {
 
 export type ObservedRuleset = {
   id: string;
-  source: 'repository' | 'organization';
+  source: 'repository' | 'organization' | 'enterprise';
   name?: string;
   enforcement: string;
+  strictRequiredStatusChecks?: boolean;
   bypassActors: string[];
   currentUserCanBypass: string;
   appliesToRef: boolean;
@@ -68,18 +70,31 @@ function appliesToRef(conditions: Record<string, unknown>, ref: string): boolean
   return include.includes(ref) || include.includes(`refs/heads/${ref}`) || include.includes('~ALL') || include.includes('~DEFAULT_BRANCH');
 }
 
-function parseRuleset(value: unknown, source: 'repository' | 'organization', ref: string): ObservedRuleset | undefined {
+function rulesetSource(value: unknown): ObservedRuleset['source'] | undefined {
+  if (value === 'Repository') return 'repository';
+  if (value === 'Organization') return 'organization';
+  if (value === 'Enterprise') return 'enterprise';
+  return undefined;
+}
+
+function parseRuleset(value: unknown, ref: string): ObservedRuleset | undefined {
   const input = record(value);
   if (typeof input.id !== 'number' && typeof input.id !== 'string') return undefined;
+  const source = rulesetSource(input.source_type);
+  if (!source) return undefined;
   const rules = Array.isArray(input.rules) ? input.rules : [];
   const required = rules.filter((rule) => record(rule).type === 'required_status_checks');
   const contexts = required.flatMap((rule) => stringList(record(record(rule).parameters).required_status_checks));
+  const strictRequiredStatusChecks = required.length > 0
+    ? required.every((rule) => record(record(rule).parameters).strict_required_status_checks_policy === true)
+    : undefined;
   const conditions = record(input.conditions);
   return {
     id: String(input.id),
     source,
     name: typeof input.name === 'string' ? input.name : undefined,
     enforcement: typeof input.enforcement === 'string' ? input.enforcement : 'unknown',
+    strictRequiredStatusChecks,
     bypassActors: Array.isArray(input.bypass_actors) ? input.bypass_actors.map((actor) => JSON.stringify(actor)).sort() : [],
     currentUserCanBypass: typeof input.current_user_can_bypass === 'string'
       ? input.current_user_can_bypass
@@ -94,10 +109,8 @@ function requestsOf(response: RulesetResponse): RulesetRequest[] {
   return response.requests ?? [response.request];
 }
 
-function rulesetDetailPath(repository: string, source: 'repository' | 'organization', id: string): string {
-  return source === 'repository'
-    ? `/repos/${repository}/rulesets/${id}`
-    : `/orgs/${repository.split('/')[0]}/rulesets/${id}`;
+function rulesetDetailPath(repository: string, id: string): string {
+  return `/repos/${repository}/rulesets/${id}?includes_parents=true`;
 }
 
 function listedRulesetIds(response: RulesetResponse): string[] | undefined {
@@ -109,75 +122,72 @@ function listedRulesetIds(response: RulesetResponse): string[] | undefined {
 
 async function resolveRulesetDetails(
   repository: string,
-  source: 'repository' | 'organization',
   response: RulesetResponse,
   client: RulesetClient,
 ): Promise<RulesetResponse> {
   const ids = listedRulesetIds(response);
   if (ids === undefined || response.status < 200 || response.status >= 300) return response;
-  const detailRequests = ids.map((id) => ({ path: rulesetDetailPath(repository, source, id), method: 'GET' as const }));
+  const detailRequests = ids.map((id) => ({ path: rulesetDetailPath(repository, id), method: 'GET' as const }));
   const details = await Promise.all(detailRequests.map((request) => client.get(request.path)));
   const allRequests = [...requestsOf(response), ...details.flatMap(requestsOf)];
   const bad = details.find((detail) => detail.status < 200 || detail.status >= 300);
-  if (bad) return { status: bad.status, body: bad.body, request: response.request, requests: allRequests };
+  if (bad) return { status: bad.status, body: bad.body, request: response.request, requests: allRequests, transportError: bad.transportError };
   return { status: 200, body: details.map((detail) => detail.body), request: response.request, requests: allRequests };
 }
 
 function resolveRulesetDetailsSync(
   repository: string,
-  source: 'repository' | 'organization',
   response: RulesetResponse,
   get: (path: string) => RulesetResponse,
 ): RulesetResponse {
   const ids = listedRulesetIds(response);
   if (ids === undefined || response.status < 200 || response.status >= 300) return response;
-  const detailRequests = ids.map((id) => ({ path: rulesetDetailPath(repository, source, id), method: 'GET' as const }));
+  const detailRequests = ids.map((id) => ({ path: rulesetDetailPath(repository, id), method: 'GET' as const }));
   const details = detailRequests.map((request) => get(request.path));
   const allRequests = [...requestsOf(response), ...details.flatMap(requestsOf)];
   const bad = details.find((detail) => detail.status < 200 || detail.status >= 300);
-  if (bad) return { status: bad.status, body: bad.body, request: response.request, requests: allRequests };
+  if (bad) return { status: bad.status, body: bad.body, request: response.request, requests: allRequests, transportError: bad.transportError };
   return { status: 200, body: details.map((detail) => detail.body), request: response.request, requests: allRequests };
 }
 
-export function evaluateLiveRulesetResponses(options: {
+export function evaluateLiveRulesetResponse(options: {
   repository: string;
   ref: string;
-  responses: Array<{ source: 'repository' | 'organization'; response: RulesetResponse }>;
+  response: RulesetResponse;
   now?: string;
   expected?: CiGovernanceExpectation;
 }): LiveRulesetResult {
-  const expectedSources = new Set(['repository', 'organization']);
-  if (options.responses.length !== expectedSources.size || new Set(options.responses.map((item) => item.source)).size !== expectedSources.size) {
-    return unverifiedLiveResult(options.repository, options.ref, 'recursive-input.ci.live-ruleset-incomplete-response', 'both repository and organization ruleset responses are required', options.responses);
+  const requests = requestsOf(options.response);
+  if (options.response.transportError) {
+    return unverifiedLiveResult(options.repository, options.ref, 'recursive-input.ci.live-ruleset-transport-unavailable', { transport: 'gh', available: true }, options.response.transportError);
   }
-  const requests = options.responses.flatMap(({ response }) => requestsOf(response));
   if (requests.some((request) => request.method !== 'GET')) {
     return unverifiedLiveResult(options.repository, options.ref, 'recursive-input.ci.live-ruleset-non-readonly-request', 'all ruleset requests must be GET', requests);
   }
-  const bad = options.responses.find(({ response }) => response.status < 200 || response.status >= 300);
-  if (bad) {
-    return unverifiedLiveResult(options.repository, options.ref, `recursive-input.ci.live-ruleset-http-${bad.response.status}`, { status: bad.response.status, response: bad.response.body }, bad.response.request);
+  if (options.response.status < 200 || options.response.status >= 300) {
+    return unverifiedLiveResult(options.repository, options.ref, `recursive-input.ci.live-ruleset-http-${options.response.status}`, { status: options.response.status, response: options.response.body }, options.response.request);
   }
-  if (options.responses.some(({ response }) => !Array.isArray(response.body))) {
-    return unverifiedLiveResult(options.repository, options.ref, 'recursive-input.ci.live-ruleset-incomplete-response', 'ruleset endpoints must return arrays', options.responses.map(({ response }) => response.body));
+  if (!Array.isArray(options.response.body)) {
+    return unverifiedLiveResult(options.repository, options.ref, 'recursive-input.ci.live-ruleset-incomplete-response', 'the applicable repository ruleset endpoint must return an array', options.response.body);
   }
-  const raw = options.responses.map(({ response }) => response.body);
-  const parsedRulesets = options.responses.flatMap(({ source, response }) => (response.body as unknown[]).map((item: unknown) => parseRuleset(item, source, options.ref)));
+  const raw = options.response.body;
+  const parsedRulesets = raw.map((item: unknown) => parseRuleset(item, options.ref));
   if (parsedRulesets.some((item) => !item)) {
-    return unverifiedLiveResult(options.repository, options.ref, 'recursive-input.ci.live-ruleset-incomplete-response', 'every ruleset must expose id, enforcement, bypass, and current-user bypass fields', raw);
+    return unverifiedLiveResult(options.repository, options.ref, 'recursive-input.ci.live-ruleset-incomplete-response', 'every ruleset must expose id, source_type, enforcement, bypass, and current-user bypass fields', raw);
   }
   const rulesets = parsedRulesets.filter((item): item is ObservedRuleset => Boolean(item));
   const observation: LiveRulesetObservation = {
     repository: options.repository,
     ref: options.ref,
     observedAt: options.now ?? new Date().toISOString(),
-    responseIdentity: sha256(JSON.stringify(raw)),
+    responseIdentity: sha256(JSON.stringify(options.response.body)),
     rulesets,
   };
   return compareLiveRulesets(observation, options.expected ?? {
     repository: options.repository,
     ref: 'main',
     enforcement: 'active',
+    strictRequiredStatusChecks: false,
     bypassActors: [],
     currentUserCanBypass: 'never',
   });
@@ -222,22 +232,12 @@ export async function probeLiveRulesets(options: {
   expected?: CiGovernanceExpectation;
 }): Promise<LiveRulesetResult> {
   const ref = options.ref ?? 'main';
-  const [repositoryList, organizationList] = await Promise.all([
-    options.client.get(`/repos/${options.repository}/rulesets?includes_parents=true`),
-    options.client.get(`/orgs/${options.repository.split('/')[0]}/rulesets?includes_parents=true`),
-  ]);
-  const [repositoryResponse, organizationResponse] = await Promise.all([
-    resolveRulesetDetails(options.repository, 'repository', repositoryList, options.client),
-    resolveRulesetDetails(options.repository, 'organization', organizationList, options.client),
-  ]);
-  const responses = [
-    { source: 'repository' as const, response: repositoryResponse },
-    { source: 'organization' as const, response: organizationResponse },
-  ];
-  return evaluateLiveRulesetResponses({ repository: options.repository, ref, responses, now: (options.now ?? (() => new Date().toISOString()))(), expected: options.expected });
+  const repositoryList = await options.client.get(`/repos/${options.repository}/rulesets?includes_parents=true`);
+  const response = await resolveRulesetDetails(options.repository, repositoryList, options.client);
+  return evaluateLiveRulesetResponse({ repository: options.repository, ref, response, now: (options.now ?? (() => new Date().toISOString()))(), expected: options.expected });
 }
 
-/** Synchronous AI-CLI adapter. Each invocation performs two fresh, read-only gh GETs. */
+/** Synchronous AI-CLI adapter. Each invocation reads the repository's fresh, applicable ruleset view. */
 export function probeLiveRulesetsSync(options: {
   repository: string;
   ref?: string;
@@ -246,16 +246,24 @@ export function probeLiveRulesetsSync(options: {
   expected?: CiGovernanceExpectation;
 }): LiveRulesetResult {
   const ref = options.ref ?? 'main';
-  const paths = [
-    `/repos/${options.repository}/rulesets?includes_parents=true`,
-    `/orgs/${options.repository.split('/')[0]}/rulesets?includes_parents=true`,
-  ] as const;
+  const path = `/repos/${options.repository}/rulesets?includes_parents=true`;
   const get = (path: string): RulesetResponse => {
     const result = spawnSync('gh', ['api', '--include', path], {
       encoding: 'utf8',
       env: { ...process.env, GH_TOKEN: options.token },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    if (result.error) {
+      return {
+        status: 0,
+        body: null,
+        request: { path, method: 'GET' as const },
+        transportError: {
+          code: 'code' in result.error ? String(result.error.code) : undefined,
+          message: result.error.message,
+        },
+      };
+    }
     const stdout = typeof result.stdout === 'string' ? result.stdout : '';
     const stderr = typeof result.stderr === 'string' ? result.stderr : '';
     const statusMatches = [...stdout.matchAll(/HTTP\/\d(?:\.\d)?\s+(\d{3})/g)];
@@ -266,12 +274,8 @@ export function probeLiveRulesetsSync(options: {
     try { body = bodyText ? JSON.parse(bodyText) : body; } catch { /* preserve diagnostic text */ }
     return { status, body, request: { path, method: 'GET' as const } };
   };
-  const listResponses = paths.map(get);
-  const responses = listResponses.map((response, index) => ({
-    source: (index === 0 ? 'repository' : 'organization') as 'repository' | 'organization',
-    response: resolveRulesetDetailsSync(options.repository, index === 0 ? 'repository' : 'organization', response, get),
-  }));
-  return evaluateLiveRulesetResponses({ repository: options.repository, ref, responses, now: (options.now ?? (() => new Date().toISOString()))(), expected: options.expected });
+  const response = resolveRulesetDetailsSync(options.repository, get(path), get);
+  return evaluateLiveRulesetResponse({ repository: options.repository, ref, response, now: (options.now ?? (() => new Date().toISOString()))(), expected: options.expected });
 }
 
 export function compareLiveRulesets(observation: LiveRulesetObservation, expected: CiGovernanceExpectation): LiveRulesetResult {
@@ -287,6 +291,9 @@ export function compareLiveRulesets(observation: LiveRulesetObservation, expecte
   const enforcement = applicable.map((ruleset) => ({ id: ruleset.id, source: ruleset.source, enforcement: ruleset.enforcement }));
   const bypass = applicable.flatMap((ruleset) => ruleset.bypassActors.map((actor) => ({ ruleset: ruleset.id, actor })));
   const bypassCapability = applicable.map((ruleset) => ({ id: ruleset.id, value: ruleset.currentUserCanBypass }));
+  const strictRequiredStatusChecks = applicable
+    .map((ruleset) => ruleset.strictRequiredStatusChecks)
+    .filter((value): value is boolean => value !== undefined);
   const aligned = observation.repository === expected.repository
     && observation.ref === expected.ref
     && applicable.length > 0
@@ -294,13 +301,15 @@ export function compareLiveRulesets(observation: LiveRulesetObservation, expecte
     && extra.length === 0
     && duplicate.length === 0
     && enforcement.every((item) => item.enforcement === expected.enforcement)
+    && strictRequiredStatusChecks.length > 0
+    && strictRequiredStatusChecks.every((value) => value === expected.strictRequiredStatusChecks)
     && bypass.length === 0
     && bypassCapability.every((item) => item.value === expected.currentUserCanBypass);
-  const actual = { repository: observation.repository, ref: observation.ref, applicableRulesets: applicable, missing, extra, duplicate, enforcement, bypass, bypassCapability };
+  const actual = { repository: observation.repository, ref: observation.ref, applicableRulesets: applicable, missing, extra, duplicate, enforcement, strictRequiredStatusChecks, bypass, bypassCapability };
   return {
     status: aligned ? 'aligned' : 'misaligned',
     code: aligned ? 'recursive-input.ci.live-ruleset-aligned' : 'recursive-input.ci.live-ruleset-misaligned',
-    expected: { repository: expected.repository, ref: expected.ref, contexts: CI_REQUIRED_CONTEXTS, enforcement: expected.enforcement, bypassActors: expected.bypassActors, currentUserCanBypass: expected.currentUserCanBypass },
+    expected: { repository: expected.repository, ref: expected.ref, contexts: CI_REQUIRED_CONTEXTS, enforcement: expected.enforcement, strictRequiredStatusChecks: expected.strictRequiredStatusChecks, bypassActors: expected.bypassActors, currentUserCanBypass: expected.currentUserCanBypass },
     actual,
     observation,
     recoveryActions: aligned ? [] : [{ actionId: 'manual-governance-review', manualHandoff: 'A human must review the live ruleset mismatch; this command never mutates governance.' }],

@@ -4,11 +4,10 @@
 // package.json "prepare" lifecycle after `bun install`).
 // Idempotent — re-running picks up where it left off.
 //
-// Steps: [0] prereq gate · [1] submodule init+floating consumer sync · [2] engine pnpm
-// build · [2a] wgpu wasm · [2c] fbx wasm · [2d] codec wasm · [3] marketplace
-// plugin install+build · [4] .env scaffold · [5] seed sample games.
+// Steps: [0] prereq gate · [1] integration mounts + floating package installs ·
+// [2] core Engine artifacts · [3] .env scaffold · [4] optional sample-game links.
 //
-// Env: FORGEAX_SKIP_PREPARE · FORGEAX_FORCE_PREPARE · FORGEAX_SKIP_PLUGINS ·
+// Env: FORGEAX_SKIP_PREPARE · FORGEAX_FORCE_PREPARE ·
 // FORGEAX_SKIP_ENGINE_BUILD · FORGEAX_SUBMODULE_FULL · FORGEAX_SKIP_HARNESS_SYNC ·
 // FORGEAX_SKIP_SUBMODULE_INIT · FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_GAMES ·
 // FORGEAX_SKIP_BOOTSTRAP · FORGEAX_SKIP_CONTRACTS_BUILD ·
@@ -18,16 +17,36 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ENGINE_ENTRY_OUTPUTS, isEngineEntryDistFresh } from './lib/engine-entry-freshness.ts';
 import {
-  extensionPackageManager,
-  extensionPackageManagerFallback,
-} from './lib/extension-build.ts';
+  ENGINE_ENTRY_OUTPUTS,
+  areEnginePrepareArtifactsFresh,
+  collectMissingEngineArtifacts,
+  formatMissingEngineArtifacts,
+} from './lib/engine-entry-freshness.ts';
 import { has, resolvePython, run } from './lib/sh.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
-import { repairPluginDirectoryLink } from './lib/plugin-directory-links.ts';
-import { mapConcurrent, positiveConcurrency, runCommandBuffered } from './lib/process-pool.ts';
+import {
+  bunWorkspaceInstallArgs,
+  prepareWindowsWorkspaceJunctions,
+  removeWindowsWorkspaceNodeModulesBridges,
+  repairWindowsNestedDirectoryLinks,
+  repairWindowsDirectoryAlias,
+  restoreWindowsDirectoryAlias,
+} from './lib/bun-workspace-install.ts';
 import { ensureWorkspacePackageLink } from './lib/workspace-package-link.ts';
+import {
+  ensureIdeIntegrationPackageLinks,
+  writeIdeIntegrationWorkspaceManifest,
+} from './lib/ide-integration-workspace.ts';
+import { runIdeWorkspaceInstall } from './lib/ide-install-diagnostics.ts';
+import {
+  restoreUpdateRepoStashes,
+  stashDirtyUpdateRepos,
+  type ManagedUpdateRepo,
+  type UpdateRepoStash,
+} from './lib/update-repo-stash.ts';
+import { resolveActiveServerRole } from './lib/server-role.ts';
+import { editorRoot, engineRoot } from './lib/workspace-paths.ts';
 import { buildEnginePackages, PREPARE_ENGINE_BUILD_FILTERS } from './ci/build-engine-packages.ts';
 import { ensureEngineWgpuWasm } from './ci/ensure-engine-wgpu-wasm.ts';
 import {
@@ -39,7 +58,6 @@ import {
 } from '../packages/recursive-input-contract/src/index.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PLAYWRIGHT_DOWNLOAD_MIRROR = 'https://cdn.npmmirror.com/binaries/playwright';
 
 const PREPARE_INPUT_CLASSES: InputClass[] = [
   'source',
@@ -96,9 +114,12 @@ if (process.env.FORGEAX_SKIP_PREPARE === '1') {
   process.exit(0);
 }
 const force = process.env.FORGEAX_FORCE_PREPARE === '1';
-const skipPlugins = process.env.FORGEAX_SKIP_PLUGINS === '1';
 const skipSubmoduleInit = process.env.FORGEAX_SKIP_SUBMODULE_INIT === '1';
 const requireCompleteSetup = process.env.FORGEAX_REQUIRE_COMPLETE_SETUP === '1';
+// Integration-only mode is an explicit CI boundary. Do not infer it from a
+// missing package.json: in a normal non-recursive clone every gitlink directory
+// starts empty, and prepare must still materialize the product repositories.
+const integrationOnly = process.env.FORGEAX_ROOT_INTEGRATION_ONLY === '1';
 // The public mirror deliberately excludes the private, development-only harness
 // repositories. The marker is assembled into every public repository so this
 // remains true for a recursive clone and for an independently cloned child.
@@ -173,7 +194,6 @@ for (const a of process.argv.slice(2)) {
 Env:
   FORGEAX_SKIP_PREPARE=1       skip entirely (exit 0)
   FORGEAX_FORCE_PREPARE=1      rebuild even when dists look fresh
-  FORGEAX_SKIP_PLUGINS=1       skip marketplace plugin install+build
   FORGEAX_SKIP_ENGINE_BUILD=1  skip engine package build when dist/ present
   FORGEAX_SUBMODULE_FULL=1     full (non-shallow) submodule clone
   FORGEAX_SKIP_SUBMODULE_INIT=1
@@ -183,8 +203,6 @@ Env:
   FORGEAX_SKIP_GAMES=1         skip optional forgeax-games checkout + sample seeding (CI)
   FORGEAX_SKIP_BOOTSTRAP=1     skip toolchain provisioning (node/pnpm/rust) — CI
   FORGEAX_BOOTSTRAP_YES=1      auto-accept toolchain installs (non-interactive)
-  FORGEAX_PLUGIN_BUILD_CONCURRENCY=N
-                                parallel plugin builds (default 2; installs stay serial)
 `);
     process.exit(0);
   } else fail(`unknown arg: ${a}`);
@@ -237,14 +255,28 @@ const parentOrigin = (spawnSync('git', ['config', '--get', 'remote.origin.url'],
 const cred = publicDistribution
   ? { branch: 'noop-parent-is-not-https' as const, gitConfig: {} }
   : resolveCredentialConfig(parentOrigin, env, probeGitHubSsh);
+// A public mirror is installed from a complete source overlay, so its nested
+// plugin builds must retain devDependencies such as React and TypeScript even
+// when the caller exports NODE_ENV=production. This only changes the package
+// manager/build environment inside the public distribution lifecycle; the
+// caller's environment remains unchanged for the rest of prepare.
+const packageManagerEnv = publicDistribution ? { ...env, NODE_ENV: 'development' } : env;
 const gitEnv: NodeJS.ProcessEnv = normalizePackageManagerRegistry({
-  ...hardenedGitEnv(env),
+  ...hardenedGitEnv(packageManagerEnv),
   ...cred.gitConfig,
+  // FORGEAX_SKIP_HARNESS also covers the nested engine lifecycle. Without
+  // this propagation, engine pnpm install still clones its private harness in
+  // CI after the Studio harness branch has already been skipped.
+  ...(env.FORGEAX_SKIP_HARNESS === '1' ? { FORGEAX_SKIP_HARNESS_SYNC: '1' } : {}),
 });
 const noCredHelper = [...NO_CRED_ARGV];
 if (cred.branch === 'ssh-rewrite' || cred.branch === 'pat-rewrite') ok(cred.message!);
 else if (cred.branch === 'loud-warn-no-cred') warnY(cred.message!);
 const depth = env.FORGEAX_SUBMODULE_FULL === '1' ? [] : ['--depth', '1'];
+function prepareOwnsSubmodulePath(path: string): boolean {
+  if (integrationOnly && path !== 'packages/ide') return false;
+  return true;
+}
 if (skipSubmoduleInit) {
   prepareResults.push({
     repoType: 'submodule',
@@ -268,23 +300,76 @@ if (skipSubmoduleInit) {
   if (paths.length === 0) {
     prepareResults.push({ repoType: 'submodule', repo: '(none)', result: 'skipped', detail: 'no submodules configured' });
   }
-  for (const path of paths) {
-    const started = performance.now();
-    if (commandTrace) console.log(`[submodule:start] path=${path}`);
-    const r = spawnSync('git', [...noCredHelper, 'submodule', 'update', '--init', '--recursive', ...depth, '--', path], {
-      stdio: 'inherit',
-      cwd: ROOT,
-      env: gitEnv,
-    });
-    const duration = Math.round(performance.now() - started);
-    const status = r.status ?? 1;
-    if (commandTrace) console.log(`[submodule:end] path=${path} exit=${status} duration_ms=${duration}`);
+  const managedSubmoduleRepos: ManagedUpdateRepo[] = paths
+    .filter((path) => prepareOwnsSubmodulePath(path) && existsSync(join(ROOT, path, '.git')))
+    .map((path) => ({ path, repoType: 'submodule' }));
+  let protectedSubmodules: UpdateRepoStash[] = [];
+  let canUpdateSubmodules = true;
+  try {
+    protectedSubmodules = stashDirtyUpdateRepos(ROOT, managedSubmoduleRepos, 'forgeax prepare submodule update');
+    for (const stash of protectedSubmodules) {
+      prepareResults.push({
+        repoType: 'submodule',
+        repo: stash.path,
+        result: 'ok',
+        detail: 'preserved local checkout before prepare submodule update',
+      });
+    }
+  } catch (error) {
+    canUpdateSubmodules = false;
     prepareResults.push({
       repoType: 'submodule',
-      repo: path,
-      result: status === 0 ? 'ok' : 'failed',
-      detail: status === 0 ? `ready (${duration}ms)` : `git submodule update exited ${status} (${duration}ms)`,
+      repo: '(managed submodules)',
+      result: 'failed',
+      detail: error instanceof Error ? error.message : String(error),
     });
+  }
+  try {
+    for (const path of paths) {
+      if (integrationOnly && path !== 'packages/ide') {
+        prepareResults.push({
+          repoType: 'submodule',
+          repo: path,
+          result: 'skipped',
+          detail: 'product repository is hydrated by its owning checkout',
+        });
+        continue;
+      }
+      if (!canUpdateSubmodules) {
+        prepareResults.push({
+          repoType: 'submodule',
+          repo: path,
+          result: 'skipped',
+          detail: 'managed submodule preservation failed before update',
+        });
+        continue;
+      }
+      const started = performance.now();
+      if (commandTrace) console.log(`[submodule:start] path=${path}`);
+      const r = spawnSync('git', [...noCredHelper, 'submodule', 'update', '--init', '--recursive', ...depth, '--', path], {
+        stdio: 'inherit',
+        cwd: ROOT,
+        env: gitEnv,
+      });
+      const duration = Math.round(performance.now() - started);
+      const status = r.status ?? 1;
+      if (commandTrace) console.log(`[submodule:end] path=${path} exit=${status} duration_ms=${duration}`);
+      prepareResults.push({
+        repoType: 'submodule',
+        repo: path,
+        result: status === 0 ? 'ok' : 'failed',
+        detail: status === 0 ? `ready (${duration}ms)` : `git submodule update exited ${status} (${duration}ms)`,
+      });
+    }
+  } finally {
+    for (const restore of restoreUpdateRepoStashes(ROOT, protectedSubmodules)) {
+      prepareResults.push({
+        repoType: 'submodule',
+        repo: restore.path,
+        result: restore.ok ? 'ok' : 'failed',
+        detail: restore.detail,
+      });
+    }
   }
 }
 const failedSubmodules = prepareResults.filter((row) => row.result === 'failed');
@@ -316,33 +401,28 @@ if (!publicDistribution) {
   }
 }
 
-// The CLI consumes the in-workspace @forgeax/types and @forgeax/agent-runtime
-// packages. Build their exported dist files first: once Studio pins contracts
-// 0.1.1+, Bun correctly links those workspaces instead of retaining nested npm
-// copies, so the CLI can no longer rely on a downloaded package's prebuilt dist.
-{
-  bold('[1b/5] Building shared contracts');
-  const contractsDir = join(ROOT, 'packages/contracts');
-  const typesDist = join(contractsDir, 'types/dist/permission-rules.js');
-  const runtimeDist = join(contractsDir, 'agent-runtime/dist/index.js');
-  if (!existsSync(join(contractsDir, 'package.json'))) {
-    warnY('packages/contracts missing — skip shared contracts build');
-  } else if (
-    existsSync(typesDist)
-    && existsSync(runtimeDist)
-    && process.env.FORGEAX_FORCE_PREPARE !== '1'
-  ) {
-    ok('shared contracts dist present');
-  } else {
-    const r = spawnSync('node', ['scripts/build-packages.mjs'], {
-      cwd: contractsDir,
-      stdio: 'inherit',
-      env: { ...env, FORGEAX_SKIP_PREPARE: '1' },
-    });
-    if ((r.status ?? 1) !== 0 || !existsSync(typesDist) || !existsSync(runtimeDist)) {
-      fail('shared contracts build failed — @forgeax/cli dependencies are unavailable');
+if (!publicDistribution) {
+  const activeServer = resolveActiveServerRole({ root: ROOT, profile: process.env.FORGEAX_SERVER_PROFILE });
+  if (activeServer.packageName !== '@forgeax/server') {
+    bold(`[1a/5] Installing ${activeServer.packageName} runtime dependencies`);
+    const patchesAlias = repairWindowsDirectoryAlias(join(activeServer.packageDir, 'patches'));
+    if (patchesAlias) ok('Windows patches alias materialized');
+    const workspaceLinks = prepareWindowsWorkspaceJunctions(activeServer.packageDir);
+    if (workspaceLinks.length > 0) {
+      ok(`Windows workspace junctions ready (${workspaceLinks.length})`);
     }
-    ok('shared contracts built');
+    let r: ReturnType<typeof spawnSync>;
+    try {
+      r = spawnSync('bun', bunWorkspaceInstallArgs(), {
+        cwd: activeServer.packageDir,
+        stdio: 'inherit',
+        env: gitEnv,
+      });
+    } finally {
+      restoreWindowsDirectoryAlias(patchesAlias);
+    }
+    if ((r.status ?? 1) !== 0) fail(`${activeServer.packageName} dependency installation exited ${r.status ?? 1}`);
+    ok(`${activeServer.packageName} runtime dependencies ready`);
   }
 }
 
@@ -350,8 +430,9 @@ if (!publicDistribution) {
 // points at dist/cli/main.js. Server resolves that path to spawn the kernel
 // sidecar. Without a build, import.meta.resolve('@forgeax/cli/serve') fails and
 // chat stalls with "no first token / kernel=unknown".
+if (!integrationOnly) {
 {
-  bold('[1c/5] Building @forgeax/cli (serve entry)');
+  bold('[1b/5] Building @forgeax/cli (serve entry)');
   const cliDir = join(ROOT, 'packages/cli');
   const serveDist = join(cliDir, 'dist/cli/main.js');
   const skipCliBuild = process.env.FORGEAX_SKIP_CLI_BUILD === '1';
@@ -377,7 +458,8 @@ if (!publicDistribution) {
   }
 }
 
-// .forgeax-harness floating state clone + package harness + skill install.
+// .forgeax-harness floating Studio docs/skills/state clone + package harness +
+// shared skill install.
 // Dev-only convenience —
 // gate behind FORGEAX_SKIP_HARNESS so CI and bare `bun install` (which triggers
 // prepare on every run) don't re-clone the harness + re-run the Python skill
@@ -386,7 +468,7 @@ if (process.env.FORGEAX_SKIP_HARNESS === '1' || publicDistribution) {
   console.log(`  → harness sync + skill-install skipped (${publicDistribution ? 'public distribution' : 'FORGEAX_SKIP_HARNESS=1'})`);
 } else {
   syncHarness(ROOT, '.forgeax-harness floating clone');
-  syncPackageHarness();
+  ensureManagedPackage('harness', true);
   installHarnessSkills();
   // engine harness sync now flows through the editor submodule (it carries the
   // nested engine at packages/editor/packages/engine).
@@ -408,7 +490,67 @@ if (process.env.FORGEAX_SKIP_HARNESS === '1' || publicDistribution) {
 if (process.env.FORGEAX_SKIP_GAMES === '1' || publicDistribution) {
   console.log(`  → games floating checkout skipped (${publicDistribution ? 'public distribution' : 'FORGEAX_SKIP_GAMES=1'})`);
 } else {
-  syncGames();
+  ensureManagedPackage('games', false);
+}
+
+// The product IDE is an independently owned floating checkout. Studio records
+// it in `.packages` so a fresh integration workspace can boot without a
+// submodule pin. Materialize it before building the shared installation graph:
+// IDE-owned workspace packages may consume Studio-owned source packages through
+// workspace:* edges, but IDE intentionally has no duplicate Interface checkout.
+if (publicDistribution) {
+  console.log('  → IDE floating checkout skipped (public distribution)');
+} else {
+  ensureManagedPackage('ide', true);
+}
+
+// IDE resolves these product packages directly to source in vite.config.ts.
+// They are independently owned repositories and intentionally are not root
+// workspaces, but their workspace:* edges still need one common installation
+// graph. Build that graph under generated state so a fresh checkout installs
+// the IDE, its owned packages, and every source dependency without changing
+// root package ownership.
+const ideSourceWorkspaceDir = join(ROOT, '.forgeax/ide-source-workspace');
+if (!publicDistribution) {
+  try {
+    writeIdeIntegrationWorkspaceManifest(ideSourceWorkspaceDir);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+  bold('[1c/5] Installing IDE integration workspace dependencies');
+  const workspaceLinks = prepareWindowsWorkspaceJunctions(ideSourceWorkspaceDir);
+  if (workspaceLinks.length > 0) {
+    ok(`Windows IDE source workspace junctions ready (${workspaceLinks.length})`);
+  }
+  const r = await runIdeWorkspaceInstall({
+    root: ROOT,
+    args: bunWorkspaceInstallArgs(),
+    cwd: ideSourceWorkspaceDir,
+    env: gitEnv,
+  });
+  if ((r.status ?? 1) !== 0) fail(`@forgeax/ide integration workspace dependency installation exited ${r.status ?? 1}`);
+  ensureIdeIntegrationPackageLinks(ROOT);
+  ok('@forgeax/ide integration workspace dependencies ready');
+}
+
+const editorDir = editorRoot(ROOT);
+if (!publicDistribution && existsSync(join(editorDir, 'package.json'))) {
+  bold('[1e/5] Installing @forgeax/editor workspace dependencies');
+  const workspaceLinks = prepareWindowsWorkspaceJunctions(editorDir, process.platform, false);
+  if (workspaceLinks.length > 0) {
+    ok(`Windows editor workspace junctions ready (${workspaceLinks.length})`);
+  }
+  const removedBridges = removeWindowsWorkspaceNodeModulesBridges(editorDir, workspaceLinks);
+  if (removedBridges > 0) {
+    warnY(`Windows editor workspace: removed ${removedBridges} stale node_modules bridges before install`);
+  }
+  const r = spawnSync('bun', bunWorkspaceInstallArgs(), {
+    cwd: editorDir,
+    stdio: 'inherit',
+    env: { ...gitEnv, FORGEAX_SKIP_HARNESS_SYNC: '1' },
+  });
+  if ((r.status ?? 1) !== 0) fail(`@forgeax/editor dependency installation exited ${r.status ?? 1}`);
+  ok('@forgeax/editor workspace dependencies ready');
 }
 
 // ── 3. engine submodule build ────────────────────────────────────────────────
@@ -420,8 +562,12 @@ if (publicDistribution) {
   console.log('  → public distribution — skip engine package + WASM builds');
 } else {
 bold('[2/5] Building engine submodule packages');
-const engineDir = join(ROOT, 'packages/editor/packages/engine');
+const engineDir = engineRoot(ROOT);
 if (!existsSync(engineDir)) fail('packages/editor/packages/engine (editor nested engine) submodule missing — run git submodule update --init --recursive');
+// Studio only consumes Engine build outputs; it does not own or consume the
+// Engine repository's private loop state. Keep Studio and Editor harness syncs
+// active while suppressing this nested postinstall side effect.
+const engineInstallEnv = { ...gitEnv, FORGEAX_SKIP_HARNESS_SYNC: '1' };
 
 // The engine packages live in BOTH the engine's own pnpm workspace AND the
 // studio-root bun workspace glob (root package.json → packages/editor/packages/
@@ -429,10 +575,11 @@ if (!existsSync(engineDir)) fail('packages/editor/packages/engine (editor nested
 // node_modules/* at bun's .bun store; if that install was ever interrupted the
 // store is incomplete and those symlinks dangle. pnpm's `--frozen-lockfile`
 // then reports "Already up to date" and does NOT repair them, so the engine
-// build dies cryptically ("Could not resolve 'ajv-formats'"). Detect dangling
-// per-package symlinks and drop the affected node_modules so the pnpm install
-// below relinks them fresh from the intact .pnpm store.
-function healDanglingEngineSymlinks(dir: string): void {
+// build dies cryptically ("Could not resolve 'ajv-formats'"). Windows copyfile
+// installs additionally leave real nested workspace copies that can contain
+// stale Engine dist exports. Drop those package-local node_modules before pnpm
+// owns the graph again; on other platforms retain the narrower dangling repair.
+function healDanglingEngineSymlinks(dir: string, resetBunCopies = false): void {
   const pkgsRoot = join(dir, 'packages');
   if (!existsSync(pkgsRoot)) return;
   let healed = 0;
@@ -443,14 +590,17 @@ function healDanglingEngineSymlinks(dir: string): void {
     const dangling = readdirSync(nm, { withFileTypes: true }).some(
       (d) => d.isSymbolicLink() && !existsSync(join(nm, d.name)), // existsSync follows the link → false if target gone
     );
-    if (dangling) {
+    if (resetBunCopies || dangling) {
       rmSync(nm, { recursive: true, force: true });
       healed++;
     }
   }
-  if (healed > 0) warnY(`engine: cleared ${healed} package node_modules with dangling symlinks (interrupted bun install) — pnpm will relink`);
+  if (healed > 0) {
+    const reason = resetBunCopies ? 'Windows Bun workspace copies' : 'dangling symlinks';
+    warnY(`engine: cleared ${healed} package node_modules with ${reason} — pnpm will relink`);
+  }
 }
-healDanglingEngineSymlinks(engineDir);
+healDanglingEngineSymlinks(engineDir, process.platform === 'win32');
 
 // ── engine wasm provisioning: fetch prebuilt release BEFORE compiling ──────────
 // The three engine wasm bundles (wgpu-wasm / fbx / codec) are gitignored
@@ -571,10 +721,10 @@ const engineEntryPkgs = [
 ];
 const enginePkgDir = join(engineDir, 'packages');
 const engineDeclarationSentinel = join(ROOT, '.forgeax/sentinels/engine-declarations.built');
-const engineEntryDistsFresh = (): boolean => engineEntryPkgs.every((p) => {
-  const pdir = join(enginePkgDir, p);
-  return isEngineEntryDistFresh(pdir, engineDeclarationSentinel);
-});
+const engineDevkitCliDir = join(enginePkgDir, 'devkit');
+const engineDevkitCliPath = join(engineDevkitCliDir, 'dist', 'cli.mjs');
+const engineEntryDistsFresh = (): boolean =>
+  areEnginePrepareArtifactsFresh(enginePkgDir, engineEntryPkgs, engineDeclarationSentinel);
 const skipEngineBuild =
   !force &&
   // CI's cached engine dist is safe to skip only when EVERY Vite-config entry
@@ -583,10 +733,10 @@ const skipEngineBuild =
   // `.mjs` entry.
   engineEntryDistsFresh();
 if (skipEngineBuild) {
-  if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed (skip-build path).');
+  if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir, env: engineInstallEnv })) fail('engine pnpm install failed (skip-build path).');
   ok('engine build skipped — Vite-config entry dists fresh');
 } else {
-  if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir })) fail('engine pnpm install failed.');
+  if (!run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir, env: engineInstallEnv })) fail('engine pnpm install failed.');
   // pkg/wgpu_wasm.js must exist before the engine-app bundle below imports it.
   buildWgpuWasm();
   if (!buildEnginePackages({ engineRoot: engineDir, filters: PREPARE_ENGINE_BUILD_FILTERS }))
@@ -699,7 +849,7 @@ if (
   }
 }
 
-const missingEngineArtifacts = [
+const enginePrepareArtifactPaths = [
   wasmArtefact,
   join(wgpuDir, 'pkg/wgpu_wasm.js'),
   fbxWasmMjs,
@@ -708,31 +858,42 @@ const missingEngineArtifacts = [
   codecTranscoderMjs,
   codecEncoderWasm,
   codecEncoderMjs,
+  engineDevkitCliPath,
   ...engineEntryPkgs.flatMap((name) =>
     ENGINE_ENTRY_OUTPUTS.map((output) => join(enginePkgDir, name, 'dist', output))),
   join(enginePkgDir, 'net-websocket', 'dist', 'browser.mjs'),
   join(enginePkgDir, 'net-websocket', 'dist', 'node.mjs'),
-].filter((path) => !existsSync(path));
+];
+const missingEngineArtifacts = collectMissingEngineArtifacts(
+  enginePrepareArtifactPaths,
+  [engineDevkitCliPath],
+);
 if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
-  fail(`required engine artefacts missing after prepare:\n${missingEngineArtifacts.map((path) => `  - ${path}`).join('\n')}`);
+  const retryCommand = process.platform === 'win32'
+    ? '$env:FORGEAX_FORCE_PREPARE="1"; bun run prepare'
+    : 'FORGEAX_FORCE_PREPARE=1 bun run prepare';
+  fail(formatMissingEngineArtifacts(missingEngineArtifacts, retryCommand));
+}
+
+// pnpm recreates package-local relative links. When an Engine package is
+// reached through Editor's outer Windows junction, Windows resolves those
+// nested links against the alias path and can silently open a different package
+// (for example @forgeax/types instead of engine-types). Convert only those
+// links to absolute junctions; keep each package's third-party dependencies.
+const repairedNestedLinks = repairWindowsNestedDirectoryLinks(enginePkgDir);
+if (repairedNestedLinks > 0) {
+  ok(`Windows Engine nested dependency junctions repaired (${repairedNestedLinks})`);
 }
 
 }
 
 // ── 2e. Workspace @forgeax dedupe symlinks ──────────────────────────────────
-// Vite's resolve.dedupe (studio vite.config.ts) resolves the whole @forgeax
-// family from the Studio root's node_modules. bun's workspace linker only
-// creates symlinks for DIRECT deps there; transitive workspace deps
-// (engine-runtime, engine-ecs, editor-core, …) are absent. When dedupe can't
-// find a package, game-file imports resolve a second module instance → ECS
-// component identity splits (e.g. Camera spawned by the game !== the Camera
-// the editor queries for) → "no Camera entity in play world". A worktree root
-// can also fall through to the parent checkout's node_modules, so repair both
-// @forgeax scopes against the packages in this worktree.
+// Keep shared package links at the integration-workspace root. The independent
+// IDE owns its own application dependency graph and is reached only through
+// the public wrapper commands, so root prepare never repairs IDE internals.
 {
   const forgeaxLinkRoots = [
     { label: 'root', path: join(ROOT, 'node_modules/@forgeax') },
-    { label: 'Studio', path: join(ROOT, 'packages/studio/node_modules/@forgeax') },
   ];
   const isWin = process.platform === 'win32';
   const packageParents = [
@@ -777,78 +938,10 @@ if (requireCompleteSetup && missingEngineArtifacts.length > 0) {
   }
 }
 
-// ── 5. plugin install + build ─────────────────────────────────────────────────
-bold('[3/5] Installing + building marketplace plugins');
-if (skipPlugins) {
-  console.log('  (skipped — FORGEAX_SKIP_PLUGINS=1)');
-} else {
-  const pluginsDir = join(ROOT, 'packages/marketplace/extensions');
-  const sharedPackagesDir = join(pluginsDir, '_shared');
-  const builds: Array<{ name: string; dir: string }> = [];
-  for (const e of existsSync(sharedPackagesDir) ? readdirSync(sharedPackagesDir, { withFileTypes: true }) : []) {
-    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
-    const d = join(sharedPackagesDir, e.name);
-    if (existsSync(join(d, 'package.json'))) installDir(d);
-  }
-  for (const e of existsSync(pluginsDir) ? readdirSync(pluginsDir, { withFileTypes: true }) : []) {
-    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
-    if (e.name === '_template') continue;
-    const d = join(pluginsDir, e.name);
-    const repairedTarget = repairPluginDirectoryLink(d);
-    if (repairedTarget) console.log(`  → repaired plugin directory link (${e.name} → ${repairedTarget})`);
-    if (!existsSync(join(d, 'package.json'))) continue;
-    const pkg = readJson(join(d, 'package.json')) as {
-      packageManager?: string;
-      scripts?: Record<string, string>;
-    } | null;
-    if (resolvePluginPackageManager(d, pkg, e.name) === 'pnpm') {
-      installPnpmDir(d);
-    } else {
-      installDir(d);
-    }
-    ensurePluginPlaywrightBrowsers(d, e.name);
-
-    if (pkg?.scripts?.build) {
-      if (!force && pluginBuildFresh(d)) ok(`${e.name}  build cache fresh, skip`);
-      else builds.push({ name: e.name, dir: d });
-    }
-  }
-
-  if (builds.length > 0) {
-    const concurrency = positiveConcurrency(
-      process.env.FORGEAX_PLUGIN_BUILD_CONCURRENCY,
-      2,
-      'FORGEAX_PLUGIN_BUILD_CONCURRENCY',
-    );
-    console.log(`  → building ${builds.length} plugin(s), concurrency=${concurrency}`);
-    const results = await mapConcurrent(builds, concurrency, async (build) => ({
-      build,
-      result: await runCommandBuffered('bun', ['run', 'build'], {
-        cwd: build.dir,
-        env,
-      }),
-    }));
-    const failures: string[] = [];
-    for (const { build, result } of results) {
-      console.log(`::group::plugin build ${build.name}`);
-      if (result.stdout) process.stdout.write(result.stdout);
-      if (result.stderr) process.stdout.write(result.stderr);
-      if (result.error) console.error(result.error.message);
-      if (result.status === 0) ok(`${build.name}  built`);
-      else {
-        failures.push(build.name);
-        console.error(
-          `${build.name} build failed (${result.status === null ? 'spawn error' : `exit ${result.status}`})`,
-        );
-      }
-      console.log('::endgroup::');
-    }
-    if (failures.length > 0) fail(`plugin build failed: ${failures.join(', ')}`);
-  }
 }
 
-// ── 6. .env scaffold ──────────────────────────────────────────────────────────
-bold('[4/5] Configuring $ROOT/.env');
+// ── 3. .env scaffold ──────────────────────────────────────────────────────────
+bold('[3/5] Configuring $ROOT/.env');
 const envFile = join(ROOT, '.env');
 const envExample = join(ROOT, '.env.example');
 if (!existsSync(envFile) && existsSync(join(ROOT, 'packages/forgeax/.env'))) {
@@ -865,9 +958,9 @@ if (!/^ANTHROPIC_API_KEY=.+/m.test(readFileSync(envFile, 'utf8'))) {
   ok('ANTHROPIC_API_KEY already set');
 }
 
-// ── 7. seed sample games ──────────────────────────────────────────────────────
+// ── 4. seed sample games ──────────────────────────────────────────────────────
 console.log();
-bold('[5/5] Seeding sample games to .forgeax/games/');
+bold('[4/5] Seeding sample games to .forgeax/games/');
 // SSOT: defer to scripts/seed-games.ts (symlink each shared-library game into
 // .forgeax/games/<slug>). This is the SAME path run.ts and the desktop .app's
 // Rust seed_shared_games use — one algorithm, symlinks only, idempotent. Do NOT
@@ -922,7 +1015,6 @@ if (prepareFailed) {
   process.exit(1);
 }
 console.log('Next:\n  bun fx start');
-console.log('Endpoints once running:\n  http://localhost:18920  Studio UI\n  http://localhost:18900  Server\n  http://localhost:15173  Engine');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -957,26 +1049,16 @@ function syncHarness(cwd: string, label: string): void {
   else warnY(`${label} sync failed — continuing`);
 }
 
-function syncPackageHarness(): void {
-  console.log('  → node scripts/sync-package-harness.mjs --ensure');
-  const r = spawnSync('node', [join(ROOT, 'scripts/sync-package-harness.mjs'), '--ensure'], {
+function ensureManagedPackage(selector: string, required: boolean): void {
+  console.log(`  → bun scripts/packages.ts ensure --only ${selector}`);
+  const r = spawnSync(process.execPath, [join(ROOT, 'scripts/packages.ts'), 'ensure', '--only', selector], {
     stdio: 'inherit',
     cwd: ROOT,
     env: gitEnv,
   });
-  if ((r.status ?? 1) !== 0) fail('packages/harness floating checkout is unavailable');
-  ok('packages/harness floating checkout ready');
-}
-
-function syncGames(): void {
-  console.log('  → node scripts/sync-games.mjs --ensure');
-  const r = spawnSync('node', [join(ROOT, 'scripts/sync-games.mjs'), '--ensure'], {
-    stdio: 'inherit',
-    cwd: ROOT,
-    env: gitEnv,
-  });
-  if ((r.status ?? 1) !== 0) warnY('optional packages/games floating checkout unavailable — continuing without shared games');
-  else ok('packages/games floating checkout ready or absent');
+  if ((r.status ?? 1) !== 0 && required) fail(`packages/${selector} floating checkout is unavailable`);
+  if ((r.status ?? 1) !== 0) warnY(`optional packages/${selector} floating checkout unavailable — continuing`);
+  else ok(`packages/${selector} floating checkout ready or absent`);
 }
 
 function installHarnessSkills(): void {
@@ -1011,107 +1093,4 @@ function anyNewerThan(dir: string, anchorMs: number): boolean {
     }
   }
   return false;
-}
-
-/** Bun install with one clean retry for a half-installed dependency tree. */
-function bunInstallWithRetry(dir: string): boolean {
-  const installArgs =
-    existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'bun.lockb'))
-      ? ['install', '--frozen-lockfile']
-      : ['install'];
-  if (run('bun', installArgs, { cwd: dir, env: gitEnv })) return true;
-  warnY(`bun install failed in ${dir}; removing the incomplete node_modules and retrying`);
-  rmSync(join(dir, 'node_modules'), { recursive: true, force: true });
-  return run('bun', installArgs, { cwd: dir, env: gitEnv });
-}
-
-function resolvePluginPackageManager(
-  dir: string,
-  pkg: { packageManager?: string } | null,
-  label: string,
-): 'bun' | 'pnpm' {
-  const fallback = extensionPackageManagerFallback({
-    bunLock: existsSync(join(dir, 'bun.lock')) || existsSync(join(dir, 'bun.lockb')),
-    pnpmLock: existsSync(join(dir, 'pnpm-lock.yaml')),
-    pnpmWorkspace: existsSync(join(dir, 'pnpm-workspace.yaml')),
-  });
-  try {
-    return extensionPackageManager(pkg ?? {}, fallback);
-  } catch (error) {
-    fail(`${label} ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-function installPnpmDir(dir: string): void {
-  console.log(`  → pnpm install (${dir})`);
-  const installArgs = existsSync(join(dir, 'pnpm-lock.yaml'))
-    ? ['install', '--frozen-lockfile']
-    : ['install'];
-  if (!run('pnpm', installArgs, { cwd: dir, env: gitEnv })) fail(`${dir} dependency install failed`);
-  ok(`${dir}  installed`);
-}
-
-function ensurePluginPlaywrightBrowsers(dir: string, label: string): void {
-  const cli = join(dir, 'node_modules/playwright/cli.js');
-  if (!existsSync(cli)) return;
-  const browserArgs = ['install', 'chromium', 'chromium-headless-shell'];
-  console.log(`  → node ${cli} ${browserArgs.join(' ')} (${label} browser runtime)`);
-  if (run('node', [cli, ...browserArgs], { cwd: dir, env: gitEnv })) {
-    ok(`${label} Playwright browsers ready`);
-    return;
-  }
-
-  const customDownloadHost =
-    gitEnv.PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST ?? gitEnv.PLAYWRIGHT_DOWNLOAD_HOST;
-  if (!customDownloadHost) {
-    warnY(`${label} Playwright CDN unavailable; retrying configured public browser mirror`);
-    if (run('node', [cli, ...browserArgs], {
-      cwd: dir,
-      env: { ...gitEnv, PLAYWRIGHT_DOWNLOAD_HOST: PLAYWRIGHT_DOWNLOAD_MIRROR },
-    })) {
-      ok(`${label} Playwright browsers ready (configured public mirror)`);
-      return;
-    }
-  }
-
-  warnY(
-    `${label} Playwright browsers unavailable; headless renderer will be skipped ` +
-      `until the browser cache is installed`,
-  );
-}
-
-function installDir(dir: string): void {
-  if (!existsSync(join(dir, 'package.json'))) return;
-  // `node_modules` mtime is not an install-completeness signal: pnpm creates or
-  // touches it before dependency lifecycle scripts finish, so an interrupted
-  // install can look newer than package.json while binaries such as esbuild are
-  // still unusable. Bun's install is idempotent and owns its own lock/cache
-  // checks; always let it verify and repair standalone plugin dependencies.
-  console.log(`  → bun install (${dir})`);
-  if (bunInstallWithRetry(dir)) ok(`${dir}  installed`);
-  else fail(`${dir} dependency install failed`);
-}
-
-function pluginBuildFresh(dir: string): boolean {
-  const pkgMs = statSync(join(dir, 'package.json')).mtimeMs;
-  const topDist = join(dir, 'dist');
-  if (existsSync(topDist)) return statSync(topDist).mtimeMs > pkgMs;
-  // workspace plugin: scan leaf dists (prune node_modules)
-  let found = false;
-  const walk = (d: string, depth: number): boolean => {
-    if (depth > 4) return true;
-    for (const e of readdirSync(d, { withFileTypes: true })) {
-      if (e.name === 'node_modules') continue;
-      const p = join(d, e.name);
-      if (e.isDirectory()) {
-        if (e.name === 'dist') {
-          found = true;
-          if (pkgMs > statSync(p).mtimeMs) return false;
-        } else if (!walk(p, depth + 1)) return false;
-      }
-    }
-    return true;
-  };
-  if (!walk(dir, 0)) return false;
-  return found;
 }

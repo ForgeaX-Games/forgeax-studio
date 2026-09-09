@@ -1,73 +1,26 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
-const source = (file: string): string => readFileSync(join(root, 'scripts', file), 'utf8');
-const workflow = (file: string): string => readFileSync(join(root, '.github', 'workflows', file), 'utf8');
+const ROOT = resolve(import.meta.dir, '..');
 
-describe('server role script integration', () => {
-  it.each(['run.ts', 'stop.ts', 'build-desktop.ts'])('%s delegates discovery to the shared resolver', (file) => {
-    const text = source(file);
+function read(rel: string): string {
+  return readFileSync(resolve(ROOT, rel), 'utf8');
+}
 
-    expect(text).toContain("from './lib/server-role.ts'");
-    expect(text).toContain('resolveActiveServerRole({');
-    expect(text).not.toContain('runtimeRole');
-    expect(text).not.toContain('forgeaxStudio');
+describe('root service wrapper contract', () => {
+  it('keeps only a public service command wrapper in the root', () => {
+    const run = read('scripts/run.ts');
+    const stop = read('scripts/stop.ts');
+    expect(run).toContain('Public');
+    expect(stop).toContain('Public');
+    expect(run).not.toMatch(/packages\/(studio|interface)\/src|packages\/server\/src/);
+    expect(stop).not.toMatch(/packages\/(studio|interface)\/src|packages\/server\/src/);
   });
 
-  it('run uses the active package for version output and launch', () => {
-    const text = source('run.ts');
-
-    expect(text).toContain("join(activeServer.packageDir, 'dist/version.json')");
-    expect(text).toContain('serverRuntimeInvocation(activeServer)');
-    expect(text).toContain("['--watch', activeServerRuntime.entryPath]");
-    expect(text).toContain('cwd: activeServer.packageDir');
-  });
-
-  it('stop feeds active server selection into the current-instance ownership scope', () => {
-    const text = source('stop.ts');
-
-    expect(text).toContain('runtimeStateBelongsToInstance(instance, runtimeState)');
-    expect(text).toContain('resolveInstanceStopScope(instance, runtimeState, { activeServer, interfaceDir })');
-    expect(text).toContain('runtimeProcessBelongsToInstance');
-    expect(text).not.toContain('activeServerSignature');
-  });
-
-  it('desktop build takes package metadata and copied server files from the active package', () => {
-    const text = source('build-desktop.ts');
-
-    expect(text).toContain('desktopBundleServerProfile');
-    expect(text).toContain('resolveDesktopBundleProfile');
-    expect(text).toContain('profile: desktopBundleServerProfile(DESKTOP_BUNDLE_PROFILE)');
-    expect(text).not.toContain('profile: process.env.FORGEAX_SERVER_PROFILE');
-    expect(text).toContain("readJson(join(activeServer.packageDir, 'package.json'))");
-    expect(text).toContain("copyTree(join(activeServer.packageDir, 'src')");
-    expect(text).toContain("join(activeServer.packageDir, 'builtin')");
-    expect(text).toContain("join(activeServer.packageDir, 'tsconfig.json')");
-    expect(text).toContain('desktopServerEntryAdapter(activeServer.entry)');
-  });
-
-  it('keeps source and dev server role selection on FORGEAX_SERVER_PROFILE', () => {
-    expect(source('run.ts')).toContain('profile: process.env.FORGEAX_SERVER_PROFILE');
-    expect(source('stop.ts')).toContain('profile: process.env.FORGEAX_SERVER_PROFILE');
-    expect(source('lib/source-runtime-launcher.ts'))
-      .toContain('profile: childEnv.FORGEAX_SERVER_PROFILE');
-  });
-
-  it('CI smoke uses the canonical fx startup path and keeps auto server profile resolution', () => {
-    const text = workflow('ci.yml');
-    const smokeStep = text.match(
-      /      - name: Smoke — bun fx start web \+ Studio UI Play\n[\s\S]*?(?=\n      - name:)/,
-    )?.[0];
-
-    expect(smokeStep).toBeDefined();
-    expect(smokeStep).toContain('env -u RUNNER_TRACKING_ID nohup bun fx start web --skip-setup-check');
-    expect(smokeStep).toContain("FORGEAX_CORE_ONLY: '1'");
-    expect(smokeStep).toContain("FORGEAX_VITE_FORCE_CLEAN: '1'");
-    expect(smokeStep).toContain('bun run test:studio-smoke');
-    expect(smokeStep).not.toContain('scripts/run.ts');
-    expect(smokeStep).not.toContain('FORGEAX_SERVER_PROFILE: base');
+  it('does not make the root a server implementation host', () => {
+    expect(existsSync(resolve(ROOT, 'packages/server/src'))).toBe(true);
+    expect(read('scripts/run.ts')).not.toContain('activeServer.packageDir');
+    expect(read('scripts/stop.ts')).not.toContain('activeServer.packageDir');
   });
 });

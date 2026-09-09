@@ -15,6 +15,7 @@ describe('managedRuntimePorts', () => {
   test('adds only started optional listeners and all extension frontend/backend listeners', () => {
     expect(managedRuntimePorts({
       ...core,
+      mcpPort: 28_940,
       narrativePort: 28_930,
       rhiReviewerPort: 25_274,
       extensions: [
@@ -25,6 +26,7 @@ describe('managedRuntimePorts', () => {
       server: 28_900,
       interface: 28_920,
       engine: 25_173,
+      'engine-mcp': 28_940,
       narrative: 28_930,
       'rhi-reviewer': 25_274,
       'plugin-reel-frontend': 25_175,

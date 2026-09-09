@@ -16,8 +16,9 @@ packages/brand/
 │       ├── favicon.svg           # 浏览器 favicon
 │       ├── logo.svg              # TopBar / About logo
 │       ├── forge-avatar.png      # ChatPanel Forge agent 头像
-│       ├── persona-overlay.zh.md # 白标 persona 覆盖（默认 stub，主仓直接改 marketplace）
-│       └── persona-overlay.en.md
+│   └── personas/
+│       ├── forge.zh.md           # 默认 Forge 中文完整 persona
+│       └── forge.en.md           # 默认 Forge 英文完整 persona
 └── README.md                     # 本文件
 ```
 
@@ -29,7 +30,7 @@ packages/brand/
 
 ## 加什么 / 不加什么
 
-**Brand pack 适合放：** 用户在 Settings 里能改的、面向显示的字符串（产品名、tagline、splash 标题/副标题、agent 名字、repo URL、community URL）和图片资源（favicon、logo、avatar）。
+**Brand pack 适合放：** 用户在 Settings 里能改的、面向显示的字符串（产品名、tagline、splash 标题/副标题、agent 名字、repo URL、community URL）、图片资源（favicon、logo、avatar），以及默认主助手的产品级 agent 定义。`assistant.agent.personaFiles` 相对 `defaults.<brand>/` 解析；`assistant.agent.tools` 是该默认入口的工具权限。
 
 **Brand pack 不放：** npm scope（`@forgeax/`）、env key（`FORGEAX_*`）、磁盘路径（`~/.forgeax/`）、CSS 前缀（`.fgx-boot-*`）这些**契约 / contract** 层 — 它们在源码里一次性 hard-code 改干净（rebrand 计划 C 层），不走 brand layer。
 

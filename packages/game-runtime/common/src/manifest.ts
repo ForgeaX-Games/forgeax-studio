@@ -1,45 +1,78 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
-  DEFAULT_RUNTIME_ID,
+  hasOnlyKeys,
+  isEngineCommit,
+  isNonEmptyString,
+  isRecord,
+  isSha256,
+  isStableRelativePath,
+} from './contract-validation';
+import {
   RUNTIME_MANIFEST_VERSION,
   type RuntimeArtifact,
   type RuntimeMachine,
   type RuntimeManifest,
 } from './types';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+function parseCapability(value: unknown): { script: string } | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['script']) || !isStableRelativePath(value.script)) {
+    return undefined;
+  }
+  return { script: value.script };
 }
 
 function parseArtifact(value: unknown): RuntimeArtifact | undefined {
-  if (!isRecord(value) || typeof value.version !== 'string') return undefined;
-  if (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(value.sha256)) return undefined;
-  const source = typeof value.source === 'string' ? value.source : undefined;
-  if (!source) return undefined;
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    'runtimeId',
+    'version',
+    'platform',
+    'arch',
+    'source',
+    'sha256',
+    'engineCommit',
+    'capabilities',
+    'format',
+    'command',
+    'args',
+  ])) return undefined;
+  if (!isNonEmptyString(value.version) || !isNonEmptyString(value.source) || !isSha256(value.sha256)) return undefined;
+  if (!isEngineCommit(value.engineCommit) || !isRecord(value.capabilities)) return undefined;
+  if (!hasOnlyKeys(value.capabilities, ['build', 'serve'])) return undefined;
+  const build = parseCapability(value.capabilities.build);
+  const serve = parseCapability(value.capabilities.serve);
+  if (!build || !serve) return undefined;
   if (value.format !== undefined && value.format !== 'archive' && value.format !== 'file') return undefined;
   if (value.args !== undefined && (!Array.isArray(value.args) || !value.args.every((item) => typeof item === 'string'))) return undefined;
+  if (value.command !== undefined && !isNonEmptyString(value.command)) return undefined;
   return {
-    runtimeId: typeof value.runtimeId === 'string' ? value.runtimeId : undefined,
+    runtimeId: isNonEmptyString(value.runtimeId) ? value.runtimeId : undefined,
     version: value.version,
     platform: typeof value.platform === 'string' ? value.platform as NodeJS.Platform | 'any' : undefined,
     arch: typeof value.arch === 'string' ? value.arch : undefined,
-    source,
+    source: value.source,
     sha256: value.sha256.toLowerCase(),
+    engineCommit: value.engineCommit,
+    capabilities: { build, serve },
     format: value.format as 'file' | 'archive' | undefined,
-    command: typeof value.command === 'string' ? value.command : undefined,
+    command: value.command as string | undefined,
     args: value.args as string[] | undefined,
   };
 }
 
 export function parseRuntimeManifest(value: unknown): RuntimeManifest {
-  if (!isRecord(value) || value.schemaVersion !== RUNTIME_MANIFEST_VERSION) {
+  if (
+    !isRecord(value)
+    || !hasOnlyKeys(value, ['schemaVersion', 'runtimeId', 'artifacts'])
+    || value.schemaVersion !== RUNTIME_MANIFEST_VERSION
+  ) {
     throw new Error(`unsupported runtime manifest schema (expected ${RUNTIME_MANIFEST_VERSION})`);
   }
-  const runtimeId = typeof value.runtimeId === 'string' && value.runtimeId.length > 0
-    ? value.runtimeId
-    : DEFAULT_RUNTIME_ID;
-  if (!Array.isArray(value.artifacts)) throw new Error('runtime manifest artifacts must be an array');
+  if (!isNonEmptyString(value.runtimeId)) throw new Error('runtime manifest runtimeId is required');
+  const runtimeId = value.runtimeId;
+  if (!Array.isArray(value.artifacts) || value.artifacts.length === 0) {
+    throw new Error('runtime manifest artifacts must be a non-empty array');
+  }
   const artifacts = value.artifacts.map(parseArtifact);
   if (artifacts.some((item) => item === undefined)) {
     throw new Error('runtime manifest contains an invalid artifact');

@@ -61,7 +61,9 @@ describe('CLI instance-root safety gate', () => {
 
   test('refuses to preview through a runtime owned by another project', async () => {
     const previous = process.env.FORGEAX_SERVER_PORT;
+    const previousStartCommand = process.env.FORGEAX_START_COMMAND;
     process.env.FORGEAX_SERVER_PORT = String(port);
+    process.env.FORGEAX_START_COMMAND = 'true';
     try {
       const result = await runCurrentGame(
         { game: 'demo', target_dir: projectRoot, start_services: false },
@@ -72,6 +74,8 @@ describe('CLI instance-root safety gate', () => {
     } finally {
       if (previous === undefined) delete process.env.FORGEAX_SERVER_PORT;
       else process.env.FORGEAX_SERVER_PORT = previous;
+      if (previousStartCommand === undefined) delete process.env.FORGEAX_START_COMMAND;
+      else process.env.FORGEAX_START_COMMAND = previousStartCommand;
     }
   });
 
@@ -121,10 +125,12 @@ describe('CLI instance-root safety gate', () => {
       server: process.env.FORGEAX_SERVER_PORT,
       engine: process.env.FORGEAX_ENGINE_PORT,
       interface: process.env.FORGEAX_INTERFACE_PORT,
+      startCommand: process.env.FORGEAX_START_COMMAND,
     };
     process.env.FORGEAX_SERVER_PORT = String(matchingServer.port);
     process.env.FORGEAX_ENGINE_PORT = String(engine.port);
     process.env.FORGEAX_INTERFACE_PORT = String(studio.port);
+    process.env.FORGEAX_START_COMMAND = 'true';
     try {
       const result = await runCurrentGame(
         { game: 'demo', target_dir: projectRoot, start_services: false },
@@ -138,7 +144,9 @@ describe('CLI instance-root safety gate', () => {
       engine.stop(true);
       studio.stop(true);
       for (const [name, value] of Object.entries(previous)) {
-        const key = `FORGEAX_${name.toUpperCase()}_PORT`;
+        const key = name === 'startCommand'
+          ? 'FORGEAX_START_COMMAND'
+          : `FORGEAX_${name.toUpperCase()}_PORT`;
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }

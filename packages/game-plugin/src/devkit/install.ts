@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { engineSdkRoot } from '@forgeax/game-runtime';
 import { ROUTING_TEXT } from '../routing';
 
 /** The plugin's own skill: routes the model to the MCP surface and owns the rule file. */
@@ -53,29 +54,24 @@ export interface HostDevKitInstallResult {
   readonly note: string;
 }
 
-/** Native skill/rule directories used by the supported hosts. */
-const HOST_SKILL_MOUNTS: Readonly<Record<string, string>> = {
-  codex: '.agents/skills',
-  claude: '.claude/skills',
-  cursor: '.cursor/skills',
-  trae: '.trae/skills',
-  codebuddy: '.codebuddy/skills',
-  workbuddy: '.codebuddy/skills',
-  windsurf: '.codeium/windsurf/skills',
-  vscode: '.vscode/skills',
-  opencode: '.config/opencode/skills',
-};
+interface HostMount {
+  readonly skills: string;
+  /** Omitted when the host reads the project-root AGENTS.md instead. */
+  readonly rules?: string;
+}
 
-const HOST_RULE_MOUNTS: Readonly<Record<string, string>> = {
-  codex: '.agents/rules',
-  claude: '.claude/rules',
-  cursor: '.cursor/rules',
-  trae: '.trae/rules',
-  codebuddy: '.codebuddy/rules',
-  workbuddy: '.codebuddy/rules',
-  windsurf: '.codeium/windsurf/rules',
-  vscode: '.vscode/rules',
-  opencode: '.config/opencode/rules',
+/** Native project directories used by the supported hosts. */
+const HOST_MOUNTS: Readonly<Record<string, HostMount>> = {
+  codex: { skills: '.agents/skills', rules: '.agents/rules' },
+  claude: { skills: '.claude/skills', rules: '.claude/rules' },
+  cursor: { skills: '.cursor/skills', rules: '.cursor/rules' },
+  trae: { skills: '.trae/skills', rules: '.trae/rules' },
+  codebuddy: { skills: '.codebuddy/skills', rules: '.codebuddy/rules' },
+  workbuddy: { skills: '.codebuddy/skills', rules: '.codebuddy/rules' },
+  windsurf: { skills: '.codeium/windsurf/skills', rules: '.codeium/windsurf/rules' },
+  vscode: { skills: '.vscode/skills', rules: '.vscode/rules' },
+  zcode: { skills: '.zcode/skills' },
+  opencode: { skills: '.config/opencode/skills', rules: '.config/opencode/rules' },
 };
 
 interface SkillRoot {
@@ -100,15 +96,11 @@ function skillRoots(): SkillRoot[] {
   const anySkill = (): boolean => true;
   return [
     { path: resolve(here, '..', 'assets', 'skills'), accepts: anySkill },
-    { path: resolve(here, '..', 'assets', 'engine-sdk', 'skills'), accepts: isEngineSkill },
     { path: resolve(here, '..', '..', 'assets', 'skills'), accepts: anySkill },
-    { path: resolve(here, '..', '..', 'assets', 'engine-sdk', 'skills'), accepts: isEngineSkill },
+    { path: resolve(engineSdkRoot(), 'skills'), accepts: isEngineSkill },
     // This repository's own skill source, used when running from a checkout before
     // `build` has populated assets/.
     { path: resolve(here, '..', '..', 'skills'), accepts: isPluginSkill },
-    // Engine skills from a Studio checkout, available when this package sits at
-    // packages/game-plugin inside one. A standalone clone has only the built snapshot.
-    { path: resolve(here, '..', '..', '..', 'editor', 'packages', 'engine', 'skills'), accepts: isEngineSkill },
   ];
 }
 
@@ -200,13 +192,15 @@ function writeTextIfChanged(path: string, content: string): boolean {
  */
 function selectedHostIds(clients: readonly string[]): string[] {
   return [...new Set(clients.map((id) => (id === 'workbuddy' ? 'codebuddy' : id)))].filter(
-    (id) => HOST_SKILL_MOUNTS[id],
+    (id) => HOST_MOUNTS[id],
   );
 }
 
 /** Every distinct skills directory a host mount could occupy, for discovery and removal. */
 function hostSkillDirs(projectRoot: string): string[] {
-  return [...new Set(Object.values(HOST_SKILL_MOUNTS))].map((mount) => join(projectRoot, mount));
+  return [...new Set(Object.values(HOST_MOUNTS).map((mount) => mount.skills))].map((mount) =>
+    join(projectRoot, mount),
+  );
 }
 
 /**
@@ -233,14 +227,17 @@ export function installHostDevKit(
   const rulePaths: string[] = [];
   let changed = false;
   for (const id of selectedHostIds(clients)) {
-    const skillsDir = join(projectRoot, HOST_SKILL_MOUNTS[id]!);
+    const mount = HOST_MOUNTS[id]!;
+    const skillsDir = join(projectRoot, mount.skills);
     for (const skill of skills) {
       changed = copySkill(skill.path, join(skillsDir, skill.id)) || changed;
     }
-    const rulePath = join(projectRoot, HOST_RULE_MOUNTS[id]!, `${PLUGIN_SKILL_ID}.md`);
-    changed = writeTextIfChanged(rulePath, ROUTING_TEXT) || changed;
     skillPaths.push(skillsDir);
-    rulePaths.push(rulePath);
+    if (mount.rules) {
+      const rulePath = join(projectRoot, mount.rules, `${PLUGIN_SKILL_ID}.md`);
+      changed = writeTextIfChanged(rulePath, ROUTING_TEXT) || changed;
+      rulePaths.push(rulePath);
+    }
   }
   const skillIds = skills.map((skill) => skill.id);
   const noun = skillPaths.length === 1 ? 'host' : 'hosts';
@@ -377,7 +374,7 @@ export function removeDevKit(projectRoot: string): DevKitRemoval {
   const owned = new Set(bundledSkills().map((skill) => skill.id));
   const removed: string[] = [];
   let skillCount = 0;
-  for (const mount of new Set(Object.values(HOST_SKILL_MOUNTS))) {
+  for (const mount of new Set(Object.values(HOST_MOUNTS).map((entry) => entry.skills))) {
     const dir = join(projectRoot, mount);
     let entries;
     try {
@@ -393,7 +390,10 @@ export function removeDevKit(projectRoot: string): DevKitRemoval {
     }
     removed.push(dir);
   }
-  for (const mount of new Set(Object.values(HOST_RULE_MOUNTS))) {
+  const ruleMounts = Object.values(HOST_MOUNTS).flatMap((entry) =>
+    entry.rules ? [entry.rules] : [],
+  );
+  for (const mount of new Set(ruleMounts)) {
     for (const suffix of ['.md', '.md.bak.latest']) {
       rmSync(join(projectRoot, mount, `${PLUGIN_SKILL_ID}${suffix}`), { force: true });
     }

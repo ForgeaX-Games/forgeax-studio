@@ -69,6 +69,8 @@ _MAX_XZ_DECODER_MEMORY = 64 * 1024 * 1024
 _MAX_MEMBER_PATH_BYTES = 4096
 _MAX_MEMBER_PATH_DEPTH = 256
 _TAR_EXTENSION_TYPES = {b"x", b"g", b"X", b"L", b"K"}
+_RUNTIME_RELEASE_SURFACE = "game-runtime"
+_RUNTIME_EVIDENCE_KINDS = ("archive", "hash", "secretScan", "crossStage", "provenance")
 
 
 def _load_verifier() -> Any:
@@ -98,6 +100,136 @@ def _sha256_bytes(value: bytes) -> str:
 
 def _fail(message: str) -> None:
     raise ValueError(f"release attestation failed: {message}")
+
+
+def _runtime_fail(code: str, expected: str, actual: str, recovery: str) -> None:
+    raise ValueError(
+        f"release-integrity.{code}: expected={expected} actual={actual} recoveryActions=[{recovery}]"
+    )
+
+
+def _runtime_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        _runtime_fail("runtime-projection-invalid", f"non-empty {field}", repr(value), "repair-runtime-evidence")
+    return value
+
+
+def _runtime_digest(value: Any, field: str) -> str:
+    digest = _runtime_text(value, field)
+    if not re.fullmatch(r"[a-f0-9]{64}", digest):
+        _runtime_fail("runtime-digest-invalid", "sha256 hex digest", digest, "recompute-runtime-digest")
+    return digest
+
+
+def _runtime_subjects(value: Any, field: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value:
+        _runtime_fail("runtime-subjects-missing", f"non-empty {field}", repr(value), "produce-runtime-subjects")
+    subjects: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            _runtime_fail("runtime-subject-invalid", "subject object", repr(item), "repair-runtime-subjects")
+        subject_id = _runtime_text(item.get("subjectId"), f"{field}.subjectId")
+        digest = _runtime_digest(item.get("digest"), f"{field}.{subject_id}.digest")
+        if item.get("digestAlgorithm") != "sha256":
+            _runtime_fail("runtime-digest-invalid", "digestAlgorithm=sha256", repr(item.get("digestAlgorithm")), "repair-runtime-subjects")
+        if not isinstance(item.get("name"), str) or not item["name"]:
+            _runtime_fail("runtime-subject-invalid", "non-empty subject name", repr(item.get("name")), "repair-runtime-subjects")
+        subject = dict(item)
+        subject["subjectId"] = subject_id
+        subject["digest"] = digest
+        subjects.append(subject)
+    if len({subject["subjectId"] for subject in subjects}) != len(subjects):
+        _runtime_fail("runtime-subjects-duplicate", "unique subjectId values", field, "rebuild-runtime-subjects")
+    return subjects
+
+
+def _runtime_evidence_entry(
+    evidence: dict[str, Any],
+    kind: str,
+    candidate_id: str,
+    subjects: list[dict[str, Any]],
+) -> dict[str, Any]:
+    entry = evidence.get(kind)
+    if not isinstance(entry, dict):
+        _runtime_fail("runtime-evidence-missing", kind, "missing", "rebuild-runtime-projection")
+    if entry.get("status") != "passed":
+        _runtime_fail("runtime-evidence-not-passed", f"{kind}.status=passed", repr(entry.get("status")), "rerun-runtime-gate")
+    if entry.get("candidateId") != candidate_id:
+        _runtime_fail("runtime-candidate-mismatch", candidate_id, repr(entry.get("candidateId")), "create-new-runtime-attempt")
+    reference = _runtime_text(entry.get("evidenceRef"), f"{kind}.evidenceRef")
+    observed_subjects = _runtime_subjects(entry.get("subjects"), f"{kind}.subjects")
+    if observed_subjects != subjects:
+        _runtime_fail("runtime-subject-digest-mismatch", "candidate actualSubjects", f"{kind}.subjects", "recompute-runtime-digest")
+    projected = {"status": "passed", "candidateId": candidate_id, "evidenceRef": reference}
+    projected["subjects"] = observed_subjects
+    return projected
+
+
+def project_runtime_result(candidate: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    """Project existing Runtime observations into release-integrity-result.v1."""
+
+    if not isinstance(candidate, dict) or not isinstance(evidence, dict):
+        _runtime_fail("runtime-projection-invalid", "candidate and evidence objects", "invalid input", "repair-runtime-evidence")
+    candidate_id = _runtime_text(candidate.get("candidateId"), "candidateId")
+    if candidate.get("releaseSurface") != _RUNTIME_RELEASE_SURFACE:
+        _runtime_fail("runtime-surface-mismatch", _RUNTIME_RELEASE_SURFACE, repr(candidate.get("releaseSurface")), "select-runtime-candidate")
+    root_revision = _runtime_text(candidate.get("rootRevision"), "rootRevision")
+    attempt = _runtime_text(candidate.get("attempt"), "attempt")
+    expected_subjects = _runtime_subjects(candidate.get("expectedSubjects"), "expectedSubjects")
+    actual_subjects = _runtime_subjects(candidate.get("actualSubjects"), "actualSubjects")
+    if expected_subjects != actual_subjects:
+        _runtime_fail("runtime-subject-digest-mismatch", "expectedSubjects=actualSubjects", "candidate subject sets differ", "rebuild-runtime-candidate")
+    if not isinstance(candidate.get("criticalInputs"), list) or not candidate["criticalInputs"]:
+        _runtime_fail("runtime-critical-input-missing", "candidate-bound criticalInputs", "missing", "record-runtime-inputs")
+    if evidence.get("releaseSurface") != _RUNTIME_RELEASE_SURFACE:
+        _runtime_fail("runtime-surface-mismatch", _RUNTIME_RELEASE_SURFACE, repr(evidence.get("releaseSurface")), "select-runtime-evidence")
+    if evidence.get("candidateId") != candidate_id:
+        _runtime_fail("runtime-candidate-mismatch", candidate_id, repr(evidence.get("candidateId")), "create-new-runtime-attempt")
+
+    projected_evidence = {
+        kind: _runtime_evidence_entry(evidence, kind, candidate_id, actual_subjects)
+        for kind in _RUNTIME_EVIDENCE_KINDS
+    }
+    aggregate = evidence.get("platformAggregate")
+    if not isinstance(aggregate, dict) or aggregate.get("status") != "passed":
+        _runtime_fail("runtime-platform-gate-not-passed", "platformAggregate.status=passed", repr(aggregate), "rerun-runtime-platform-gates")
+    if aggregate.get("candidateId") != candidate_id:
+        _runtime_fail("runtime-candidate-mismatch", candidate_id, repr(aggregate.get("candidateId")), "create-new-runtime-attempt")
+    aggregate_ref = _runtime_text(aggregate.get("evidenceRef"), "platformAggregate.evidenceRef")
+    projected_evidence["platformAggregate"] = {
+        "status": "passed",
+        "candidateId": candidate_id,
+        "evidenceRef": aggregate_ref,
+    }
+    evidence_refs = ";".join(
+        f"{kind}={projected_evidence[kind]['evidenceRef']}" for kind in (*_RUNTIME_EVIDENCE_KINDS, "platformAggregate")
+    )
+    return {
+        "schemaVersion": 1,
+        "candidateId": candidate_id,
+        "releaseSurface": _RUNTIME_RELEASE_SURFACE,
+        "status": "fully-verified",
+        "sourceAdmission": {
+            "status": "passed",
+            "expected": f"rootRevision={root_revision};attempt={attempt}",
+            "actual": f"candidateId={candidate_id};rootRevision={root_revision};attempt={attempt}",
+        },
+        "contentIntegrity": {
+            "status": "passed",
+            "expected": "archive/hash/secretScan/crossStage/provenance",
+            "actual": evidence_refs,
+        },
+        "platformTrust": {
+            "status": "passed",
+            "expected": "applicable Runtime platform aggregate",
+            "actual": aggregate_ref,
+        },
+        "subjects": actual_subjects,
+        "criticalInputs": candidate["criticalInputs"],
+        "sourceWork": {"status": "permitted"},
+        "recoveryActions": [],
+        "trustDag": {"status": "verified", "candidateId": candidate_id},
+    }
 
 
 def _portable_component(component: str) -> bool:
@@ -547,10 +679,12 @@ def build_attestation(left: Path, right: Path, left_findings: Path | None = None
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Replay sanitized evidence for two release candidates")
-    parser.add_argument("--left", required=True, type=Path, help="left candidate directory")
-    parser.add_argument("--right", required=True, type=Path, help="right candidate directory")
+    parser.add_argument("--left", type=Path, help="left candidate directory")
+    parser.add_argument("--right", type=Path, help="right candidate directory")
     parser.add_argument("--left-findings", type=Path, help="optional left scanner JSONL")
     parser.add_argument("--right-findings", type=Path, help="optional right scanner JSONL")
+    parser.add_argument("--runtime-candidate", type=Path, help="Runtime candidate JSON")
+    parser.add_argument("--runtime-evidence", type=Path, help="Runtime evidence JSON")
     parser.add_argument("--output", type=Path, help="write deterministic JSON here instead of stdout")
     return parser
 
@@ -558,7 +692,18 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Iterable[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
-        result = build_attestation(arguments.left, arguments.right, arguments.left_findings, arguments.right_findings)
+        if arguments.runtime_candidate is not None or arguments.runtime_evidence is not None:
+            if arguments.runtime_candidate is None or arguments.runtime_evidence is None:
+                _runtime_fail("runtime-projection-invalid", "both Runtime JSON inputs", "one input missing", "repair-runtime-evidence")
+            with arguments.runtime_candidate.open(encoding="utf-8") as candidate_file:
+                candidate = json.load(candidate_file)
+            with arguments.runtime_evidence.open(encoding="utf-8") as evidence_file:
+                evidence = json.load(evidence_file)
+            result = project_runtime_result(candidate, evidence)
+        else:
+            if arguments.left is None or arguments.right is None:
+                raise ValueError("--left and --right are required unless Runtime projection inputs are supplied")
+            result = build_attestation(arguments.left, arguments.right, arguments.left_findings, arguments.right_findings)
         rendered = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         if arguments.output is None:
             sys.stdout.write(rendered)

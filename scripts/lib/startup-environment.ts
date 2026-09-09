@@ -29,6 +29,10 @@ export interface StartupEnvironment {
   readonly logFile: string;
   readonly server: StartupEndpoint;
   readonly engine: StartupEndpoint;
+  readonly mcp: StartupEndpoint & {
+    readonly enabled: boolean;
+    readonly publicPath: string;
+  };
   readonly gatewayBridge: {
     readonly enabled: boolean;
     readonly host: string;
@@ -72,6 +76,7 @@ interface ResolveStartupEnvironmentOptions {
 const SOURCE_SERVER_PORT = 18900;
 const SOURCE_INTERFACE_PORT = 18920;
 const SOURCE_ENGINE_PORT = 15173;
+const SOURCE_MCP_PORT = 18940;
 const DESKTOP_SERVER_PORT = 18810;
 const DESKTOP_ENGINE_PORT = 15273;
 
@@ -117,6 +122,8 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
     : port(env.FORGEAX_INTERFACE_PORT, SOURCE_INTERFACE_PORT, 'FORGEAX_INTERFACE_PORT');
   const bridgeEnabled = !bundled && env.FORGEAX_BRIDGE !== '0';
   const bridgePort = port(env.FORGEAX_BRIDGE_PORT, 15295, 'FORGEAX_BRIDGE_PORT');
+  const mcpEnabled = !bundled && env.FORGEAX_MCP_HTTP === '1';
+  const mcpPort = port(env.FORGEAX_MCP_PORT, SOURCE_MCP_PORT, 'FORGEAX_MCP_PORT');
 
   if (serverPort === enginePort || (!bundled && new Set([serverPort, enginePort, interfacePort]).size !== 3)) {
     throw new Error(
@@ -154,6 +161,7 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
       ['server', serverPort],
       ['interface', interfacePort],
       ['engine', enginePort],
+      ...(mcpEnabled ? [['engine-mcp', mcpPort] as const] : []),
       ...(bridgeEnabled ? [['bridge', bridgePort] as const] : []),
       ['narrative', optional.narrativePort],
       ['face-mask', optional.faceMaskPort],
@@ -200,6 +208,13 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
       host: bundled ? '127.0.0.1' : (env.FORGEAX_ENGINE_HOST ?? '0.0.0.0'),
       port: enginePort,
       healthPath: '/preview/',
+    },
+    mcp: {
+      enabled: mcpEnabled,
+      host: '127.0.0.1',
+      port: mcpPort,
+      healthPath: '/healthz',
+      publicPath: '/engine/mcp',
     },
     gatewayBridge: {
       enabled: bridgeEnabled,
@@ -256,6 +271,12 @@ export function startupProcessEnv(
     FORGEAX_ENGINE_HOST: startup.engine.host,
     FORGEAX_ENGINE_PORT: String(startup.engine.port),
     FORGEAX_ENGINE_URL: `http://127.0.0.1:${startup.engine.port}`,
+    ...(startup.mcp.enabled ? {
+      FORGEAX_MCP_HTTP: '1',
+      FORGEAX_MCP_HOST: startup.mcp.host,
+      FORGEAX_MCP_PORT: String(startup.mcp.port),
+      FORGEAX_MCP_URL: `http://127.0.0.1:${startup.mcp.port}`,
+    } : {}),
     ...(startup.gatewayBridge.enabled
       ? { FORGEAX_BRIDGE_PORT: String(startup.gatewayBridge.port) }
       : startup.sourceLayout === 'source' ? { FORGEAX_BRIDGE: '0' } : {}),
@@ -269,6 +290,11 @@ export function startupProcessEnv(
       FORGEAX_PLUGIN_PORT_OFFSET: String(startup.optional.pluginPortOffset),
       FORGEAX_ASSET_CORS_ORIGINS: startup.assetCorsOrigins.join(','),
       FORGEAX_AGENT_HOST_SOCK: startup.agentHostSocket,
+      // Source startup readiness must describe the three core services, not an
+      // optional project-MCP warmup whose browser server can take minutes to
+      // enumerate. The first MCP turn still discovers lazily; packaged runtimes
+      // keep eager warmup, and developers can opt source mode back in with `=1`.
+      FORGEAX_PROJECT_MCP_PREWARM: base.FORGEAX_PROJECT_MCP_PREWARM ?? '0',
     } : {}),
     FORGEAX_SERVE_SPA: startup.interface.runtime === 'server-spa' ? '1' : '0',
   };

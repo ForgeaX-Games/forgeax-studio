@@ -16,6 +16,7 @@ export type ClientId =
   | 'codebuddy'
   | 'windsurf'
   | 'vscode'
+  | 'zcode'
   | 'opencode';
 
 /** How a client stores server entries. */
@@ -34,8 +35,8 @@ export interface ClientSpec {
   /** Resolve the config file. `projectRoot` is only consulted for project scope. */
   path(projectRoot: string): string;
   /**
-   * JSON: the key path to the server map (VS Code says `servers`, everyone else says
-   * `mcpServers`). TOML: unused, the table header is derived instead.
+   * JSON: the key path to the server map (`mcpServers` for most clients, with native
+   * nested keys for clients such as ZCode). TOML: unused, the table header is derived.
    */
   readonly serverMapKey?: readonly string[];
   /** Whether this client wants `command` and `args` split, or one argv array. */
@@ -121,6 +122,16 @@ export const CLIENTS: readonly ClientSpec[] = [
     serverMapKey: ['servers'],
     commandShape: 'split',
     postInstallNote: 'Open .vscode/mcp.json and click Start, or run "MCP: List Servers".',
+  },
+  {
+    id: 'zcode',
+    label: 'ZCode',
+    format: 'json',
+    scope: 'user',
+    path: () => join(HOME, '.zcode', 'cli', 'config.json'),
+    serverMapKey: ['mcp', 'servers'],
+    commandShape: 'split',
+    postInstallNote: 'Start a new ZCode session, then run /mcp status to confirm the server is connected.',
   },
   {
     id: 'opencode',

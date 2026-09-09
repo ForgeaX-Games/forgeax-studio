@@ -10,6 +10,8 @@ export interface StopDiscoveryDeps {
   protectedPids?: ReadonlySet<number>;
   /** Explicit operator override for an unproven target; never overrides protectedPids. */
   forceUnowned?: boolean;
+  /** Exact process snapshots approved by the operator; cannot follow PID reuse or replacement. */
+  approvedUnownedProcesses?: ReadonlyMap<number, RuntimeProcessSnapshot>;
 }
 
 export type StopRefusalReason = 'protected-ancestor' | 'ownership-unproven';
@@ -19,6 +21,8 @@ export interface StopRefusal {
   readonly source: string;
   readonly reason: StopRefusalReason;
   readonly cwd: string | null;
+  readonly commandLine: string | null;
+  readonly startToken: string | null;
 }
 
 export interface StopDiscovery {
@@ -58,12 +62,12 @@ export function discoverStopTargets(scope: StopScope, deps: StopDiscoveryDeps): 
       const snapshot = deps.readSnapshot(pid);
       if (deps.protectedPids?.has(pid)) {
         refusedPorts.add(target.port);
-        refusals.push({ pid, source: `:${target.port} ${target.key}`, reason: 'protected-ancestor', cwd: snapshot?.cwd ?? null });
-      } else if (deps.forceUnowned || deps.owns(snapshot, target.owner)) {
+        refusals.push({ pid, source: `:${target.port} ${target.key}`, reason: 'protected-ancestor', cwd: snapshot?.cwd ?? null, commandLine: snapshot?.commandLine ?? null, startToken: snapshot?.startToken ?? null });
+      } else if (deps.forceUnowned || approvedSnapshotMatches(snapshot, deps.approvedUnownedProcesses?.get(pid)) || deps.owns(snapshot, target.owner)) {
         found.set(pid, target.key);
       } else {
         refusedPorts.add(target.port);
-        refusals.push({ pid, source: `:${target.port} ${target.key}`, reason: 'ownership-unproven', cwd: snapshot?.cwd ?? null });
+        refusals.push({ pid, source: `:${target.port} ${target.key}`, reason: 'ownership-unproven', cwd: snapshot?.cwd ?? null, commandLine: snapshot?.commandLine ?? null, startToken: snapshot?.startToken ?? null });
       }
     }
   }
@@ -72,12 +76,12 @@ export function discoverStopTargets(scope: StopScope, deps: StopDiscoveryDeps): 
     const snapshot = deps.readSnapshot(target.pid);
     if (deps.protectedPids?.has(target.pid)) {
       refusedPids.add(target.pid);
-      refusals.push({ pid: target.pid, source: target.key, reason: 'protected-ancestor', cwd: snapshot?.cwd ?? null });
-    } else if (deps.forceUnowned || target.owners.some((owner) => deps.owns(snapshot, owner))) {
+      refusals.push({ pid: target.pid, source: target.key, reason: 'protected-ancestor', cwd: snapshot?.cwd ?? null, commandLine: snapshot?.commandLine ?? null, startToken: snapshot?.startToken ?? null });
+    } else if (deps.forceUnowned || approvedSnapshotMatches(snapshot, deps.approvedUnownedProcesses?.get(target.pid)) || target.owners.some((owner) => deps.owns(snapshot, owner))) {
       found.set(target.pid, target.key);
     } else {
       refusedPids.add(target.pid);
-      refusals.push({ pid: target.pid, source: target.key, reason: 'ownership-unproven', cwd: snapshot?.cwd ?? null });
+      refusals.push({ pid: target.pid, source: target.key, reason: 'ownership-unproven', cwd: snapshot?.cwd ?? null, commandLine: snapshot?.commandLine ?? null, startToken: snapshot?.startToken ?? null });
     }
   }
   const blocked = scope.untrusted
@@ -86,6 +90,19 @@ export function discoverStopTargets(scope: StopScope, deps: StopDiscoveryDeps): 
     || scope.unprovenPorts.some(deps.isPortBusy)
     || scope.unprovenPids.some(deps.isAlive);
   return { found, refusedPorts, refusedPids, refusals, blocked };
+}
+
+export function approvedSnapshotMatches(
+  current: RuntimeProcessSnapshot | null,
+  approved: RuntimeProcessSnapshot | undefined,
+): boolean {
+  return current !== null
+    && approved !== undefined
+    && current.pid === approved.pid
+    && current.cwd === approved.cwd
+    && current.commandLine === approved.commandLine
+    && current.startToken !== undefined
+    && current.startToken === approved.startToken;
 }
 
 export function canFinalizeStop(

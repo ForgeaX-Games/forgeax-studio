@@ -21,7 +21,7 @@ export type DesktopServerProfile = 'base' | 'auto';
 export interface DesktopBundleCapabilities {
   readonly sampleGames: boolean;
   readonly productExtensions: boolean;
-  readonly productWorkbenchHost: boolean;
+  readonly productExtensionHost: boolean;
   readonly agentExtensions: boolean;
 }
 
@@ -34,7 +34,7 @@ export interface DesktopBundleManifest {
 const CAPABILITY_KEYS = [
   'sampleGames',
   'productExtensions',
-  'productWorkbenchHost',
+  'productExtensionHost',
   'agentExtensions',
 ] as const satisfies readonly (keyof DesktopBundleCapabilities)[];
 
@@ -42,13 +42,13 @@ const PROFILE_CAPABILITIES: Record<DesktopBundleProfile, DesktopBundleCapabiliti
   lite: {
     sampleGames: false,
     productExtensions: false,
-    productWorkbenchHost: false,
+    productExtensionHost: false,
     agentExtensions: true,
   },
   full: {
     sampleGames: true,
     productExtensions: true,
-    productWorkbenchHost: true,
+    productExtensionHost: true,
     agentExtensions: true,
   },
 };

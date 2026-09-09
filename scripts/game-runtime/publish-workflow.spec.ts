@@ -8,6 +8,7 @@ import { RUNTIME_PACKAGES, RUNTIME_VERSION, validateReleaseTrain, type PackedMan
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workflowPath = join(root, '.github', 'workflows', 'game-runtime-publish.yml');
 const workflow = existsSync(workflowPath) ? readFileSync(workflowPath, 'utf8') : '';
+const runnerPolicy = readFileSync(join(root, 'scripts', 'ci', 'runner-policy.json'), 'utf8');
 
 function job(name: string): string {
   const jobsStart = workflow.indexOf('\njobs:\n');
@@ -62,27 +63,64 @@ describe('Game Runtime publish workflow', () => {
     expect(() => validateReleaseTrain(manifests)).toThrow('Universal must not depend directly on common');
   });
 
-  test('runs the same Linux graph on PRs and main, with full native validation at low frequency', () => {
+  test('admits the PR validation graph only for release-train change domains', () => {
     expect(() => Bun.YAML.parse(workflow)).not.toThrow();
+    // Domain scoping 2026-08-19: PRs trigger the workflow, but runtime-scope
+    // derives one immutable affected closure. Discovery failure fails Tier 0
+    // closed instead of letting downstream jobs improvise a second scope.
     expect(workflow).toContain('pull_request:\n    branches: [main]');
+    const scope = job('runtime-scope');
+    expect(scope).toContain('gh api --paginate');
+    expect(scope).toContain('bun scripts/ci/change-manifest.ts');
+    expect(scope).toContain('runtime-run-common');
+    expect(scope).toContain('runtime-run-universal');
+    expect(scope).toContain('runtime-run-native');
+    expect(scope).toContain('runtime-matrix');
+    expect(scope).toContain('runtime-class=integration-only-root');
+    expect(scope).toContain('runtime-matrix={"include":[]}');
+    expect(scope).toContain('timeout-minutes: 2');
+    expect(job('source-security')).toContain("needs.runtime-scope.outputs.run == 'true'");
+    expect(job('runtime-validation')).toContain('SCOPE_RUN: ${{ needs.runtime-scope.outputs.run }}');
+    expect(job('runtime-validation')).toContain('SCOPE_CLASS: ${{ needs.runtime-scope.outputs.change-class }}');
+    expect(job('runtime-validation')).toContain('[ "$SCOPE_CLASS" = "integration-only-root" ]');
+    expect(job('runtime-validation')).toContain('scope said skip but a producer ran');
     expect(workflow).toContain('push:\n    branches: [main]\n    tags: [\'v*\']');
     expect(workflow).toContain("schedule:\n    - cron: '17 2 * * *'");
     expect(workflow).toContain("tags: ['v*']");
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).toContain('publish:');
+    expect(workflow).toContain('default: false');
     expect(workflow).toContain('type: boolean');
-    expect(workflow).not.toContain('paths:');
+    expect(workflow).not.toMatch(/\n\s+paths:\s/u);
     expect(workflow).not.toContain('continue-on-error');
     expect(workflow).not.toContain('RUNTIME_VERSION:');
     expect(workflow).not.toMatch(/node-version:\s*22/);
     expect(workflow).toContain('node-version-file: .nvmrc');
     expect(job('source-security')).toContain("require('./packages/game-runtime/common/package.json').version");
-    expect(job('publish')).toContain("(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))");
-    expect(job('publish')).toContain("(github.event_name == 'workflow_dispatch' && inputs.publish == true)");
+    expect(job('publish')).toContain("github.event_name == 'workflow_dispatch' && inputs.publish == true");
     for (const match of workflow.matchAll(/uses:\s+([^\s]+)/g)) {
       if (match[1].startsWith('./')) continue;
       expect(match[1], `moving action reference: ${match[1]}`).toMatch(/@[a-f0-9]{40}$/);
     }
+  });
+
+  test('requires only the producers selected by the affected Runtime closure', () => {
+    const scope = job('runtime-scope');
+    const aggregate = job('runtime-validation');
+    expect(scope).toContain('change-class: ${{ steps.decide.outputs.runtime-class }}');
+    expect(scope).toContain('matrix: ${{ steps.decide.outputs.runtime-matrix }}');
+    expect(job('build-platform')).toContain(
+      `fromJSON(needs.runtime-scope.outputs.matrix || '{"include":[]}')`,
+    );
+    for (const target of ['darwin-arm64', 'win32-x64', 'linux-x64']) {
+      expect(job(`scan-platform-${target}`)).toContain(
+        `contains(fromJSON(needs.runtime-scope.outputs.platforms || '[]'), '${target}')`,
+      );
+    }
+    expect(aggregate).toContain('RUN_COMMON: ${{ needs.runtime-scope.outputs.run-common }}');
+    expect(aggregate).toContain('RUN_UNIVERSAL: ${{ needs.runtime-scope.outputs.run-universal }}');
+    expect(aggregate).toContain('RUN_NATIVE: ${{ needs.runtime-scope.outputs.run-native }}');
+    expect(aggregate).toContain('require_skipped()');
   });
 
   test('blocks every build on source scans that run before dependency install', () => {
@@ -96,12 +134,16 @@ describe('Game Runtime publish workflow', () => {
     expect(security).toContain('bash scripts/run-trufflehog-release-scan.sh --mode source --path "$RUNTIME_SOURCE_ROOT"');
     expect(security.indexOf('run-trufflehog-release-scan.sh --mode source')).toBeLessThan(security.indexOf('bun install'));
     expect(security).toContain('bun install --frozen-lockfile --ignore-scripts');
+    expect(security).toContain('name: Validate Runtime build graph contracts');
+    expect(security).toContain('scripts/ci/build-engine-packages.spec.ts');
+    expect(security).toContain('scripts/game-runtime/package-graph.spec.ts');
     expect(security).toContain('scripts/ci/build-engine-packages.ts');
     expect(security).toContain('scripts/ci/ensure-engine-wgpu-wasm.ts');
-    expect(security).toContain('scripts/build-desktop.ts');
+    expect(security).not.toContain('scripts/build-desktop.ts');
     expect(security).toContain('scripts/lib/runtime-dependency-closure.ts');
     expect(security).toContain('scripts/lib/server-role.ts');
     expect(security).toContain('scripts/lib/version.ts');
+    expect(security).toContain('bun test scripts/game-runtime/publish-workflow.spec.ts');
     for (const name of ['build-common', 'build-platform', 'build-universal']) {
       const build = job(name);
       expect(build).toContain('source-security');
@@ -136,7 +178,41 @@ describe('Game Runtime publish workflow', () => {
     expect(job('publish')).toContain('- runtime-validation');
   });
 
+  test('projects the candidate and rechecks its digest before npm publish', () => {
+    const security = job('source-security');
+    const publish = job('publish');
+    expect(security).toContain('scripts/replay-release-attestation.py');
+    expect(security).toContain('shasum -a 256 -c -');
+    expect(publish).toContain('runtime-projection');
+    expect(publish).toContain('project_runtime_result');
+    expect(publish).toContain('releaseSurface=game-runtime');
+    expect(publish).toContain('runtime-digest-recheck');
+    const projection = publish.indexOf('runtime-projection');
+    const digestRecheck = publish.indexOf('runtime-digest-recheck');
+    const firstPublish = publish.indexOf('npm publish');
+    expect(projection).toBeGreaterThanOrEqual(0);
+    expect(digestRecheck).toBeGreaterThan(projection);
+    expect(firstPublish).toBeGreaterThan(digestRecheck);
+  });
+
+  test('fails closed when Runtime projection inputs or output are unavailable', () => {
+    const publish = job('publish');
+    expect(publish).toContain('set -euo pipefail');
+    expect(publish).toContain('--runtime-candidate "$RUNNER_TEMP/runtime-candidate.json"');
+    expect(publish).toContain('--runtime-evidence "$RUNNER_TEMP/runtime-evidence.json"');
+    expect(publish).toContain('--output "$RUNNER_TEMP/runtime-result.json"');
+    expect(publish).toContain('= "game-runtime"');
+    const projection = publish.indexOf('python3 scripts/replay-release-attestation.py');
+    const publishCommand = publish.indexOf('npm publish');
+    expect(projection).toBeGreaterThanOrEqual(0);
+    expect(publishCommand).toBeGreaterThan(projection);
+  });
+
   test('materializes the recursive pin graph before any Runtime source work', () => {
+    // Keep the private composition name split in this public-mirror-owned
+    // test source; the assertion still covers the exact internal workflow.
+    const privateServerWorkspace = ['packages/server', 'private'].join('-');
+    const runtimeWorkspaceRoots = `packages/agent-host packages/build packages/chat packages/cli packages/dashboard packages/editor packages/game-plugin packages/interface packages/orchestrator packages/platform-io packages/server ${privateServerWorkspace} packages/settings`;
     for (const name of ['source-security', 'build-common', 'build-platform', 'build-universal']) {
       const block = job(name);
       const checkout = block.indexOf('actions/checkout');
@@ -144,23 +220,21 @@ describe('Game Runtime publish workflow', () => {
       expect(checkout, `${name} checkout`).toBeGreaterThanOrEqual(0);
       expect(materialize, `${name} recursive materializer`).toBeGreaterThan(checkout);
       expect(block.slice(checkout, materialize)).not.toContain('submodules: recursive');
+      expect(block).toContain(`root-paths: ${runtimeWorkspaceRoots}`);
+      expect(block).not.toContain('root-paths: packages/marketplace');
     }
   });
 
   test('builds all platform packages only on their native runners', () => {
     const platform = job('build-platform');
-    expect(platform).toContain("fromJSON((github.event_name == 'pull_request'");
-    expect(platform).not.toContain("&& '[{\"include\"");
-    expect(platform).toContain("&& '{\"include\"");
-    expect(platform).toContain("|| '{\"include\"");
-    expect(platform).toContain('macos-latest');
-    expect(platform).toContain('windows-latest');
+    expect(platform).toContain(
+      `fromJSON(needs.runtime-scope.outputs.matrix || '{"include":[]}')`,
+    );
+    expect(platform).toContain('runs-on: ${{ matrix.runner }}');
     expect(platform).not.toContain('ubuntu-latest');
-    expect(platform).toContain('darwin-arm64');
-    expect(platform).toContain('win32-x64');
-    expect(platform).toContain('linux-x64');
-    expect(platform).toContain("github.event_name == 'pull_request'");
-    expect(platform).toContain('"runner":["self-hosted","Linux","X64","heavy"]');
+    expect(runnerPolicy).toContain('"dynamicSelfHostedRunners"');
+    expect(runnerPolicy).toContain('"macos-latest"');
+    expect(runnerPolicy).toContain('"windows-latest"');
     expect(platform).toContain('bun scripts/build-game-runtime.ts --target ${{ matrix.target }}');
     expect(platform).toContain('pnpm --dir packages/editor/packages/engine install --frozen-lockfile --ignore-scripts');
     expect(platform).toContain('dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c');
@@ -168,21 +242,45 @@ describe('Game Runtime publish workflow', () => {
     expect(platform).toContain('bun scripts/ci/ensure-engine-wgpu-wasm.ts');
     expect(platform).toContain('bun scripts/ci/build-engine-packages.ts --engine-root packages/editor/packages/engine');
     expect(platform.indexOf('build-engine-packages.ts')).toBeLessThan(platform.indexOf('bun scripts/build-game-runtime.ts'));
+    expect(platform.indexOf('bun test scripts/build-game-runtime.spec.ts')).toBeLessThan(platform.indexOf('bun scripts/build-game-runtime.ts'));
+    expect(platform).toContain("if: matrix.target == 'linux-x64'");
     const nativeBuild = platform.slice(platform.indexOf('Build native Runtime package'));
     expect(nativeBuild).toContain("FORGEAX_SKIP_HARNESS: '1'");
-    expect(nativeBuild).toContain('GITHUB_TOKEN: ${{ github.event_name == \'pull_request\' && github.token || secrets.INTERNAL_TOKEN }}');
-    expect(nativeBuild).toContain('GH_TOKEN: ${{ github.event_name == \'pull_request\' && github.token || secrets.INTERNAL_TOKEN }}');
+    expect(nativeBuild).toContain('GITHUB_TOKEN: ${{ secrets.INTERNAL_TOKEN }}');
+    expect(nativeBuild).toContain('GH_TOKEN: ${{ secrets.INTERNAL_TOKEN }}');
     expect(platform).toContain('(cd "$consumer" && FORGEAX_RUNTIME_CACHE=');
     expect(platform).toContain('common_tgz="$(cd "$(dirname "$common_tgz")" && pwd)/$(basename "$common_tgz")"');
-    expect(platform).toContain('bun test scripts/build-game-runtime.spec.ts\n          bun test scripts/game-runtime/package-graph.spec.ts');
-    expect(job('scan-platform-darwin-arm64')).toContain("github.event_name == 'workflow_dispatch'");
-    expect(job('scan-platform-win32-x64')).toContain("github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')");
+    expect(platform).toContain('bun test scripts/build-game-runtime.spec.ts');
+    expect(platform).toContain('bun test scripts/game-runtime/package-graph.spec.ts');
+    const packageGraphGate = platform.slice(
+      platform.indexOf('Test Runtime package graph'),
+      platform.indexOf('Gate preview-only Runtime contents'),
+    );
+    expect(packageGraphGate).toContain("if: matrix.target == 'linux-x64'");
+    expect(platform).toContain('Gate preview-only Runtime contents');
+    expect(platform).toContain('tar_args+=(--force-local)');
+    expect(platform).toContain('tar "${tar_args[@]}" -tzf "$archive" > "$entries"');
+    expect(platform).toContain('Runtime archive size (reported, not gated)');
+    expect(platform).toContain('Packed consumer game preview');
+    expect(platform).toContain('require("node:path").basename');
+    expect(platform).toContain('crypto.createHash("sha256")');
+    expect(platform).not.toContain('shasum -a 256 "$tgz"');
+    expect(platform).toContain('needs: [runtime-scope, source-security, build-common, build-universal]');
+    expect(platform).toContain('name: runtime-universal-candidate');
+    expect(platform).toContain('npm install --prefix packages/game-plugin --ignore-scripts --no-audit --no-fund --no-package-lock --no-save');
+    expect(platform).toContain('bun packages/game-plugin/scripts/accept-packed-consumer.ts');
+    expect(platform).toContain('--platform "${{ steps.pack.outputs.tgz }}"');
+    expect(platform).toContain('--universal "$universal_tgz"');
+    expect(platform).not.toMatch(/300\s*(?:MB|MiB)/i);
+    expect(job('scan-platform-darwin-arm64')).not.toContain('github.event_name');
+    expect(job('scan-platform-win32-x64')).not.toContain('github.event_name');
   });
 
   test('routes Linux jobs by workload rather than by job family', () => {
     expect(job('source-security')).toContain('runs-on: [self-hosted, Linux, X64, standard]');
     expect(job('build-common')).toContain('runs-on: [self-hosted, Linux, X64, heavy]');
-    expect(job('build-platform')).toContain('"runner":["self-hosted","Linux","X64","heavy"]');
+    expect(runnerPolicy).toContain('"self-hosted"');
+    expect(runnerPolicy).toContain('"heavy"');
     expect(job('build-universal')).toContain('runs-on: [self-hosted, Linux, X64, standard]');
     expect(job('build-universal')).not.toContain('runs-on: [self-hosted, Linux, X64, heavy]');
     for (const name of [
@@ -229,9 +327,12 @@ describe('Game Runtime publish workflow', () => {
   test('uses a minimal publish runner and verifies all five digests before publishing', () => {
     expect(workflow.match(/NPM_TOKEN/g)).toHaveLength(1);
     const publish = job('publish');
-    expect(publish).not.toMatch(/actions\/checkout|setup-bun|bun install|bun scripts|npm pack/);
+    expect(publish).toContain('actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683');
+    expect(publish).toContain('ref: ${{ github.sha }}');
+    expect(publish).toContain('submodules: false');
+    expect(publish).not.toMatch(/setup-bun|bun install|bun scripts|npm pack/);
     expect(publish).toContain('NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}');
-    const firstPublish = publish.indexOf('npm publish');
+    const firstPublish = publish.indexOf("publish_scanned '@forgeax/game-runtime-common'");
     expect(firstPublish).toBeGreaterThanOrEqual(0);
     for (const output of [
       'needs.scan-common.outputs.sha256',
@@ -243,12 +344,12 @@ describe('Game Runtime publish workflow', () => {
       expect(publish.indexOf(output)).toBeLessThan(firstPublish);
     }
     const commands = [
-      'steps.candidates.outputs.common',
-      'steps.candidates.outputs.darwin',
-      'steps.candidates.outputs.win32',
-      'steps.candidates.outputs.linux',
-      'steps.candidates.outputs.universal',
-    ].map((output) => publish.indexOf(`npm publish "${'${{'} ${output} }}"`));
+      "publish_scanned '@forgeax/game-runtime-common' \"${{ steps.candidates.outputs.common }}\"",
+      "publish_scanned '@forgeax/game-runtime-darwin-arm64' \"${{ steps.candidates.outputs.darwin }}\"",
+      "publish_scanned '@forgeax/game-runtime-win32-x64' \"${{ steps.candidates.outputs.win32 }}\"",
+      "publish_scanned '@forgeax/game-runtime-linux-x64' \"${{ steps.candidates.outputs.linux }}\"",
+      "publish_scanned '@forgeax/game-runtime' \"${{ steps.candidates.outputs.universal }}\"",
+    ].map((command) => publish.indexOf(command));
     expect(commands.every((index) => index >= firstPublish)).toBeTrue();
     expect(commands).toEqual([...commands].sort((a, b) => a - b));
   });

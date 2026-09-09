@@ -122,7 +122,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml', 'packages/marketplace/extensions/*/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
@@ -130,7 +130,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'packages/marketplace/extensions/*/bun.lock') }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
 
@@ -162,26 +162,6 @@ jobs:
       # Marketplace plugin dist cache — keyed on the marketplace submodule SHA.
       # Touch restored dist before prepare.ts so its per-plugin freshness check skips
       # the rebuild (checkout stamps source to "now"; cached dist must look newer).
-      - name: Resolve marketplace submodule SHA
-        id: marketplace-sha
-        run: echo "sha=$(git -C packages/marketplace rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache marketplace plugin dist (vite/tsc output)
-        id: plugin-dist
-        uses: actions/cache@v4
-        with:
-          path: |
-            packages/marketplace/extensions/*/dist
-            packages/marketplace/extensions/node-editor/apps/*/frontend/dist
-            packages/marketplace/extensions/node-editor/apps/*/backend/dist
-            packages/marketplace/extensions/node-editor/apps/*/vendor/dist
-            packages/marketplace/extensions/node-editor/packages/*/dist
-          key: ${{ runner.os }}-plugin-dist-${{ steps.marketplace-sha.outputs.sha }}
-
-      - name: Touch plugin dist on cache hit (pre-setup)
-        if: steps.plugin-dist.outputs.cache-hit == 'true'
-        run: find packages/marketplace/extensions -name node_modules -prune -o -type d -name dist -exec touch {} +
-
       # ── Seed .env before prepare (non-interactive) ────────────────────
       # prepare.ts scaffolds .env from .env.example silently when missing;
       # pre-seed a dummy key so smoke never depends on interactive prompts.
@@ -219,8 +199,11 @@ jobs:
           # wgpu wasm — try prebuilt release first, fall back to compile
           pnpm -F @forgeax/engine-wgpu-wasm fetch-wasm || \
             pnpm -F @forgeax/engine-wgpu-wasm build:wasm || true
-          # build all engine packages (tsup dist)
-          pnpm -r build
+          # Build library packages only. Engine demo apps are not required by
+          # Studio and some intentionally depend on optional private asset roots;
+          # building the whole workspace makes an asset-less public clone attempt
+          # to resolve their virtual pack modules.
+          pnpm --filter './packages/**' -r build
           # emit .d.ts (tsc composite project)
           pnpm exec tsc -b || { pnpm exec tsc -b --clean && pnpm exec tsc -b; } || true
 
@@ -236,101 +219,59 @@ jobs:
             touch packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm || true
           find packages/editor/packages/engine/packages/*/dist -type f -exec touch {} + 2>/dev/null || true
 
-      # ── Per-package typecheck fan-out (prepare.ts does not typecheck) ────
-      # Same package list and typecheck||lint fallback as internal CI. cli is
-      # intentionally excluded (it carries pre-existing test-file type debt that
-      # internal CI also does not typecheck).
-      - name: Typecheck each studio package
+      # The current public topology keeps only root-owned source packages in
+      # the superproject workspace. Gitlink repositories and the floating IDE
+      # own independent dependency graphs and must not be typechecked as if they
+      # were still one monorepo.
+      - name: Typecheck inline Studio workspaces
         run: |
-          set -eu
-          for p in agent-runtime design host-sdk types editor server interface studio chat dashboard settings workbench; do
-            echo "::group::typecheck @forgeax/$p"
-            if [ -f "packages/$p/package.json" ]; then
-              if node -e "p=require('./packages/$p/package.json');process.exit(p.scripts&&p.scripts.typecheck?0:1)"; then
-                (cd "packages/$p" && bun run typecheck)
-              else
-                (cd "packages/$p" && bun run lint)
-              fi
-            else
-              echo "skip: packages/$p has no package.json"
-            fi
-            echo "::endgroup::"
-          done
+          bun run --cwd packages/recursive-input-contract typecheck
+          bun run --cwd packages/npc-client typecheck
 
-      # platform-io lives at packages/kernel/platform-io (a two-segment path the
-      # loop above can't reach). Typecheck it explicitly — it's the backend L1
-      # reused by cli/server and the standalone editor.
-      #
-      # NOTE: we run typecheck but NOT `bun -F @forgeax/platform-io test` here.
-      # The mirror's scrub() rewrites home-path literals (/home/<user>, /Users/<user>
-      # → /home/you, /Users/you) across the whole tree, including test FIXTURES.
-      # friendly-path.test.ts deliberately asserts that two DISTINCT home paths
-      # (/home/you vs /home/you) don't false-match — but scrub collapses
-      # both to /home/you, breaking the assertion's premise (a scrub artifact, not a
-      # real regression). The kernel's unit tests already run unscrubbed and green in
-      # the INTERNAL ci.yml, so dropping them here loses no coverage; the public CI's
-      # job is to prove a fresh clone installs/typechecks/builds/boots.
-      - name: Typecheck @forgeax/platform-io (kernel)
-        run: bun -F @forgeax/platform-io typecheck
+      # Hydrate the public IDE from the generated public .packages manifest.
+      # This is source-only and anonymous: the manifest points at ForgeaX-Games.
+      - name: Materialize public IDE source
+        run: bun scripts/packages.ts ensure --only ide
 
-      # interface is the shared UI shell; a reverse dep on a studio-layer package
-      # compiles in the monorepo but blanks the standalone editor at load. This
-      # guard fails CI on such an edge instead of letting it surface at runtime.
-      - name: interface package-boundary guard
+      - name: Install independent public product dependencies
+        env:
+          FORGEAX_SKIP_HARNESS_SYNC: '1'
+        run: |
+          bun install --cwd packages/interface --frozen-lockfile --ignore-scripts
+          # Editor's config-time Vite preset resolves Engine packages through
+          # Editor's standalone workspace graph. Reconstruct its two nested
+          # source mounts from the already-verified sibling gitlinks, then let
+          # Bun create only generated node_modules links (no source changes).
+          mkdir -p packages/editor/packages/interface packages/editor/packages/platform-io
+          rsync -a --delete packages/interface/ packages/editor/packages/interface/
+          rsync -a --delete packages/platform-io/ packages/editor/packages/platform-io/
+          bun install --cwd packages/editor --ignore-scripts
+          bun install --cwd packages/ide --frozen-lockfile --ignore-scripts
+          mkdir -p packages/ide/node_modules/@forgeax
+          ln -sfn ../../../editor packages/ide/node_modules/@forgeax/editor
+
+      # Interface and IDE are the two current product shells. Their builds own
+      # their package typechecks; the retired packages/studio path is absent.
+      - name: Interface package-boundary guard
         run: bun run --cwd packages/interface lint:dep
 
-      # editor-family subpackages aren't in the typecheck fan-out and carry engine
-      # type debt; this hermetic test asserts every `@forgeax/editor-core` import is
-      # reachable through the barrel, catching missing re-exports without typechecking
-      # the (red) subpackages.
-      - name: Editor-core barrel-export contract
-        run: bun test src/__tests__/barrel-export-contract.test.ts
-        working-directory: packages/editor/packages/core
-
-      # ── Vite builds for the two front-end shells ───────────────────────
-      - name: Vite build packages/interface
+      - name: Build public Interface
         run: bun run --cwd packages/interface build
 
-      - name: Vite build packages/studio
-        run: bun run --cwd packages/studio build
-
-      # ── canonical fx smoke: start the 3-service stack and probe health ──
-      - name: Smoke — bun fx start web + probe ports
-        id: smoke
+      - name: Build public IDE
         env:
-          # The public gate verifies the core Studio topology only; do not
-          # start optional marketplace sidecars during this health probe.
-          FORGEAX_CORE_ONLY: '1'
-          # Self-hosted runners can retain stale Vite optimizer metadata.
-          FORGEAX_VITE_FORCE_CLEAN: '1'
+          FORGEAX_INTEGRATION_ROOT: ${{ github.workspace }}
+          FORGEAX_WORKSPACE_ROOT: ${{ github.workspace }}
+        run: bun run --cwd packages/ide build:web
+
+      # Serve the built IDE bundle in a real browser. This replaces the stale
+      # three-service source smoke, whose Server/Editor standalone graphs are
+      # no longer owned by the Studio root workspace.
+      - name: Smoke public IDE production bundle
+        env:
+          FORGEAX_INTEGRATION_ROOT: ${{ github.workspace }}
+          FORGEAX_WORKSPACE_ROOT: ${{ github.workspace }}
         run: |
-          set -eux
-          env -u RUNNER_TRACKING_ID nohup bun fx start web --skip-setup-check > /tmp/forgeax-stack.log 2>&1 &
-          STACK_PID=$!
-          echo "stack pid: $STACK_PID"
-          for i in $(seq 1 90); do
-            if curl -fsS -o /dev/null http://127.0.0.1:18900/api/health 2>/dev/null \
-              && curl -fsS -o /dev/null http://127.0.0.1:18920/ 2>/dev/null \
-              && curl -fsS -o /dev/null http://127.0.0.1:15173/preview/ 2>/dev/null; then
-              echo "all three endpoints up after ${i} polls (~$((i*2))s)"
-              break
-            fi
-            sleep 2
-          done
-          curl -fsS http://127.0.0.1:18900/api/health
-          echo
-          test "$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:18920/)" = "200"
-          test "$(curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:15173/preview/)" = "200"
-
-      - name: Upload stack log on smoke failure
-        if: failure() && steps.smoke.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: forgeax-stack-log
-          path: /tmp/forgeax-stack.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Teardown — bun fx stop
-        if: always()
-        run: bun fx stop || bun fx stop --force || true
+          browser="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          test -n "$browser"
+          IDE_BROWSER_EXECUTABLE="$browser" bun run --cwd packages/ide smoke:production-bundle

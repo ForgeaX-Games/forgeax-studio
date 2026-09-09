@@ -48,7 +48,7 @@ function readPackage(packageRoot: string): PackageManifest {
 }
 
 describe('Game Runtime npm package graph', () => {
-  test('registers exactly the five Runtime packages as explicit workspaces', () => {
+  test('keeps Runtime packages outside the integration-only root workspace', () => {
     const root = readJson<{ workspaces?: string[] }>(join(repoRoot, 'package.json'));
     const expected = Object.values(packageRoots);
     const runtimeWorkspaces = (root.workspaces ?? []).filter((workspace) =>
@@ -56,24 +56,17 @@ describe('Game Runtime npm package graph', () => {
       || expected.some((packageRoot) => new Bun.Glob(workspace).match(packageRoot)),
     );
 
-    expect(runtimeWorkspaces).toEqual(expected);
+    expect(runtimeWorkspaces).toEqual([]);
 
     const lock = readFileSync(join(repoRoot, 'bun.lock'), 'utf8');
     const importerKeys = [...lock.matchAll(/^    "(packages\/game-runtime\/[^"]+)": \{$/gm)]
       .map((match) => match[1]);
-    expect(importerKeys).toEqual([...expected].sort());
+    expect(importerKeys).toEqual([]);
 
-    const expectedMappings = [
-      ['@forgeax/game-runtime', '@forgeax/game-runtime@workspace:packages/game-runtime/universal'],
-      ['@forgeax/game-runtime-common', '@forgeax/game-runtime-common@workspace:packages/game-runtime/common'],
-      ['@forgeax/game-runtime-darwin-arm64', '@forgeax/game-runtime-darwin-arm64@workspace:packages/game-runtime/darwin-arm64'],
-      ['@forgeax/game-runtime-linux-x64', '@forgeax/game-runtime-linux-x64@workspace:packages/game-runtime/linux-x64'],
-      ['@forgeax/game-runtime-win32-x64', '@forgeax/game-runtime-win32-x64@workspace:packages/game-runtime/win32-x64'],
-    ].sort(([left], [right]) => left.localeCompare(right));
     const mappings = [...lock.matchAll(/^    "(@forgeax\/game-runtime[^"]*)": \["([^"]+)"\],$/gm)]
       .map((match) => [match[1], match[2]])
       .sort(([left], [right]) => left.localeCompare(right));
-    expect(mappings).toEqual(expectedMappings);
+    expect(mappings).toEqual([]);
   });
 
   test('publishes only built Runtime artifacts', () => {
@@ -164,6 +157,25 @@ describe('Game Runtime npm package graph', () => {
       expect(manifest.libc).toEqual(platform.libc);
     }
   });
+
+  /**
+   * `@forgeax/game` is a submodule with its own lockfile, so it pins the Universal
+   * package by literal version rather than by workspace link. That literal is the one
+   * place the train's version can drift unnoticed — npm would happily resolve a stale
+   * Runtime and pair mismatched authoring/preview artifacts.
+   */
+  test.skipIf(!existsSync(join(repoRoot, 'packages/game-plugin/package.json')))(
+    'pins the game plugin to this release train on every platform',
+    () => {
+      const plugin = readPackage('packages/game-plugin');
+      expect(plugin.dependencies).toEqual({
+        '@forgeax/game-runtime': RUNTIME_VERSION,
+      });
+      // Universal selects the native archive; the plugin itself remains platform-neutral.
+      expect(plugin.os).toBeUndefined();
+      expect(plugin.cpu).toBeUndefined();
+    },
+  );
 
   test('keeps platform packages free of any tracked authored implementation', () => {
     for (const packageRoot of [

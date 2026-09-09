@@ -52,6 +52,8 @@ export const allocateRuntimePorts = runtimeFunction('allocateRuntimePorts');
 export const loadRuntimeManifest = runtimeFunction('loadRuntimeManifest');
 export const engineSdkRoot = runtimeFunction('engineSdkRoot');
 export const installEngineSdk = runtimeFunction('installEngineSdk');
+export const parsePreviewBuildManifest = runtimeFunction('parsePreviewBuildManifest');
+export const parsePreviewHealthIdentity = runtimeFunction('parsePreviewHealthIdentity');
 
 export { PLATFORM_PACKAGES, loadPlatformPackage, platformPackageName } from './platform-map';
 export default runtimeDistribution;

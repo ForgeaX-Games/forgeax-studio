@@ -5,7 +5,15 @@ import { runtimeEnvironment } from './env';
 import { loadRuntimeManifest } from './manifest';
 import { ensureRuntime, launcherForRuntime, resolveInstalledRuntime } from './manager';
 import { allocatePort, allocateRuntimePorts } from './ports';
-import type { EngineSdkInstall, InstalledRuntime, RuntimeLauncher, RuntimeMachine } from './types';
+import { parsePreviewBuildManifest, parsePreviewHealthIdentity } from './preview';
+import type {
+  EngineSdkInstall,
+  InstalledRuntime,
+  PreviewBuildManifest,
+  PreviewHealthIdentity,
+  RuntimeLauncher,
+  RuntimeMachine,
+} from './types';
 
 export interface RuntimeDistributionOptions {
   readonly platformRoot: string;
@@ -29,6 +37,8 @@ export interface GameRuntimeDistribution {
   loadRuntimeManifest(): ReturnType<typeof loadRuntimeManifest>;
   engineSdkRoot(): string;
   installEngineSdk(projectRoot: string): EngineSdkInstall;
+  parsePreviewBuildManifest(value: unknown): PreviewBuildManifest;
+  parsePreviewHealthIdentity(value: unknown): PreviewHealthIdentity;
 }
 
 export function createRuntimeDistribution(options: RuntimeDistributionOptions): GameRuntimeDistribution {
@@ -55,5 +65,7 @@ export function createRuntimeDistribution(options: RuntimeDistributionOptions): 
     loadRuntimeManifest: () => loadRuntimeManifest(platformRoot, options.manifestPath),
     engineSdkRoot: () => engineSdkRoot(commonRoot),
     installEngineSdk: (projectRoot) => installEngineSdkFrom(commonRoot, projectRoot),
+    parsePreviewBuildManifest,
+    parsePreviewHealthIdentity,
   };
 }

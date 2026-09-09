@@ -8,7 +8,6 @@
       "closeSession": "session.close",
       "createNewSession": "session.create",
       "openOverlay": "overlay.open",
-      "openWorkbench": "workbench.open",
       "refreshSessions": "sessions.refresh",
       "renameTab": "session.rename",
       "setFullscreen": "app.set_fullscreen",
@@ -30,7 +29,7 @@
   },
   "server_endpoint_overrides": {
     "game.switch": [
-      "PUT /api/workbench/active-game"
+      "PUT /api/projects/active"
     ],
     "session.close": [
       "DELETE /api/sessions/:sid"

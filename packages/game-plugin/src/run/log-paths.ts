@@ -42,6 +42,11 @@ export interface WatcherState {
   readonly lastError?: string;
   readonly stoppedAt?: string;
   readonly stopReason?: string;
+  readonly previewUrl?: string;
+  readonly outputRoot?: string;
+  readonly buildHash?: string;
+  readonly runtimeVersion?: string;
+  readonly engineCommit?: string;
 }
 
 export function readWatcherState(root: string): WatcherState | undefined {

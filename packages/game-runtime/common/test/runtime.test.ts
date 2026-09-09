@@ -18,11 +18,15 @@ import {
   allocatePort,
   createRuntimeDistribution,
   installRuntime,
+  parsePreviewBuildHashInput,
+  parsePreviewBuildManifest,
+  parsePreviewHealthIdentity,
   parseRuntimeManifest,
   readInstalledRuntime,
   resolveRuntimeArtifact,
   runtimeEnvironment,
 } from '../src/index';
+import { runtimeTarArgs } from '../src/tar';
 
 const fixtures: string[] = [];
 const machine = { platform: 'darwin' as const, arch: 'arm64' };
@@ -35,6 +39,16 @@ function fixture(prefix: string): string {
 
 function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function runtimeContract(script: string) {
+  return {
+    engineCommit: '0123456789abcdef0123456789abcdef01234567',
+    capabilities: {
+      build: { script },
+      serve: { script },
+    },
+  } as const;
 }
 
 function tarGzipWithPath(path: string, contents: string): Buffer {
@@ -60,6 +74,133 @@ afterEach(() => {
   for (const root of fixtures.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
+describe('Runtime tar command portability', () => {
+  test('forces GNU tar to treat Windows drive paths as local', () => {
+    const args = ['-tzPf', String.raw`C:\Temp\runtime.tar.gz`, '-C', String.raw`C:\Temp\extract`];
+    expect(runtimeTarArgs(args, 'win32', 'GNU tar --force-local')).toEqual([
+      '--force-local',
+      '-tzPf',
+      '/c/Temp/runtime.tar.gz',
+      '-C',
+      '/c/Temp/extract',
+    ]);
+    expect(runtimeTarArgs(args, 'win32', 'bsdtar options')).toEqual(args);
+    expect(runtimeTarArgs(args, 'darwin', 'GNU tar --force-local')).toEqual(args);
+  });
+});
+
+describe('Runtime v2 and preview contracts', () => {
+  const identity = {
+    gameId: 'game-default',
+    buildHash: 'b'.repeat(64),
+    runtimeVersion: '0.4.0',
+    engineCommit: '0123456789abcdef0123456789abcdef01234567',
+    projectRoot: '/workspace/project',
+    gameRoot: '/workspace/project/.forgeax/games/game-default',
+    outputRoot: '/workspace/project/.forgeax/cache/preview/build',
+    payloadDigest: 'c'.repeat(64),
+  };
+
+  test('accepts a Runtime v2 artifact with build and serve scripts', () => {
+    const manifest = parseRuntimeManifest({
+      schemaVersion: 2,
+      runtimeId: 'forgeax-game-runtime',
+      artifacts: [{
+        version: '0.4.0',
+        platform: 'darwin',
+        arch: 'arm64',
+        source: './runtime.tar.gz',
+        sha256: 'a'.repeat(64),
+        ...runtimeContract('runtime/build-preview.mjs'),
+        capabilities: {
+          build: { script: 'runtime/build-preview.mjs' },
+          serve: { script: 'runtime/serve-preview.mjs' },
+        },
+        format: 'archive',
+        command: 'bin/bun',
+        args: ['runtime/legacy-launcher.mjs'],
+      }],
+    });
+    expect(manifest.artifacts[0]?.engineCommit).toBe(identity.engineCommit);
+    expect(manifest.artifacts[0]?.capabilities.serve.script).toBe('runtime/serve-preview.mjs');
+  });
+
+  test('rejects v1 and malformed Runtime v2 capabilities', () => {
+    const validArtifact = {
+      version: '0.4.0',
+      source: './runtime.tar.gz',
+      sha256: 'a'.repeat(64),
+      ...runtimeContract('runtime/build-preview.mjs'),
+    };
+    expect(() => parseRuntimeManifest({
+      schemaVersion: 1,
+      runtimeId: 'forgeax-game-runtime',
+      artifacts: [validArtifact],
+    })).toThrow();
+    for (const artifact of [
+      { ...validArtifact, engineCommit: undefined },
+      { ...validArtifact, engineCommit: 'unknown' },
+      { ...validArtifact, capabilities: { build: { script: 'runtime/build-preview.mjs' } } },
+      { ...validArtifact, capabilities: { build: { script: '../build.mjs' }, serve: { script: 'runtime/serve-preview.mjs' } } },
+      { ...validArtifact, capabilities: { build: { script: '/tmp/build.mjs' }, serve: { script: 'runtime/serve-preview.mjs' } } },
+    ]) {
+      expect(() => parseRuntimeManifest({
+        schemaVersion: 2,
+        runtimeId: 'forgeax-game-runtime',
+        artifacts: [artifact],
+      })).toThrow('invalid artifact');
+    }
+  });
+
+  test('accepts valid preview identities and rejects every missing identity field', () => {
+    expect(parsePreviewBuildManifest({ schemaVersion: 2, ...identity })).toEqual({
+      schemaVersion: 2,
+      ...identity,
+    });
+    expect(parsePreviewHealthIdentity({ schemaVersion: 2, status: 'ok', ...identity })).toEqual({
+      schemaVersion: 2,
+      status: 'ok',
+      ...identity,
+    });
+    for (const key of Object.keys(identity)) {
+      const malformed = { schemaVersion: 2, ...identity } as Record<string, unknown>;
+      delete malformed[key];
+      expect(() => parsePreviewBuildManifest(malformed)).toThrow();
+      expect(() => parsePreviewHealthIdentity({ status: 'ok', ...malformed })).toThrow();
+    }
+    for (const malformed of [
+      { ...identity, buildHash: 'short' },
+      { ...identity, engineCommit: 'unknown' },
+      { ...identity, outputRoot: '.forgeax/cache/preview/build' },
+    ]) {
+      expect(() => parsePreviewBuildManifest({ schemaVersion: 2, ...malformed })).toThrow();
+      expect(() => parsePreviewHealthIdentity({ schemaVersion: 2, status: 'ok', ...malformed })).toThrow();
+    }
+    expect(() => parsePreviewHealthIdentity({ schemaVersion: 2, status: 'starting', ...identity })).toThrow();
+    expect(() => parsePreviewBuildManifest({ schemaVersion: 2, ...identity, payloadDigest: 'short' })).toThrow();
+  });
+
+  test('freezes deterministic build hash inputs', () => {
+    expect(parsePreviewBuildHashInput({
+      schemaVersion: 2,
+      gameId: identity.gameId,
+      runtimeVersion: identity.runtimeVersion,
+      engineCommit: identity.engineCommit,
+      files: [
+        { path: 'assets/scene.png.meta', sha256: '1'.repeat(64) },
+        { path: 'src/main.ts', sha256: '2'.repeat(64) },
+      ],
+    }).files).toHaveLength(2);
+    expect(() => parsePreviewBuildHashInput({
+      schemaVersion: 2,
+      gameId: identity.gameId,
+      runtimeVersion: identity.runtimeVersion,
+      engineCommit: identity.engineCommit,
+      files: [{ path: '../outside.ts', sha256: '1'.repeat(64) }],
+    })).toThrow();
+  });
+});
+
 describe('Game Runtime common distribution', () => {
   test('uses only explicit platform and common roots', async () => {
     const root = fixture('forgeax-runtime-distribution-');
@@ -71,7 +212,7 @@ describe('Game Runtime common distribution', () => {
     mkdirSync(join(commonRoot, 'assets', 'engine-sdk'), { recursive: true });
     writeFileSync(join(platformRoot, 'assets', 'runtime.bin'), runtimeBytes);
     writeFileSync(join(platformRoot, 'assets', 'runtime-manifest.json'), JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       runtimeId: 'forgeax-game-runtime',
       artifacts: [{
         version: '0.3.27',
@@ -79,6 +220,7 @@ describe('Game Runtime common distribution', () => {
         arch: 'arm64',
         source: './runtime.bin',
         sha256: sha256(runtimeBytes),
+        ...runtimeContract('runtime.bin'),
         command: 'runtime.bin',
       }],
     }));
@@ -88,6 +230,8 @@ describe('Game Runtime common distribution', () => {
     const installed = await distribution.ensureRuntime();
 
     expect(installed.version).toBe('0.3.27');
+    expect(readFileSync(join(installed.root, '.ready.json'), 'utf8')).toContain('"schemaVersion": 3');
+    expect(installed.capabilities.build.script).toBe('runtime.bin');
     expect(distribution.engineSdkRoot()).toBe(join(commonRoot, 'assets', 'engine-sdk'));
     expect(installed.root.startsWith(cacheRoot)).toBe(true);
     expect(distribution.loadRuntimeManifest()?.runtimeId).toBe('forgeax-game-runtime');
@@ -95,12 +239,12 @@ describe('Game Runtime common distribution', () => {
 
   test('selects the newest exact-machine manifest artifact', () => {
     const manifest = parseRuntimeManifest({
-      schemaVersion: 1,
+      schemaVersion: 2,
       runtimeId: 'forgeax-game-runtime',
       artifacts: [
-        { version: '1.0.0', platform: 'any', arch: 'any', source: 'old', sha256: 'a'.repeat(64) },
-        { version: '1.2.0', platform: 'darwin', arch: 'any', source: 'wrong-arch', sha256: 'c'.repeat(64) },
-        { version: '1.2.0', platform: 'darwin', arch: 'arm64', source: 'new', sha256: 'b'.repeat(64) },
+        { version: '1.0.0', platform: 'any', arch: 'any', source: 'old', sha256: 'a'.repeat(64), ...runtimeContract('runtime/build.mjs') },
+        { version: '1.2.0', platform: 'darwin', arch: 'any', source: 'wrong-arch', sha256: 'c'.repeat(64), ...runtimeContract('runtime/build.mjs') },
+        { version: '1.2.0', platform: 'darwin', arch: 'arm64', source: 'new', sha256: 'b'.repeat(64), ...runtimeContract('runtime/build.mjs') },
       ],
     });
     expect(resolveRuntimeArtifact(manifest, undefined, machine)?.source).toBe('new');
@@ -113,7 +257,7 @@ describe('Game Runtime common distribution', () => {
     writeFileSync(join(sourceRoot, 'runtime.bin'), 'wrong bytes');
 
     await expect(installRuntime(
-      { version: '1.0.0', source: './runtime.bin', sha256: sha256('expected'), command: 'runtime.bin' },
+      { version: '1.0.0', source: './runtime.bin', sha256: sha256('expected'), ...runtimeContract('runtime.bin'), command: 'runtime.bin' },
       { runtimeId: 'sha-runtime', cacheRoot: join(root, 'cache'), sourceRoot, machine },
     )).rejects.toThrow('checksum mismatch');
     expect(existsSync(join(root, 'cache', 'sha-runtime', '1.0.0', 'darwin-arm64', '.ready.json'))).toBe(false);
@@ -126,7 +270,7 @@ describe('Game Runtime common distribution', () => {
     writeFileSync(join(root, 'outside.bin'), 'outside');
 
     await expect(installRuntime(
-      { version: '1.0.0', source: '../outside.bin', sha256: sha256('outside'), command: 'outside.bin' },
+      { version: '1.0.0', source: '../outside.bin', sha256: sha256('outside'), ...runtimeContract('outside.bin'), command: 'outside.bin' },
       { runtimeId: 'unsafe-runtime', cacheRoot: join(root, 'cache'), sourceRoot, machine },
     )).rejects.toThrow('outside the distribution root');
   });
@@ -139,7 +283,7 @@ describe('Game Runtime common distribution', () => {
     symlinkSync(join(root, 'outside.bin'), join(sourceRoot, 'runtime.bin'));
 
     await expect(installRuntime(
-      { version: '1.0.0', source: './runtime.bin', sha256: sha256('outside'), command: 'runtime.bin' },
+      { version: '1.0.0', source: './runtime.bin', sha256: sha256('outside'), ...runtimeContract('runtime.bin'), command: 'runtime.bin' },
       { runtimeId: 'symlink-runtime', cacheRoot: join(root, 'cache'), sourceRoot, machine },
     )).rejects.toThrow(/symbolic link|outside the distribution root/);
   });
@@ -166,8 +310,8 @@ describe('Game Runtime common distribution', () => {
     const second = pack('second', { 'bin/runtime': 'v2' });
     const options = { runtimeId: 'archive-runtime', cacheRoot, sourceRoot, machine };
 
-    await installRuntime({ version: '1.0.0', ...first, format: 'archive', command: 'bin/runtime' }, options);
-    const installed = await installRuntime({ version: '1.0.0', ...second, format: 'archive', command: 'bin/runtime' }, options);
+    await installRuntime({ version: '1.0.0', ...first, ...runtimeContract('bin/runtime'), format: 'archive', command: 'bin/runtime' }, options);
+    const installed = await installRuntime({ version: '1.0.0', ...second, ...runtimeContract('bin/runtime'), format: 'archive', command: 'bin/runtime' }, options);
 
     expect(readFileSync(join(installed.root, 'bin', 'runtime'), 'utf8')).toBe('v2');
     expect(existsSync(join(installed.root, 'obsolete.bin'))).toBe(false);
@@ -184,7 +328,7 @@ describe('Game Runtime common distribution', () => {
     writeFileSync(archive, bytes);
 
     await expect(installRuntime(
-      { version: '1.0.0', source: './unsafe.tar.gz', sha256: sha256(bytes), format: 'archive', command: 'runtime' },
+      { version: '1.0.0', source: './unsafe.tar.gz', sha256: sha256(bytes), ...runtimeContract('runtime'), format: 'archive', command: 'runtime' },
       { runtimeId: 'unsafe-archive', cacheRoot: join(root, 'cache'), sourceRoot, machine },
     )).rejects.toThrow(/unsafe path|extraction failed/);
     expect(existsSync(join(root, 'escape'))).toBe(false);
@@ -223,7 +367,7 @@ describe('Game Runtime common distribution', () => {
       machine,
     });
     const installed = await installRuntime(
-      { version: '9.0.0', source: './runtime.bin', sha256: sha256('runtime'), command: 'runtime.bin', args: ['--serve'] },
+      { version: '9.0.0', source: './runtime.bin', sha256: sha256('runtime'), ...runtimeContract('runtime.bin'), command: 'runtime.bin', args: ['--serve'] },
       { runtimeId: 'forgeax-game-runtime', cacheRoot: join(root, 'cache'), sourceRoot, machine },
     );
     const launcher = distribution.launcherForRuntime(installed);
@@ -241,8 +385,10 @@ describe('Game Runtime common distribution', () => {
     const projectRoot = join(root, 'project');
     mkdirSync(join(sdkRoot, 'types'), { recursive: true });
     mkdirSync(join(sdkRoot, 'source'), { recursive: true });
+    mkdirSync(join(sdkRoot, 'skills', 'forgeax-engine-ecs'), { recursive: true });
     writeFileSync(join(sdkRoot, 'types', 'index.d.ts'), 'export {};');
     writeFileSync(join(sdkRoot, 'source', 'engine.ts'), 'export {};');
+    writeFileSync(join(sdkRoot, 'skills', 'forgeax-engine-ecs', 'SKILL.md'), '# ECS');
     writeFileSync(join(sdkRoot, 'engine-version.json'), JSON.stringify({ engineCommit: 'abc123' }));
 
     const distribution = createRuntimeDistribution({ platformRoot, commonRoot, machine });
@@ -250,8 +396,12 @@ describe('Game Runtime common distribution', () => {
 
     expect(result.changed).toBe(true);
     expect(result.engineCommit).toBe('abc123');
-    expect(result.sourceRoot).toBe(join(sdkRoot, 'source'));
     expect(existsSync(join(projectRoot, '.forgeax', 'engine-sdk', 'types', 'index.d.ts'))).toBe(true);
+    // Source travels into the project: a path back into the package dies with an
+    // evicted npx cache, which silently removes the escalation rung.
+    expect(result.sourceRoot).toBe(join(projectRoot, '.forgeax', 'engine-sdk', 'source'));
+    expect(existsSync(join(projectRoot, '.forgeax', 'engine-sdk', 'source', 'engine.ts'))).toBe(true);
+    expect(existsSync(join(projectRoot, '.forgeax', 'engine-sdk', 'skills'))).toBe(false);
 
     writeFileSync(join(projectRoot, '.forgeax', 'engine-sdk', 'obsolete.d.ts'), 'stale');
     distribution.installEngineSdk(projectRoot);

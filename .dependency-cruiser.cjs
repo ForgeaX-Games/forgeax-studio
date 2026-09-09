@@ -2,7 +2,7 @@
  * dependency-cruiser config — Phase A5 package boundary lint.
  *
  * Encodes the §11.1 ownership table from
- * packages/harness/docs/v2-vision/architecture-evolution/11-LONG-TERM-MAINTAINABILITY.md.
+ * .forgeax-harness/docs/v2-vision/architecture-evolution/11-LONG-TERM-MAINTAINABILITY.md.
  *
  * Run (when dep-cruiser is installed in CI):
  *   npx depcruise --config .dependency-cruiser.cjs packages/
@@ -12,29 +12,6 @@
  */
 module.exports = {
   forbidden: [
-    {
-      name: 'plugins-cannot-import-host',
-      severity: 'error',
-      comment:
-        'Plugins must use @forgeax/host-sdk; deep-importing server/interface internals leaks the host abstraction.',
-      from: { path: '^packages/marketplace/plugins/[^/]+/' },
-      to: {
-        path: [
-          '^packages/server/(?!.*\\.json$)',
-          '^packages/interface/',
-        ],
-      },
-    },
-    {
-      name: 'interface-cannot-import-plugin-internals',
-      severity: 'error',
-      comment:
-        'Interface may only depend on plugin manifests via the bus API; deep-importing plugin source couples the host to specific implementations.',
-      from: { path: '^packages/interface/' },
-      to: {
-        path: '^packages/marketplace/plugins/[^/]+/(?!forgeax-plugin\\.json)',
-      },
-    },
     {
       name: 'server-cannot-import-interface',
       severity: 'error',
@@ -51,23 +28,6 @@ module.exports = {
         path: [
           '^packages/server/',
           '^packages/interface/',
-          '^packages/host-sdk/',
-          '^packages/marketplace/',
-          '^packages/orchestrator/',
-          '^packages/contracts/agent-runtime/',
-        ],
-      },
-    },
-    {
-      name: 'host-sdk-no-runtime-deps',
-      severity: 'error',
-      comment: '@forgeax/host-sdk must stay portable; only @forgeax/types is allowed as a workspace dep.',
-      from: { path: '^packages/host-sdk/' },
-      to: {
-        path: [
-          '^packages/server/',
-          '^packages/interface/',
-          '^packages/marketplace/',
           '^packages/orchestrator/',
           '^packages/contracts/agent-runtime/',
         ],

@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { lstatSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
 import { isAbsolute, relative, sep } from 'node:path';
 
 export type WorkspacePackageLinkResult = 'current' | 'linked' | 'relinked' | 'occupied';
@@ -30,7 +30,10 @@ export function ensureWorkspacePackageLink(
     } catch {
       // A dangling link is stale and should be rebuilt below.
     }
-    rmSync(linkPath);
+    // Bun's Windows rmSync implementation can fail with EFAULT for directory
+    // junctions. unlinkSync removes the junction itself without touching its
+    // target and works for both symlinks and junctions.
+    unlinkSync(linkPath);
   }
 
   symlinkSync(targetPath, linkPath, isWindows ? 'junction' : 'dir');

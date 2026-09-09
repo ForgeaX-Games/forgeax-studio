@@ -8,7 +8,7 @@ import {
 test("derives the exact required contexts from the producer manifest", () => {
   assert.deepEqual(requiredContextsFromProducerManifest(), [
     "typecheck + build + script smoke",
-    "SFC-07 stable aggregate",
+    "Studio QA required gate",
     "Runtime validation aggregate",
     "dependency-cruiser boundary lint",
     "mirror dry-run (assemble + scrub + gate)",

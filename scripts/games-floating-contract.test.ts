@@ -13,7 +13,7 @@ describe('optional forgeax-games consumer checkout', () => {
     const packageJson = JSON.parse(read('package.json')) as {
       scripts?: Record<string, string>;
     };
-    expect(packageJson.scripts?.['games:sync']).toBe('node scripts/sync-games.mjs --ensure');
+    expect(packageJson.scripts?.['games:sync']).toBe('bun fx packages ensure --only games');
     expect(packageJson.scripts?.['test:game-npc']).toBeUndefined();
     expect(packageJson.scripts?.['test:game-imports']).toBeUndefined();
     expect(packageJson.scripts?.['test:game-input']).toBeUndefined();
@@ -33,28 +33,24 @@ describe('optional forgeax-games consumer checkout', () => {
   });
 
   test('has an explicit optional floating-checkout sync path', () => {
-    const syncScript = resolve(ROOT, 'scripts/sync-games.mjs');
+    const syncScript = resolve(ROOT, 'scripts/packages.ts');
     expect(existsSync(syncScript)).toBe(true);
-    const source = read('scripts/sync-games.mjs');
-    expect(source).toContain('forgeax-games.git');
-    expect(source).toContain('--ensure');
-    expect(source).toContain('--update');
-    expect(source).toContain('FORGEAX_SKIP_GAMES');
+    const source = read('scripts/packages.ts');
+    expect(read('.packages')).toContain('forgeax-games.git');
+    expect(source).toContain("'ensure'");
+    expect(source).toContain("'update'");
+    expect(read('.packages')).toContain('FORGEAX_SKIP_GAMES');
     expect(read('scripts/prepare.ts')).toContain('FORGEAX_SKIP_GAMES');
-    expect(read('scripts/prepare.ts')).toContain('sync-games.mjs');
+    expect(read('scripts/prepare.ts')).toContain("ensureManagedPackage('games', false)");
     expect(read('scripts/run.ts')).toContain('FORGEAX_SKIP_GAMES');
     expect(read('scripts/build-desktop.ts')).toContain('FORGEAX_SKIP_GAMES');
     expect(read('scripts/fx.ts')).toContain("path: 'packages/games'");
   });
 
-  test('reuses an existing floating checkout remote during update', () => {
-    for (const file of ['scripts/sync-package-harness.mjs', 'scripts/sync-games.mjs']) {
-      const source = read(file);
-      const updateBody = source.slice(source.indexOf('function update('));
-      expect(source, file).toContain("remote', 'get-url', 'origin'");
-      expect(updateBody, file).toContain('fetchArgs()');
-      expect(updateBody, file).not.toContain("cloneUrl(), 'main'");
-    }
+  test('uses the configured manifest URL for update without mutating origin', () => {
+    const source = read('scripts/lib/package-sync.ts');
+    expect(source).toContain("'fetch', '--quiet', '--no-tags', entry.url, entry.branch");
+    expect(source).not.toContain("remote', 'set-url', 'origin'");
   });
 
   test('makes CI explicitly skip the optional games checkout', () => {
@@ -74,14 +70,13 @@ describe('optional forgeax-games consumer checkout', () => {
     expect(read('scripts/ci/run-post-install-checks.ts')).not.toContain('check-game-');
   });
 
-  test('keeps the local fast CI on Studio contracts, not consumer game fixtures', () => {
+  test('keeps repository gates on Studio contracts, not consumer game fixtures', () => {
     const packageJson = JSON.parse(read('package.json')) as {
       scripts?: Record<string, string>;
     };
     expect(packageJson.scripts?.['lint:boundaries']).not.toContain('game-');
     expect(packageJson.scripts?.['test:boundaries:fs']).not.toContain('game-');
     expect(packageJson.scripts?.['test:boundaries']).not.toContain('game-');
-    expect(read('scripts/fx.ts')).toContain('FORGEAX_SKIP_GAMES');
-    expect(read('scripts/fx.ts')).toContain('games floating checkout contract');
+    expect(read('scripts/fx.ts')).not.toContain('games floating checkout contract');
   });
 });

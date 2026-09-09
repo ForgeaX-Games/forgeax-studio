@@ -1,0 +1,29 @@
+[
+  {
+    "path": "packages/agents",
+    "url": "https://github.com/ForgeaX-Games/forgeax-agents.git",
+    "branch": "main"
+  },
+  {
+    "path": "packages/app-shell",
+    "url": "https://github.com/ForgeaX-Games/forgeax-app-shell.git",
+    "branch": "main"
+  },
+  {
+    "path": "packages/extension-platform",
+    "url": "https://github.com/ForgeaX-Games/forgeax-extension-platform.git",
+    "branch": "main"
+  },
+  {
+    "path": "packages/games",
+    "url": "https://github.com/ForgeaX-Games/forgeax-games.git",
+    "branch": "main",
+    "optional": true,
+    "skipEnv": "FORGEAX_SKIP_GAMES"
+  },
+  {
+    "path": "packages/ide",
+    "url": "https://github.com/ForgeaX-Games/forgeax-ide.git",
+    "branch": "main"
+  }
+]

@@ -1,5 +1,5 @@
 // 鬼市门叙事资产映射 SSOT：原始文件名 ↔ blob 规范名 ↔ mediaId ↔ sceneId ↔ 真实时长(ms)。
-// 视频源就是游戏目录 game-video/assets/blobs/ 里的 narr-*.mp4(blob 字段)。
+// 视频源就是游戏目录 video-game/assets/blobs/ 里的 narr-*.mp4(blob 字段)。
 // 装配脚本(写 manifest)与 assemble(scene.media.ref / decision 时机)都从这里读。
 // src 仅作原始来源存档(记录 blob 对应的原始文件名),装配流程已不使用。
 export interface NarrClip {

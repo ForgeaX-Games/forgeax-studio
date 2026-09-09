@@ -17,7 +17,6 @@ type CommandTask = {
 };
 
 export const STATIC_GATES: readonly CommandTask[] = [
-  { name: 'Test @forgeax/agent-runtime', args: ['-F', '@forgeax/agent-runtime', 'test'] },
   { name: 'Typecheck @forgeax/platform-io', args: ['-F', '@forgeax/platform-io', 'typecheck'] },
   { name: 'interface package-boundary guard', args: ['run', '--cwd', 'packages/interface', 'lint:dep'] },
   { name: 'interface app-agnostic import guard', args: ['run', '--cwd', 'packages/interface', 'lint:agnostic'] },
@@ -43,11 +42,6 @@ export const VITE_BUILDS: readonly CommandTask[] = [
     name: 'Vite build packages/interface',
     args: ['run', 'vite', 'build'],
     cwd: 'packages/interface',
-  },
-  {
-    name: 'Vite build packages/studio',
-    args: ['run', 'vite', 'build'],
-    cwd: 'packages/studio',
   },
 ];
 

@@ -109,7 +109,7 @@ describe('packaged engine workspace', () => {
     mkdirSync(join(resources, 'src'), { recursive: true });
     mkdirSync(join(resources, 'node_modules', '@forgeax', 'engine-x'), { recursive: true });
     mkdirSync(join(shared, '@forgeax', 'engine-x'), { recursive: true });
-    mkdirSync(join(shared, '@forgeax', 'wb-game-video'), { recursive: true });
+    mkdirSync(join(shared, '@forgeax', 'video-game'), { recursive: true });
     mkdirSync(join(shared, 'three'), { recursive: true });
     mkdirSync(work, { recursive: true });
     writeFileSync(join(resources, 'vite.config.ts'), 'export default {};\n');
@@ -129,8 +129,8 @@ describe('packaged engine workspace', () => {
       join(resources, 'node_modules', '@forgeax', 'engine-x'),
     );
     // shared-only entries are linked through, scopes merged per member
-    expect(readlinkSync(join(work, 'node_modules', '@forgeax', 'wb-game-video'))).toBe(
-      join(shared, '@forgeax', 'wb-game-video'),
+    expect(readlinkSync(join(work, 'node_modules', '@forgeax', 'video-game'))).toBe(
+      join(shared, '@forgeax', 'video-game'),
     );
     expect(readlinkSync(join(work, 'node_modules', 'three'))).toBe(join(shared, 'three'));
     expect(lstatSync(join(work, '.forgeax')).isSymbolicLink()).toBe(true);

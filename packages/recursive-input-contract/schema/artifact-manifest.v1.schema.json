@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:forgeax:artifact-manifest:v1",
+  "title": "ForgeaX versioned artifact manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "name",
+    "version",
+    "url",
+    "sha256",
+    "compressedBytes",
+    "unpackedBytes",
+    "licenseInventory"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$" },
+    "url": {
+      "type": "string",
+      "pattern": "^https://",
+      "not": { "pattern": "(?:^|[/?_.-])latest(?:[/?_.-]|$)" }
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "compressedBytes": { "type": "integer", "minimum": 1 },
+    "unpackedBytes": { "type": "integer", "minimum": 1 },
+    "licenseInventory": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    }
+  }
+}

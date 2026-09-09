@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  additionalSourceRuntimePorts,
+  discoverSourceRuntimeStopTargets,
+  revalidateSourceRuntimeStopSurvivors,
   ensureRuntimeAction,
   liveRuntimeStateForInstance,
   openRuntimeLog,
@@ -39,7 +42,7 @@ function fixtureRoot(): string {
 function materializeRuntimePackages(root: string): void {
   mkdirSync(join(root, 'packages/server/src'), { recursive: true });
   mkdirSync(join(root, 'packages/server-override/src'), { recursive: true });
-  mkdirSync(join(root, 'packages/studio'), { recursive: true });
+  mkdirSync(join(root, 'packages/ide'), { recursive: true });
   mkdirSync(join(root, 'packages/interface'), { recursive: true });
   writeFileSync(join(root, 'packages/server/src/main.ts'), 'export {};\n');
   writeFileSync(join(root, 'packages/server/package.json'), JSON.stringify({ name: '@forgeax/server' }));
@@ -56,10 +59,13 @@ function liveStateFixture(slot = 1): {
   state: RuntimeState;
   childEnv: NodeJS.ProcessEnv;
 } {
-  const root = fixtureRoot();
-  materializeRuntimePackages(root);
-  writeRuntimeInstanceConfig({ root, slot });
-  const instance = resolveRuntimeInstance({ root });
+  const fixture = fixtureRoot();
+  materializeRuntimePackages(fixture);
+  writeRuntimeInstanceConfig({ root: fixture, slot });
+  const instance = resolveRuntimeInstance({ root: fixture });
+  // macOS exposes tmpdir through both /var and /private/var. RuntimeInstance is
+  // canonical, so build ownership evidence from that same path identity.
+  const root = instance.root;
   const childEnv = {
     ...runtimeInstanceProcessEnv(instance),
     FORGEAX_SERVER_PROFILE: 'auto',
@@ -131,6 +137,185 @@ describe('source runtime launcher contract', () => {
     ]);
   });
 
+  test('restart recovery includes a live run.lock launcher when RuntimeState is missing', () => {
+    const { root, instance, childEnv } = liveStateFixture();
+    const launcherPid = 7001;
+    mkdirSync(join(root, '.forgeax/run.lock'), { recursive: true });
+    writeFileSync(join(root, '.forgeax/run.lock/owner.json'), JSON.stringify({
+      schemaVersion: 1,
+      pid: launcherPid,
+      token: '0123456789abcdef',
+    }));
+
+    const result = discoverSourceRuntimeStopTargets(
+      instance,
+      null,
+      resolveExpectedRuntimeOwners(root, childEnv),
+      {
+        listenPids: () => [],
+        readSnapshot: (pid) => pid === launcherPid ? {
+          pid,
+          commandLine: `bun ${instance.root}/scripts/local-runtime.ts --profile web-dev`,
+          cwd: instance.root,
+        } : null,
+        owns: runtimeProcessBelongsToInstance,
+        isAlive: (pid) => pid === launcherPid,
+        isPortBusy: () => false,
+      },
+    );
+
+    expect(result.discovery.found.get(launcherPid)).toBe('launcher (run.lock)');
+    expect(result.discovery.blocked).toBe(false);
+  });
+
+  test('restart recovery combines state PIDs with an orphan listener child', () => {
+    const { root, instance, state: readyState, childEnv } = liveStateFixture();
+    const interfaceWrapperPid = 8001;
+    const interfaceListenerPid = 8002;
+    const state = {
+      ...readyState,
+      servicePids: { ...readyState.servicePids, interface: interfaceWrapperPid },
+    };
+    const snapshots = new Map([
+      [state.launcherPid, {
+        pid: state.launcherPid,
+        commandLine: `bun ${instance.root}/scripts/local-runtime.ts --profile web-dev`,
+        cwd: instance.root,
+      }],
+      [interfaceWrapperPid, {
+        pid: interfaceWrapperPid,
+        commandLine: 'bun run dev:web',
+        cwd: join(instance.root, 'packages/ide'),
+      }],
+      [interfaceListenerPid, {
+        pid: interfaceListenerPid,
+        commandLine: 'bun x vite --port 18920',
+        cwd: join(instance.root, 'packages/ide'),
+      }],
+    ]);
+
+    const result = discoverSourceRuntimeStopTargets(
+      instance,
+      state,
+      resolveExpectedRuntimeOwners(root, childEnv),
+      {
+        listenPids: (port) => port === instance.ports.interface ? [interfaceListenerPid] : [],
+        readSnapshot: (pid) => snapshots.get(pid) ?? null,
+        owns: runtimeProcessBelongsToInstance,
+        isAlive: (pid) => snapshots.has(pid),
+        isPortBusy: () => false,
+      },
+    );
+
+    expect([...result.discovery.found.keys()].sort()).toEqual([
+      state.launcherPid,
+      interfaceWrapperPid,
+      interfaceListenerPid,
+    ].sort());
+    expect(result.discovery.blocked).toBe(false);
+  });
+
+  test('restart offers exact unowned refusals for approval and rediscovers before stopping', () => {
+    const source = readFileSync(join(process.cwd(), 'scripts/lib/source-runtime-launcher.ts'), 'utf8');
+    expect(source).toContain("refusal.reason === 'ownership-unproven'");
+    expect(source).toContain('await approveUnownedStop(approvable)');
+    expect(source).toContain('approvedUnownedProcesses.set(refusal.pid');
+    expect(source).toContain('gracefulTargets = discover();');
+    expect(source.indexOf('gracefulTargets = discover();')).toBeLessThan(
+      source.indexOf('assertSourceRuntimeStopIsSafe(gracefulTargets)'),
+    );
+  });
+
+  test('disposes an existing runtime before acquiring new startup port leases', async () => {
+    const source = await Bun.file(new URL('./source-runtime-launcher.ts', import.meta.url)).text();
+    const body = source.slice(
+      source.indexOf('export async function startSourceRuntime'),
+      source.indexOf('function formatBusyPorts'),
+    );
+
+    expect(body.indexOf("if (options.existing === 'restart')")).toBeGreaterThan(-1);
+    expect(body.indexOf('const portStartupLocks = await acquireRuntimePortStartupLocks')).toBeGreaterThan(
+      body.indexOf("if (options.existing === 'restart')"),
+    );
+  });
+
+  test('carries a proven graceful survivor into force cleanup after state disappears', () => {
+    const { root, instance, state: readyState, childEnv } = liveStateFixture();
+    const wrapperPid = 8101;
+    const snapshot = {
+      pid: wrapperPid,
+      commandLine: 'bun run dev:web',
+      cwd: join(instance.root, 'packages/ide'),
+    };
+    const initial = discoverSourceRuntimeStopTargets(
+      instance,
+      { ...readyState, servicePids: { interface: wrapperPid } },
+      resolveExpectedRuntimeOwners(root, childEnv),
+      {
+        listenPids: () => [],
+        readSnapshot: (pid) => pid === wrapperPid ? snapshot : null,
+        owns: runtimeProcessBelongsToInstance,
+        isAlive: (pid) => pid === wrapperPid,
+        isPortBusy: () => false,
+      },
+    );
+
+    expect(revalidateSourceRuntimeStopSurvivors(initial, [wrapperPid], {
+      readSnapshot: () => snapshot,
+      owns: runtimeProcessBelongsToInstance,
+    })).toEqual(new Map([[wrapperPid, 'interface']]));
+  });
+
+  test('carries an approved unowned graceful survivor only while its process snapshot is unchanged', () => {
+    const { root, instance, state: readyState, childEnv } = liveStateFixture();
+    const pid = 8102;
+    const snapshot = { pid, commandLine: 'vite --port 28920', cwd: '/other/worktree', startToken: 'started-8102' };
+    const approvedUnownedProcesses = new Map([[pid, snapshot]]);
+    const initial = discoverSourceRuntimeStopTargets(
+      instance,
+      readyState,
+      resolveExpectedRuntimeOwners(root, childEnv),
+      {
+        listenPids: (port) => port === instance.ports.interface ? [pid] : [],
+        readSnapshot: () => snapshot,
+        owns: () => false,
+        isAlive: () => true,
+        isPortBusy: () => true,
+        approvedUnownedProcesses,
+      },
+    );
+
+    expect(revalidateSourceRuntimeStopSurvivors(initial, [pid], {
+      readSnapshot: () => snapshot,
+      owns: () => false,
+      approvedUnownedProcesses,
+    })).toEqual(new Map([[pid, 'interface']]));
+    expect(() => revalidateSourceRuntimeStopSurvivors(initial, [pid], {
+      readSnapshot: () => ({ ...snapshot, commandLine: 'node replacement.js' }),
+      owns: () => false,
+      approvedUnownedProcesses,
+    })).toThrow(/ownership changed/);
+  });
+
+  test('closes a RuntimeInstance re-projection over newly selected host ports', () => {
+    const finalStartup = resolveStartupEnvironment({
+      root: '/tmp/forgeax-source-launcher',
+      profile: 'web-dev',
+      env: {
+        FORGEAX_SERVER_PORT: '38900',
+        FORGEAX_INTERFACE_PORT: '38920',
+        FORGEAX_ENGINE_PORT: '35173',
+      },
+    });
+
+    expect(additionalSourceRuntimePorts(finalStartup, [18_900, 18_920, 15_173])).toEqual([
+      38_900,
+      38_920,
+      35_173,
+    ]);
+    expect(additionalSourceRuntimePorts(finalStartup, [38_900, 38_920, 35_173])).toEqual([]);
+  });
+
   test('keeps the retired bridge out of preflight ports for every profile', () => {
     const startup = resolveStartupEnvironment({
       root: '/tmp/forgeax-source-launcher',
@@ -148,12 +333,24 @@ describe('source runtime launcher contract', () => {
     ]);
   });
 
+  test('reserves the Engine MCP listener only when HTTP MCP is enabled', () => {
+    const startup = resolveStartupEnvironment({
+      root: '/tmp/forgeax-source-launcher',
+      profile: 'anydev-web',
+      env: { FORGEAX_MCP_HTTP: '1', FORGEAX_MCP_PORT: '28940' },
+    });
+
+    expect(sourceRuntimePorts(startup)).toContainEqual(['engine-mcp', 28940]);
+  });
+
   test('projects the resolved RuntimeInstance contract into launcher children', async () => {
     const source = await Bun.file(new URL('./source-runtime-launcher.ts', import.meta.url)).text();
 
     expect(source).toContain('resolveRuntimeInstance({ root })');
     expect(source).toContain('runtimeInstanceProcessEnv(instance)');
     expect(source).toContain('startupProcessEnv(startup, env)');
+    expect(source).toContain('acquireRuntimePortStartupLocks');
+    expect(source).toContain('portStartupLocks.release()');
   });
 
   test('does not reintroduce a bridge port when startup explicitly disables the bridge', () => {
@@ -438,10 +635,10 @@ describe('source runtime launcher contract', () => {
       ...childEnv,
       FORGEAX_SERVER_PROFILE: 'base',
     });
-    const interfaceOwners = resolveExpectedRuntimeOwners(root, {
-      ...childEnv,
-      STUDIO: '0',
-    });
+    const interfaceOwners = {
+      ...expectedOwners,
+      interface: { dir: join(root, 'packages/interface') },
+    };
     expect(ensureRuntimeAction(state, startup, baseServerOwners)).toBe('restart');
     expect(ensureRuntimeAction(state, startup, interfaceOwners)).toBe('restart');
   });

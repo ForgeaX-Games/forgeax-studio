@@ -1,6 +1,6 @@
 {
   "name": "@forgeax/game-runtime",
-  "version": "0.3.31",
+  "version": "0.3.33",
   "description": "Platform-selecting Universal entry for ForgeaX Game Runtime packages.",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,9 +17,9 @@
     "README.md"
   ],
   "optionalDependencies": {
-    "@forgeax/game-runtime-darwin-arm64": "0.3.31",
-    "@forgeax/game-runtime-win32-x64": "0.3.31",
-    "@forgeax/game-runtime-linux-x64": "0.3.31"
+    "@forgeax/game-runtime-darwin-arm64": "0.3.33",
+    "@forgeax/game-runtime-win32-x64": "0.3.33",
+    "@forgeax/game-runtime-linux-x64": "0.3.33"
   },
   "publishConfig": {
     "access": "public"

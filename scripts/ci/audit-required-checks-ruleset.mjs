@@ -6,10 +6,19 @@
 // diverging context rosters.
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { loadCiContractFiles } from "../../packages/recursive-input-contract/src/ci-contract.ts";
 import { probeLiveRulesetsSync } from "../../packages/recursive-input-contract/src/ci-ruleset.ts";
 
-const contract = loadCiContractFiles();
+function contractRootFromArgs() {
+  const flagIndex = process.argv.indexOf("--root");
+  if (flagIndex < 0) return undefined;
+  const root = process.argv[flagIndex + 1];
+  if (!root || root.startsWith("--")) throw new Error("--root requires a repository root");
+  return root;
+}
+
+const contract = loadCiContractFiles(contractRootFromArgs());
 const manifest = contract.manifest;
 
 export function requiredContextsFromProducerManifest() {
@@ -26,6 +35,56 @@ export function compareRequiredChecks(localNames, remoteNames) {
     missingRemotely: local.filter((name) => !remote.includes(name)),
     extraRemotely: remote.filter((name) => !local.includes(name)),
   };
+}
+
+const ADMISSION_FIELDS = [
+  "rootRevision",
+  "recursiveInputDigest",
+  "trustScope",
+  "attempt",
+  "requiredContextsDigest",
+  "governanceObservation",
+  "sourceAsDataRevision",
+];
+
+export function validateMirrorAdmission(expected, observed) {
+  const candidateId = createHash("sha256")
+    .update(JSON.stringify(expected, Object.keys(expected).sort()))
+    .digest("hex");
+  if (observed?.governanceObservation === "unverified") {
+    return {
+      ok: false,
+      code: "mirror.admission.governance-unverified",
+      candidateId,
+      expected: "aligned live governance observation",
+      actual: "unverified",
+      sourceWork: { status: "suppressed" },
+      recoveryActions: ["observe-live-ruleset", "retry-cold"],
+    };
+  }
+  const codes = {
+    rootRevision: "root",
+    recursiveInputDigest: "recursive-input",
+    trustScope: "trust-scope",
+    attempt: "attempt",
+    requiredContextsDigest: "required-contexts",
+    governanceObservation: "governance",
+    sourceAsDataRevision: "source-as-data",
+  };
+  for (const field of ADMISSION_FIELDS) {
+    if (expected?.[field] !== observed?.[field]) {
+      return {
+        ok: false,
+        code: `mirror.admission.${codes[field]}-mismatch`,
+        candidateId,
+        expected: String(expected?.[field] ?? "missing"),
+        actual: String(observed?.[field] ?? "missing"),
+        sourceWork: { status: "suppressed" },
+        recoveryActions: ["discard-partial-state", "retry-cold", "rebuild-admission"],
+      };
+    }
+  }
+  return { ok: true, code: "mirror.admission-passed", candidateId, sourceWork: { status: "permitted" }, recoveryActions: [] };
 }
 
 function repositoryName() {

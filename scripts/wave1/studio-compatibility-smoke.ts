@@ -97,15 +97,15 @@ try {
   ]);
   record('boot', `isolated core stack ready on server ${serverPort}, interface ${interfacePort}, engine ${enginePort}`);
 
-  await request('/api/workbench/active-game', {
+  await request('/api/projects/active', {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ slug: gameSlug }),
   });
-  const catalog = await request('/api/workbench/games');
+  const catalog = await request('/api/projects');
   if (!JSON.stringify(catalog).includes(gameSlug)) throw new Error(`${gameSlug} missing from catalog`);
   record('open', `${gameSlug} activated`);
-  record('catalog', `${gameSlug} observed through /api/workbench/games`);
+  record('catalog', `${gameSlug} observed through /api/projects`);
 
   const content = JSON.stringify({ wave: 1, nonce: crypto.randomUUID() });
   await request('/api/files', {

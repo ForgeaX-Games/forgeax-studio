@@ -8,9 +8,15 @@ import { spawnSync } from 'node:child_process';
  * Do not recreate that graph from Studio-side manifest fields: Engine packages
  * can import another package for build-time reasons, and those edges may be
  * declared as devDependencies. pnpm sees the complete workspace graph and
- * topologically orders the build accordingly.
+ * topologically orders the build accordingly. The path filter intentionally
+ * excludes Engine demo applications under `apps/`; they are not part of the
+ * Runtime or Engine SDK closure.
  */
-export const ALL_ENGINE_PACKAGES_FILTER = '@forgeax/engine-*';
+// Runtime artifacts snapshot Engine's package surface, not its example apps.
+// A package-name glob also matches workspaces such as
+// `@forgeax/engine-shadertoy-*`, so keep this boundary anchored to Engine's
+// canonical `packages/` directory instead.
+export const ALL_ENGINE_PACKAGES_FILTER = './packages/**';
 
 /**
  * The smaller Engine package set needed before Studio's Vite configuration is
@@ -40,6 +46,7 @@ export const PREPARE_ENGINE_BUILD_FILTERS = [
   '@forgeax/engine-project...',
   '@forgeax/engine-fbx...',
   '@forgeax/engine-npc...',
+  '@forgeax/engine-devkit...',
   '@forgeax/engine-vite-plugin-rhi-debug...',
 ] as const;
 
@@ -51,6 +58,16 @@ export const PREPARE_ENGINE_BUILD_FILTERS = [
 export const ENGINE_STANDALONE_DECLARATION_FILTERS = [
   '@forgeax/engine-project',
   '@forgeax/engine-devkit',
+] as const;
+
+// These packages are imported by test-only project references before the
+// aggregate Engine tsconfig reaches them. Seed them once on a cold graph so
+// every producer can then participate in the strict workspace declaration
+// pass. Keep this list aligned with forgeax-editor/scripts/fx.ts.
+export const ENGINE_IMPLICIT_DECLARATION_PROJECTS = [
+  'packages/render-graph/tsconfig.json',
+  'packages/vfx-render/tsconfig.json',
+  'packages/vfx-compiler/tsconfig.json',
 ] as const;
 
 const ENGINE_STANDALONE_DECLARATION_COMMANDS: Record<
@@ -98,7 +115,18 @@ export function buildEnginePackages(options: BuildEnginePackagesOptions): boolea
 export function buildEngineDeclarations(options: BuildEnginePackagesOptions): boolean {
   if (!buildEnginePackages(options)) return false;
   const env = options.env ?? process.env;
-  if (!runEngineCommand(options.engineRoot, ['exec', 'tsc', '-b'], env)) return false;
+  const declarationPass = ['exec', 'tsc', '-b', '--force', '--pretty', 'false'] as const;
+  if (!runEngineCommand(options.engineRoot, declarationPass, env)) {
+    console.warn('[engine] seeding implicit declaration producers before retrying the workspace graph ...');
+    for (const project of ENGINE_IMPLICIT_DECLARATION_PROJECTS) {
+      if (!runEngineCommand(
+        options.engineRoot,
+        ['exec', 'tsc', '-b', project, '--force', '--pretty', 'false'],
+        env,
+      )) return false;
+    }
+    if (!runEngineCommand(options.engineRoot, declarationPass, env)) return false;
+  }
   return ENGINE_STANDALONE_DECLARATION_FILTERS.every((filter) =>
     runEngineCommand(options.engineRoot, ENGINE_STANDALONE_DECLARATION_COMMANDS[filter], env));
 }

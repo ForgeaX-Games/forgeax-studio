@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "token": "@forgeax/interface",
+  "consumers": {
+    "chat": {
+      "root": "packages/chat",
+      "evidenceCommit": "02aa76fb9d4da403ed532b021776457b9ed6668a",
+      "allowedReferences": {}
+    },
+    "dashboard": {
+      "root": "packages/dashboard",
+      "evidenceCommit": "7705a822a328af0f0ef3e6360d0894fbe58e9549",
+      "allowedReferences": {}
+    },
+    "settings": {
+      "root": "packages/settings",
+      "evidenceCommit": "98ce724cdadac7bb4e428c7ee72aae49c05907eb",
+      "allowedReferences": {}
+    },
+    "editor": {
+      "root": "packages/editor",
+      "evidenceCommit": "f0da8e6062d79e8f49221b3a4d9a544510c6ffbc",
+      "allowedReferences": {
+        "apps/standalone/game-service-client.ts": 1,
+        "apps/standalone/main.tsx": 15,
+        "package.json": 2,
+        "packages/content-browser/package.json": 1,
+        "packages/content-browser/src/CBDetailsList.tsx": 1,
+        "packages/content-browser/src/CBGrid.tsx": 1,
+        "packages/content-browser/src/CBSourceTree.tsx": 1,
+        "packages/content-browser/src/ContentBrowser.tsx": 4,
+        "packages/content-browser/src/hooks/useContentBrowserCommands.ts": 1,
+        "packages/content-browser/src/resolve-content-browser-reveal.ts": 1,
+        "packages/edit-runtime/package.json": 1,
+        "packages/edit-runtime/src/bridge.ts": 1,
+        "packages/edit-runtime/src/default-dock-layout.ts": 1,
+        "packages/edit-runtime/src/keyboard-router-deps.ts": 2,
+        "packages/edit-runtime/src/page-controllers/input-map-page-controller.ts": 1,
+        "packages/edit-runtime/src/page-controllers/material-page-controller.ts": 1,
+        "packages/edit-runtime/src/page-controllers/mi-page-controller.ts": 1,
+        "packages/edit-runtime/src/page-extension.ts": 3,
+        "packages/edit-runtime/src/public/app-kit.ts": 3,
+        "packages/edit-runtime/src/public/index.ts": 2,
+        "packages/edit-runtime/src/version-control/contribution.tsx": 3,
+        "packages/edit-runtime/src/viewport/ViewportPanel.tsx": 3,
+        "packages/edit-runtime/src/viewport/material-preview-toolbar.tsx": 1,
+        "packages/edit-runtime/src/viewport/mesh-preview-toolbar.tsx": 1,
+        "packages/edit-runtime/src/viewport/texture-preview-toolbar.tsx": 1,
+        "packages/edit-runtime/src/viewport/vfx-preview-toolbar.tsx": 1,
+        "packages/panels/package.json": 1,
+        "packages/panels/src/AssetRefControl.tsx": 1,
+        "packages/panels/src/Hierarchy.tsx": 1,
+        "packages/panels/src/HierarchyContributions.tsx": 2,
+        "packages/panels/src/asset-editors-contributions.tsx": 1,
+        "packages/panels/src/asset-inspector/material-toolbar.tsx": 1,
+        "packages/panels/src/manifest.ts": 2,
+        "packages/panels/src/reveal-in-content-browser.ts": 1,
+        "vite.config.ts": 4
+      }
+    },
+    "ide": {
+      "root": "packages/ide",
+      "evidenceCommit": "a8e5c681da96c0fd2bf14926324a46cb8fe64e30",
+      "allowedReferences": {
+        "packages/extension-gallery/package.json": 2,
+        "packages/extension-gallery/src/index.tsx": 5,
+        "packages/files/package.json": 2,
+        "packages/files/src/index.tsx": 5,
+        "src/integration/rest-studio-domain-clients.ts": 1,
+        "src/main.tsx": 8,
+        "src/product/chat-runtime-adapter.tsx": 25,
+        "src/product/studio-composition.tsx": 18,
+        "src/types/interface-integration.d.ts": 56,
+        "tsconfig.lint.json": 1,
+        "tsconfig.json": 1,
+        "vite.config.ts": 1
+      }
+    }
+  },
+  "gitlinkPath": "packages/interface",
+  "interfacePackageRetirementEvidence": {
+    "repository": "ForgeaX-Games/forgeax-interface",
+    "pullRequest": null,
+    "mergeCommit": null
+  },
+  "retirementInputs": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/game-runtime-publish.yml",
+    "scripts/bootstrap.ts",
+    "scripts/ci/run-package-typechecks.ts",
+    "scripts/ci/run-post-install-checks.ts",
+    "scripts/lib/ide-integration-workspace.ts",
+    "scripts/mirror/ide-history.ts",
+    "scripts/mirror/publish.sh",
+    "scripts/mirror/route-back.sh"
+  ]
+}

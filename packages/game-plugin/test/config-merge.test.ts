@@ -18,6 +18,11 @@ describe('configuration merge', () => {
     const codebuddy = findClient('codebuddy');
     expect(codebuddy?.path(project)).toEndWith(join('.codebuddy', '.mcp.json'));
     expect(findClient('workbuddy')).toBe(codebuddy);
+
+    const zcode = findClient('zcode');
+    expect(zcode?.scope).toBe('user');
+    expect(zcode?.path(project)).toEndWith(join('.zcode', 'cli', 'config.json'));
+    expect(zcode?.serverMapKey).toEqual(['mcp', 'servers']);
   });
 
   test('TOML replacement preserves neighbouring tables byte-for-byte', () => {
@@ -154,6 +159,50 @@ describe('configuration merge', () => {
       },
     });
     expect(merged.changed).toBeTrue();
+  });
+
+  test('ZCode merge preserves native settings and is idempotent', () => {
+    const zcode = findClient('zcode')!;
+    const entry = { command: 'npx', args: ['-y', '-p', '@forgeax/game', 'forgeax-game', 'mcp'] };
+    const existing = JSON.stringify({
+      locale: 'zh-CN',
+      mcp: {
+        servers: { memory: { command: 'memory-server', args: [] } },
+        reconnectOnStart: true,
+      },
+      permissions: { mode: 'plan' },
+    });
+
+    const merged = mergeJsonConfig(existing, zcode, entry);
+    expect(JSON.parse(merged.content)).toEqual({
+      locale: 'zh-CN',
+      mcp: {
+        servers: {
+          memory: { command: 'memory-server', args: [] },
+          forgeax: entry,
+        },
+        reconnectOnStart: true,
+      },
+      permissions: { mode: 'plan' },
+    });
+    expect(merged.changed).toBeTrue();
+    expect(mergeJsonConfig(merged.content, zcode, entry).changed).toBeFalse();
+  });
+
+  test('ZCode merge refuses incompatible native MCP nesting', () => {
+    const zcode = findClient('zcode')!;
+    expect(() =>
+      mergeJsonConfig(JSON.stringify({ mcp: ['user-owned'] }), zcode, {
+        command: 'node',
+        args: ['server.js'],
+      }),
+    ).toThrow('refusing to overwrite existing user data');
+    expect(() =>
+      mergeJsonConfig(JSON.stringify({ mcp: { servers: false } }), zcode, {
+        command: 'node',
+        args: ['server.js'],
+      }),
+    ).toThrow('refusing to overwrite existing user data');
   });
 
   test('JSON merge refuses to replace an incompatible existing server map', () => {

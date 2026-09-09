@@ -19,7 +19,7 @@ describe('@forgeax/npc-client package health', () => {
     expect(pkg.main).toBe('./dist/index.js');
     expect(pkg.types).toBe('./dist/index.d.ts');
     expect(pkg.dependencies).toBeUndefined();
-    expect(pkg.devDependencies?.['@forgeax/types']).toBe('workspace:*');
+    expect(pkg.devDependencies?.['@forgeax/types']).toBe('^0.1.2');
   });
 
   test('build emits runnable JavaScript and declarations', () => {

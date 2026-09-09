@@ -10,6 +10,7 @@ export interface ManagedRuntimePortsOptions {
   readonly serverPort: number;
   readonly interfacePort: number;
   readonly enginePort: number;
+  readonly mcpPort?: number;
   readonly narrativePort?: number;
   readonly rhiReviewerPort?: number;
   readonly extensions: readonly ManagedRuntimeExtensionPort[];
@@ -21,6 +22,7 @@ export function managedRuntimePorts(options: ManagedRuntimePortsOptions): Manage
     ['server', options.serverPort],
     ['interface', options.interfacePort],
     ['engine', options.enginePort],
+    ...(options.mcpPort === undefined ? [] : [['engine-mcp', options.mcpPort] as const]),
     ...(options.narrativePort === undefined ? [] : [['narrative', options.narrativePort] as const]),
     ...(options.rhiReviewerPort === undefined ? [] : [['rhi-reviewer', options.rhiReviewerPort] as const]),
     ...options.extensions.flatMap((extension) => [

@@ -8,6 +8,8 @@ export const RUNTIME_INSTANCE_SLOTS = [0, 1, 2, 3, 4] as const;
 
 const PORT_OFFSET = 10_000;
 const CONFIG_RELATIVE_PATH = join('.forgeax', 'runtime', 'instance.json');
+const MANIFEST_RELATIVE_PATH = join('.forgeax', 'runtime', 'manifest.json');
+export const RUNTIME_INSTANCE_MANIFEST_SCHEMA = 'forgeax-runtime-instance/v1' as const;
 
 export interface RuntimeInstanceConfig {
   readonly schemaVersion: typeof RUNTIME_INSTANCE_SCHEMA_VERSION;
@@ -33,6 +35,7 @@ export interface RuntimeInstance {
   readonly schemaVersion: typeof RUNTIME_INSTANCE_SCHEMA_VERSION;
   readonly root: string;
   readonly configFile: string;
+  readonly manifestFile: string;
   readonly config: RuntimeInstanceConfig | null;
   readonly id: string;
   readonly slot: number;
@@ -49,6 +52,22 @@ export interface RuntimeInstance {
   readonly interfaceOrigin: string;
   readonly reelUrl: string;
   readonly assetCorsOrigins: readonly string[];
+  readonly manifest: RuntimeInstanceManifest;
+}
+
+export interface RuntimeInstanceManifest {
+  readonly schema: typeof RUNTIME_INSTANCE_MANIFEST_SCHEMA;
+  readonly instanceId: string;
+  readonly root: string;
+  readonly slot: number;
+  readonly endpoints: {
+    readonly server: { readonly port: number; readonly url: string; readonly healthPath: '/api/health' };
+    readonly interface: { readonly port: number; readonly origin: string; readonly healthPath: '/' };
+    readonly engine: { readonly port: number; readonly url: string; readonly healthPath: '/preview/' };
+  };
+  readonly ports: RuntimeInstancePorts;
+  readonly pluginPortOffset: number;
+  readonly paths: { readonly stateFile: string; readonly logFile: string };
 }
 
 export interface ResolveRuntimeInstanceOptions {
@@ -78,11 +97,11 @@ export function resolveRuntimeInstance(options: ResolveRuntimeInstanceOptions): 
   const runtimeDir = join(root, '.forgeax', 'runtime');
   const id = config?.id ?? runtimeInstanceId(root);
   const interfaceOrigin = `http://127.0.0.1:${ports.interface}`;
-
-  return {
+  const instance = {
     schemaVersion: RUNTIME_INSTANCE_SCHEMA_VERSION,
     root,
     configFile,
+    manifestFile: runtimeInstanceManifestPath(root),
     config,
     id,
     slot,
@@ -102,7 +121,8 @@ export function resolveRuntimeInstance(options: ResolveRuntimeInstanceOptions): 
     interfaceOrigin,
     reelUrl: `http://127.0.0.1:${ports.reel}`,
     assetCorsOrigins: corsOrigins(ports.interface),
-  };
+  } satisfies Omit<RuntimeInstance, 'manifest'>;
+  return { ...instance, manifest: buildRuntimeInstanceManifest(instance) };
 }
 
 export function runtimeInstanceId(root: string): string {
@@ -115,6 +135,78 @@ export function runtimeInstanceId(root: string): string {
 
 export function runtimeInstanceConfigPath(root: string): string {
   return join(realpathSync(resolve(root)), CONFIG_RELATIVE_PATH);
+}
+
+export function runtimeInstanceManifestPath(root: string): string {
+  return join(realpathSync(resolve(root)), MANIFEST_RELATIVE_PATH);
+}
+
+export function buildRuntimeInstanceManifest(
+  instance: Omit<RuntimeInstance, 'manifest'>,
+): RuntimeInstanceManifest {
+  return {
+    schema: RUNTIME_INSTANCE_MANIFEST_SCHEMA,
+    instanceId: instance.id,
+    root: instance.root,
+    slot: instance.slot,
+    endpoints: {
+      server: { port: instance.ports.server, url: `http://127.0.0.1:${instance.ports.server}`, healthPath: '/api/health' },
+      interface: { port: instance.ports.interface, origin: `http://localhost:${instance.ports.interface}`, healthPath: '/' },
+      engine: { port: instance.ports.engine, url: `http://127.0.0.1:${instance.ports.engine}`, healthPath: '/preview/' },
+    },
+    ports: { ...instance.ports },
+    pluginPortOffset: instance.pluginPortOffset,
+    paths: { stateFile: instance.stateFile, logFile: instance.logFile },
+  };
+}
+
+export function validateRuntimeInstanceManifest(
+  raw: unknown,
+  source = 'runtime instance manifest',
+): RuntimeInstanceManifest {
+  if (!isRecord(raw)) throw new Error(`${source} must be a JSON object`);
+  assertExactKeys(raw, ['schema', 'instanceId', 'root', 'slot', 'endpoints', 'ports', 'pluginPortOffset', 'paths'], source);
+  if (raw.schema !== RUNTIME_INSTANCE_MANIFEST_SCHEMA) throw new Error(`${source} has unsupported schema '${String(raw.schema)}'`);
+  if (typeof raw.instanceId !== 'string' || raw.instanceId.trim() === '') throw new Error(`${source}.instanceId must be a non-empty string`);
+  if (typeof raw.root !== 'string' || !isAbsolute(raw.root)) throw new Error(`${source}.root must be an absolute path`);
+  if (!Number.isInteger(raw.slot)) throw new Error(`${source}.slot must be an integer`);
+  validateSlot(raw.slot as number);
+  if (!isRecord(raw.ports)) throw new Error(`${source}.ports must be an object`);
+  assertExactKeys(raw.ports, ['server', 'interface', 'engine', 'reel', 'rhiReviewer', 'bridge', 'narrative', 'faceMask'], `${source}.ports`);
+  const ports = raw.ports as unknown as RuntimeInstancePorts;
+  for (const [name, port] of Object.entries(ports)) validateManifestPort(port, `${source}.ports.${name}`);
+  if (new Set(Object.values(ports)).size !== Object.keys(ports).length) throw new Error(`${source}.ports must be unique`);
+  if (!Number.isSafeInteger(raw.pluginPortOffset) || (raw.pluginPortOffset as number) < 0) throw new Error(`${source}.pluginPortOffset must be a non-negative integer`);
+  if (!isRecord(raw.endpoints)) throw new Error(`${source}.endpoints must be an object`);
+  assertExactKeys(raw.endpoints, ['server', 'interface', 'engine'], `${source}.endpoints`);
+  const expectedEndpoints = {
+    server: { port: ports.server, url: `http://127.0.0.1:${ports.server}`, healthPath: '/api/health' },
+    interface: { port: ports.interface, origin: `http://localhost:${ports.interface}`, healthPath: '/' },
+    engine: { port: ports.engine, url: `http://127.0.0.1:${ports.engine}`, healthPath: '/preview/' },
+  };
+  if (JSON.stringify(raw.endpoints) !== JSON.stringify(expectedEndpoints)) throw new Error(`${source}.endpoints must match the declared ports`);
+  if (!isRecord(raw.paths)) throw new Error(`${source}.paths must be an object`);
+  assertExactKeys(raw.paths, ['stateFile', 'logFile'], `${source}.paths`);
+  for (const name of ['stateFile', 'logFile'] as const) {
+    if (typeof raw.paths[name] !== 'string' || !isAbsolute(raw.paths[name] as string)) throw new Error(`${source}.paths.${name} must be an absolute path`);
+  }
+  return raw as unknown as RuntimeInstanceManifest;
+}
+
+export function readRuntimeInstanceManifest(file: string): RuntimeInstanceManifest {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (error) {
+    throw new Error(`invalid runtime instance manifest '${file}': ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return validateRuntimeInstanceManifest(raw, file);
+}
+
+export function writeRuntimeInstanceManifest(instance: RuntimeInstance): RuntimeInstanceManifest {
+  const manifest = validateRuntimeInstanceManifest(instance.manifest);
+  atomicWrite(instance.manifestFile, `${JSON.stringify(manifest, null, 2)}\n`, true);
+  return manifest;
 }
 
 export function runtimeInstanceAgentHostSocket(serverPort: number): string {
@@ -189,6 +281,7 @@ export function writeRuntimeInstanceConfig(options: WriteRuntimeInstanceOptions)
   };
   validateRuntimeInstanceConfig(config);
   atomicWrite(configFile, `${JSON.stringify(config, null, 2)}\n`, options.force ?? false);
+  writeRuntimeInstanceManifest(resolveRuntimeInstance({ root }));
   return config;
 }
 
@@ -199,6 +292,7 @@ export function runtimeInstanceProcessEnv(instance: RuntimeInstance): NodeJS.Pro
     FORGEAX_ENV_FILE: instance.envFile,
     FORGEAX_RUNTIME_STATE_FILE: instance.stateFile,
     FORGEAX_RUNTIME_LOG_FILE: instance.logFile,
+    FORGEAX_RUNTIME_MANIFEST_FILE: instance.manifestFile,
     FORGEAX_AGENT_HOST_SOCK: instance.agentHostSocket,
     FORGEAX_SERVER_PORT: String(instance.ports.server),
     FORGEAX_INTERFACE_PORT: String(instance.ports.interface),
@@ -246,6 +340,21 @@ function atomicWrite(file: string, contents: string, force: boolean): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertExactKeys(value: Record<string, unknown>, expected: readonly string[], source: string): void {
+  const expectedSet = new Set(expected);
+  const unknown = Object.keys(value).filter((key) => !expectedSet.has(key));
+  const missing = expected.filter((key) => !(key in value));
+  if (unknown.length > 0 || missing.length > 0) {
+    throw new Error(`${source} keys mismatch; missing=${missing.join(',') || 'none'} unknown=${unknown.join(',') || 'none'}`);
+  }
+}
+
+function validateManifestPort(value: unknown, source: string): asserts value is number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > 65_535) {
+    throw new Error(`${source} must be an integer between 1 and 65535`);
+  }
 }
 
 function corsOrigins(port: number): readonly string[] {

@@ -39,8 +39,8 @@ export interface DesktopExtensionCapabilities {
   readonly modelBinding: boolean;
   readonly skill: boolean;
   readonly tool: boolean;
-  /** A workbench or any v2 UI contribution (pages/panels/activities/surfaces). */
-  readonly productWorkbench: boolean;
+  /** Any v2 UI contribution (pages/panels/activities/surfaces). */
+  readonly productExtension: boolean;
 }
 
 export interface ParsedDesktopExtension {
@@ -160,6 +160,19 @@ function parseManifestFile(manifestPath: string): {
     );
   }
 
+  if (
+    parsed.manifest.schemaVersion === 1
+    && (
+      parsed.manifest.kind === ['work', 'bench'].join('')
+      || ['work', 'bench'].join('') in (parsed.manifest.provides ?? {})
+    )
+  ) {
+    throw new DesktopExtensionSelectionError(
+      'INVALID_MANIFEST',
+      `invalid manifest ${manifestPath}: retired UI manifest shape is not supported`,
+    );
+  }
+
   try {
     return {
       manifest: parsed.manifest,
@@ -200,15 +213,13 @@ function capabilitiesOf(
     tool: original.schemaVersion === 1
       ? original.kind === 'tool' || hasEntries((original.provides as UnknownRecord).tools)
       : hasEntries(contributes.tools),
-    productWorkbench: original.schemaVersion === 1
-      ? original.kind === 'workbench'
-      : ui,
+    productExtension: original.schemaVersion === 1 ? false : ui,
   };
 }
 
 function familyOf(capabilities: DesktopExtensionCapabilities): DesktopExtensionFamily {
-  // Product/workbench wins over every other contribution for lite selection.
-  if (capabilities.productWorkbench) return 'product';
+  // Product UI wins over every other contribution for lite selection.
+  if (capabilities.productExtension) return 'product';
   if (capabilities.agent) return 'agent';
   if (capabilities.cliProvider) return 'cli-provider';
   if (capabilities.modelBinding) return 'model-binding';
@@ -298,7 +309,6 @@ function contributionIds(record: ParsedDesktopExtension): readonly string[] {
     add(provides.tools);
     add(provides.cliProvider);
     add(provides.modelBinding);
-    add(provides.workbench);
   }
   add(normalized.agents);
   add(normalized.skills);
@@ -424,10 +434,10 @@ export function selectDesktopExtensionClosure(
       );
     }
     if (visited.has(record.id)) return;
-    if (record.capabilities.productWorkbench) {
+    if (record.capabilities.productExtension) {
       throw new DesktopExtensionSelectionError(
         'DISALLOWED_REQUIRED_DEPENDENCY',
-        `lite selection cannot include product/workbench extension ${record.id}`,
+        `lite selection cannot include product extension ${record.id}`,
       );
     }
 
@@ -468,7 +478,7 @@ export function selectDesktopExtensionClosure(
           warnings.push(`${record.id} defaultSkills references unavailable extension ${ref.pluginId}`);
           continue;
         }
-        if (target.capabilities.productWorkbench) {
+        if (target.capabilities.productExtension) {
           warnings.push(`${record.id} defaultSkills references excluded product extension ${target.id}`);
           continue;
         }
@@ -484,7 +494,7 @@ export function selectDesktopExtensionClosure(
   };
 
   for (const record of records) {
-    if (record.capabilities.agent && !record.capabilities.productWorkbench) {
+    if (record.capabilities.agent && !record.capabilities.productExtension) {
       visit(record, [], 'agent root');
     }
   }

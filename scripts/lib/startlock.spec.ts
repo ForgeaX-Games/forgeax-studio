@@ -280,7 +280,7 @@ describe('StartLock', () => {
     await expect(StartLock.acquireForCleanup(checkout, {
       guardPort: await freePort(),
       closeGuard: async (guard) => {
-        await close(guard);
+        guard.release();
         throw new Error('simulated guard close failure');
       },
     })).rejects.toThrow('simulated guard close failure');

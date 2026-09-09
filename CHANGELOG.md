@@ -193,7 +193,7 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 
 ### 内部 / agent 视角
 
-- **【架构】** `surface: split` + `panes.{left,center}` 协议位 · 见 `packages/harness/docs/06-WORKBENCH-THREE-PANE-V2.md`,商店端透传到 host。
+- **【架构】** `surface: split` + `panes.{left,center}` 协议位 · 见 `.forgeax-harness/docs/06-WORKBENCH-THREE-PANE-V2.md`,商店端透传到 host。
 - **【文档】** Architecture-evolution v3 起草 · 15-doc 草案,把 v2(2026-05-15)推进到 v3(packs/permissions/ledger + bus 协议位)。
 - **【基建】** `run.sh` 接 nvm + 调用新 `stop.sh` · 启停脚本闭环;无 `nvm.sh` 时 graceful 跳过。
 
@@ -309,6 +309,68 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 
 ---
 
+## v0.3.30 — 2026-08-25 · Nightly Release
+
+### Features
+
+- feat: add desktop development lifecycle (#1155)
+- feat: enforce release issue traceability (#1153)
+- feat: assemble product extensions from IDE manifest (#1144)
+- feat: consume BGM extension from npm (#1134)
+
+### Fixes
+
+- fix: pin server data-only extension resolution (#1154)
+- fix: confirm unowned runtime restart targets (#1149)
+- fix: advance marketplace setup build repair (#1145)
+- fix: support Windows setup without privileged symlinks (#1143)
+- fix: show floating packages in update report (#1136)
+- fix: bump build for IDE split standalone export (#1133)
+- fix: bump private server extension source handling (#1132)
+
+### Other
+
+- chore: pin interface split m6 candidate (#1156)
+- chore: pin interface split m5 consumers (#1150)
+- refactor: move npm extension sources to floating packages (#1146)
+- chore(interface): pin resize primitives extraction (#1148)
+- chore(interface): pin slot diagnostics extraction (#1142)
+- chore: bump editor to bde1d23 (#1141)
+- chore: pin marketplace scene-generator to main (#1139)
+- chore: manage agent monitor as floating package (#1138)
+- chore: bump interface split M2 pin (#1137)
+- chore: bump interface split M1 pins (#1135)
+- chore: mount ide via packages manifest (#1131)
+- release: v0.3.29 nightly release (#1130)
+
+
+---
+
+
+## v0.3.29 — 2026-08-24 · Nightly Release
+
+### Features
+
+- feat: consume Agent Monitor from npm (#1122)
+
+### Fixes
+
+- fix: recognize local plugin Vite listeners (#1126)
+- fix: bridge IDE hydration across gitlink cutover (#1127)
+- fix: restore private server setup install (#1123)
+- fix: build and serve extension iframe artifacts (#1121)
+
+### Other
+
+- chore: align video game runtime integration (#1120)
+- chore(submodules): bump chat → 24ec92d, interface → 3c9ca01 (#1119)
+- chore(submodules): bump marketplace → 0fde9ac (#1118)
+- chore: pin IDE product composition fix (#1117)
+
+
+---
+
+
 ## v0.3.28 — 2026-08-13 · Nightly Release
 
 ### 新特性
@@ -397,7 +459,7 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 - feat(ci): isolate trusted recursive inputs from PR code (#812)
 - feat(ci): materialize recursive inputs with exact provenance (#810)
 - feat: add ForgeaX game CLI plugin (#675)
-- feat: adopt wb-game-video 0.7.6 (#809)
+- feat: adopt video-game 0.7.6 (#809)
 
 ### 修复
 
@@ -436,7 +498,7 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 - chore: pin marketplace to persona refactor (#776)
 - chore(deps): bump editor + interface pins to main (dock tab close/pop-out clicks + React edge pin) (#771)
 - chore(studio): consume merged editor runtime isolation
-- chore: bump workbench npm stack to wb-game-video 0.3.1 (#764)
+- chore: bump workbench npm stack to video-game 0.3.1 (#764)
 - chore(deps): bump interface + editor pins (content browser locate) (#765)
 - chore: pin marketplace to main (#759)
 - chore: bump editor pin to 52d638fd (particle effect editor) (#761)
@@ -638,7 +700,7 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 - chore(interface): bump pin → e1039cc (host-sdk decouple + graceful session/workbench clients)
 - chore(deps): bump settings pin → 2872f8a (back on main lineage + mirror-gate fix)
 - chore(submodules): bump pins to latest main
-- docs(spec): add wb-game-video plugin extension protocol (SPEC)
+- docs(spec): add video-game plugin extension protocol (SPEC)
 - chore(deps): bump chat pin → f3b7829 (i18n agent status labels merge)
 - chore(editor): bump pin → 930561a (wire the pointer-capture/template engine fix) (#338)
 - chore(editor): bump pin → 72bb82a (hello5 pointer-capture + material-strip fixes) (#337)
@@ -667,7 +729,7 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 ### 新特性
 
 - feat(deploy/dev): container image + init.sh for cloud dev environments
-- feat(blueprint): implement foundational components for wb-game-video orchestration
+- feat(blueprint): implement foundational components for video-game orchestration
 
 ### 修复
 
@@ -679,7 +741,7 @@ credentials it needs (Kling for `wb-anim`; Gemini/Claude/Azure for
 ### 其他
 
 - chore(marketplace): bump narrative EN tag options & confirm buttons (#311)
-- chore(marketplace): bump pin to 6cfe1ee (add wb-game-video bundled videos)
+- chore(marketplace): bump pin to 6cfe1ee (add video-game bundled videos)
 - chore(editor): bump editor pin to game-template double-scene fix (#309)
 - chore: bump agent-host to 0.1.4 (RpcConnection.isOpen) for server sidecar eviction
 - chore: bump marketplace pin for wb-narrative i18n zh fix

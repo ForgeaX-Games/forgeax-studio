@@ -363,7 +363,7 @@ describe('AI-native scanner', () => {
     `, { setLocalResult: 'host.set_local_result' });
 
     expect(result.edges).toEqual([]);
-    expect(result.edges.some((edge) => edge.effect_id === 'server.delete_api_workbench_games_slug')).toBe(false);
+    expect(result.edges.some((edge) => edge.effect_id === 'server.delete_api_projects_slug')).toBe(false);
     expect(result.controls[0]?.propagation).toBe('manual-pool');
   });
 
@@ -386,18 +386,18 @@ describe('AI-native scanner', () => {
 
   it('keeps a trusted receiver call as a distinct effect', () => {
     const result = fixtureScan(`
-      import { getWorkbenchClient } from '../../store';
+      import { getStudioProjectClient } from '../../store';
       export function Host({ hardDelete }) {
         return <button onClick={async () => {
-          if (hardDelete) await getWorkbenchClient().deleteGame('demo');
-          else await fetch('/api/workbench/games/demo', { method: 'DELETE' });
+          if (hardDelete) await getStudioProjectClient().deleteProject('demo');
+          else await fetch('/api/projects/demo', { method: 'DELETE' });
         }}>Delete</button>;
       }
     `);
 
     expect(result.edges.map((edge) => edge.effect_id)).toEqual([
-      'server.delete_api_workbench_games_demo',
-      'server.delete_api_workbench_games_slug',
+      'server.delete_api_projects_demo',
+      'server.delete_api_projects_slug',
     ]);
   });
 

@@ -26,6 +26,14 @@ reasoning and game-code edits; the plugin owns ForgeaX Runtime lifecycle and fee
 - Reading runtime errors or engine logs: read the file path returned in
   \`runtime_logs.local_file\` with your own file-reading tool. Log tailing is
   deliberately not an MCP tool — the log is a file, so read it like one.
+- Generating art or 3D assets ("make a sprite", "I need a texture", "generate a
+  model of…"): call \`forgeax_generate_image\` (text-to-image, or image-to-image
+  with a local \`image\`) or \`forgeax_generate_3d\` (text-to-3D via \`prompt\`,
+  image-to-3D via \`image\`). Both save into the active game's \`assets/\` directory
+  and return the project-relative path to reference from code. Image-to-3D accepts a
+  public https URL, or a local file path when COS is configured (it is uploaded and
+  passed as a short-lived presigned URL). They need \`FORGEAX_LITELLM_API_KEY\` (and
+  \`FORGEAX_COS_*\` for local-file image-to-3D) in the environment.
 - Creating a game, switching the active game, installing or upgrading the plugin:
   these are one-time operations and are CLI subcommands, not MCP tools. Run
   \`npx -y -p @forgeax/game forgeax-game <init|use|doctor|devkit|upgrade>\`.

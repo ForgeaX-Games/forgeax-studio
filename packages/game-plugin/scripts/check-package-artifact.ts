@@ -1,78 +1,82 @@
 #!/usr/bin/env bun
 
-import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 
-const packageRoot = resolve(import.meta.dir, '..');
 const tarball = process.argv[2] ? resolve(process.argv[2]) : undefined;
 if (!tarball || !existsSync(tarball)) {
   throw new Error('usage: bun scripts/check-package-artifact.ts <path-to-npm-tarball>');
 }
 
-const listed = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' });
-if (listed.status !== 0) throw new Error(`cannot list package tarball: ${listed.stderr}`);
-const entries = new Set(listed.stdout.split(/\r?\n/).filter(Boolean));
-const required = [
-  'package/assets/runtime-manifest.json',
-  'package/assets/engine-sdk/engine-version.json',
-  'package/assets/engine-sdk/README.md',
-  'package/assets/engine-sdk/examples/game-default/main.ts',
+function tar(args: string[]): string {
+  const result = spawnSync('tar', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) throw new Error(`tar ${args.join(' ')} failed: ${result.stderr}`);
+  return result.stdout;
+}
+
+const entries = tar(['-tzf', tarball]).split(/\r?\n/).filter(Boolean);
+for (const required of [
+  'package/package.json',
+  'package/dist/main.js',
   'package/assets/skills/forgeax-game/SKILL.md',
-];
-for (const entry of required) {
-  if (!entries.has(entry)) throw new Error(`package tarball is missing ${entry}`);
+  'package/assets/skills/forgeax-game/references/engine-skills.md',
+  'package/README.md',
+]) {
+  if (!entries.includes(required)) throw new Error(`package tarball is missing ${required}`);
 }
 
-/**
- * A Runtime the plugin cannot teach a model to target is not shippable, so the
- * knowledge ladder is gated by shape rather than by an enumerated skill list.
- */
-const bundledEngineSkills = new Set(
-  [...entries]
-    .map((entry) => /^package\/assets\/engine-sdk\/skills\/([^/]+)\/SKILL\.md$/.exec(entry)?.[1])
-    .filter((id): id is string => Boolean(id)),
-);
-if (bundledEngineSkills.size === 0) {
-  throw new Error('package tarball carries no Engine authoring skills under assets/engine-sdk/skills');
-}
-const sourceTrees = new Set(
-  [...entries]
-    .map((entry) => /^package\/assets\/engine-sdk\/source\/([^/]+)\/src\//.exec(entry)?.[1])
-    .filter((id): id is string => Boolean(id)),
-);
-if (sourceTrees.size === 0) {
-  throw new Error('package tarball is missing the Engine source escalation tree (assets/engine-sdk/source)');
-}
-
-const declaredSkills = new Set(
-  (JSON.parse(readFileSync(join(packageRoot, 'assets/engine-sdk/engine-version.json'), 'utf8')) as {
-    skills?: string[];
-  }).skills ?? [],
-);
-for (const id of declaredSkills) {
-  if (!bundledEngineSkills.has(id)) {
-    throw new Error(`engine-version.json declares Engine skill ${id} but the tarball does not carry it`);
+for (const entry of entries) {
+  const segments = entry.replaceAll('\\', '/').split('/');
+  if (entry.startsWith('/') || segments.includes('..')) throw new Error(`unsafe archive path: ${entry}`);
+  if (/^package\/(?:src|test|tests|scripts|node_modules)(?:\/|$)/u.test(entry)) {
+    throw new Error(`development payload leaked into package: ${entry}`);
   }
+  if (/^package\/assets\/(?:runtime|engine-sdk)(?:\/|$)/u.test(entry)) {
+    throw new Error(`Runtime payload leaked into Game: ${entry}`);
+  }
+  if (/\.map$|(?:^|\/)bun\.lock$/u.test(entry)) throw new Error(`map or lockfile leaked into package: ${entry}`);
 }
 
-const manifestPath = join(packageRoot, 'assets/runtime-manifest.json');
-if (!existsSync(manifestPath)) throw new Error(`missing local manifest: ${manifestPath}`);
-const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-  artifacts?: Array<{ source?: string; sha256?: string; format?: string }>;
+const manifest = JSON.parse(tar(['-xOf', tarball, 'package/package.json'])) as {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  os?: string[];
+  cpu?: string[];
+  files?: string[];
 };
-const artifact = manifest.artifacts?.[0];
-if (!artifact?.source || artifact.format !== 'archive' || !artifact.sha256) {
-  throw new Error('runtime manifest does not describe a verified archive artifact');
+// The repository manifest is the single source of truth for release identity;
+// the workflow separately guarantees the tag equals its version.
+const repo = JSON.parse(readFileSync(resolve(import.meta.dir, '..', 'package.json'), 'utf8')) as {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, string>;
+};
+if (manifest.name !== repo.name || manifest.version !== repo.version) {
+  throw new Error(
+    `unexpected package identity: ${manifest.name}@${manifest.version} (repository declares ${repo.name}@${repo.version})`,
+  );
 }
-const archivePath = join(packageRoot, 'assets', artifact.source.replace(/^\.\/assets\//, '').replace(/^\.\//, ''));
-if (!existsSync(archivePath)) throw new Error(`manifest artifact is missing: ${archivePath}`);
-const digest = createHash('sha256').update(readFileSync(archivePath)).digest('hex');
-if (digest !== artifact.sha256.toLowerCase()) {
-  throw new Error(`manifest checksum mismatch for ${basename(archivePath)}: ${digest}`);
+if (JSON.stringify(manifest.dependencies) !== JSON.stringify(repo.dependencies)) {
+  throw new Error('packed dependencies must equal the repository manifest exactly');
 }
-if (statSync(archivePath).size === 0) throw new Error('runtime archive is empty');
-console.log(
-  `Package artifact gate passed: ${tarball} (${bundledEngineSkills.size} Engine skills, ${sourceTrees.size} source trees)`,
-);
+const runtimePin = manifest.dependencies?.['@forgeax/game-runtime'];
+if (Object.keys(manifest.dependencies ?? {}).length !== 1 || !runtimePin || !/^\d+\.\d+\.\d+$/u.test(runtimePin)) {
+  throw new Error('@forgeax/game must depend exactly on a pinned @forgeax/game-runtime version');
+}
+if (manifest.optionalDependencies || manifest.os || manifest.cpu) {
+  throw new Error('@forgeax/game must remain platform-neutral and use a normal Universal dependency');
+}
+if (JSON.stringify(manifest.files) !== JSON.stringify(['dist', 'assets/skills', 'README.md'])) {
+  throw new Error('@forgeax/game publish files are broader than the approved surface');
+}
+
+const bundle = tar(['-xOf', tarball, 'package/dist/main.js']);
+if (!bundle.includes('@forgeax/game-runtime')) throw new Error('Game bundle does not retain its external Runtime import');
+if (bundle.includes('FORGEAX_STUDIO_ROOT') || bundle.includes('FORGEAX_RUNTIME_DEV_FALLBACK')) {
+  throw new Error('Game bundle retains a Studio checkout fallback');
+}
+
+console.log(`Package artifact gate passed: ${basename(tarball)} (thin Universal consumer)`);

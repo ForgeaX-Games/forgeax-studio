@@ -58,4 +58,26 @@ describe('source runtime process entrypoints', () => {
     expect(run).not.toContain('new StartLock(ROOT)');
   });
 
+  test('keeps the source run lock and recovery evidence until children and ports are clear', () => {
+    const run = readFileSync(join(SCRIPTS, 'run.ts'), 'utf8');
+
+    expect(run).toContain('let cleanupPromise: Promise<void> | null = null');
+    expect(run).toContain('const livePids = servicePids.filter((pid) => isAlive(pid));');
+    expect(run).toContain('const busyPorts = Object.values(managedPorts).filter((port) => isPortBusy(port));');
+    expect(run).toContain('lock.release();');
+    expect(run).toContain('process.on(\'exit\', () => {');
+    expect(run).toContain('never remove\n// recovery evidence or release run.lock');
+  });
+
+  test('owns standalone extension discovery, launch, port projection, and readiness', () => {
+    const run = readFileSync(join(SCRIPTS, 'run.ts'), 'utf8');
+
+    expect(run).toContain('discoverStandalonePlugins(');
+    expect(run).toContain('allocateStandaloneRuntimePlugins(');
+    expect(run).toContain('FORGEAX_EXTENSION_DEV_PORTS_FILE');
+    expect(run).toContain("launch(`plugin-${plugin.shortId}`");
+    expect(run).toContain('await waitForPort(plugin.frontendPort');
+    expect(run).toContain('extensions: extensions.map(({ shortId, frontendPort, backendPort })');
+  });
+
 });

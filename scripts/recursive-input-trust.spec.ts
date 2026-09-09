@@ -122,8 +122,8 @@ describe('trusted recursive input producer', () => {
     expect(wrongAttempt.ok).toBe(false);
   });
 
-  it('keeps the protected token out of the source-as-data producer step', () => {
-    const sourceAsDataStepStart = trustedWorkflow.indexOf('source-as-data');
+  it('keeps the protected publisher token out of the source-as-data mount step', () => {
+    const sourceAsDataStepStart = trustedWorkflow.indexOf('Fetch trusted independent IDE mount (source-as-data)');
     const sourceAsDataStepEnd = trustedWorkflow.indexOf('\n      - name:', sourceAsDataStepStart + 1);
     const sourceAsDataStep = trustedWorkflow.slice(
       sourceAsDataStepStart,
@@ -131,9 +131,10 @@ describe('trusted recursive input producer', () => {
     );
 
     expect(sourceAsDataStepStart).toBeGreaterThanOrEqual(0);
+    expect(sourceAsDataStep).toContain('INTERNAL_TOKEN');
     expect(sourceAsDataStep).not.toContain('MIRROR_TOKEN');
-    expect(sourceAsDataStep).not.toContain('secrets.');
     expect(trustedWorkflow).toContain('MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}');
-    expect(trustedWorkflow).toContain('MIRROR_DRY_RUN=1 bash .trusted-base/scripts/mirror/publish-multi.sh push');
+    expect(trustedWorkflow).toContain('MIRROR_DRY_RUN: \'1\'');
+    expect(trustedWorkflow).toContain('run: bash .trusted-base/scripts/mirror/publish-multi.sh push');
   });
 });

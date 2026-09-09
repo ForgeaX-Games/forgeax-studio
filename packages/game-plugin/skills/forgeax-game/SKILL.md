@@ -27,11 +27,13 @@ ask the user to clone ForgeaX Studio or start `bun fx`.
    1. **`forgeax-engine-*` skills** — how this Engine is meant to be used: schedules,
       lifecycles, and the invariants a type signature cannot state. Start here for any
       "how do I ..." question; `forgeax-engine-ecs` governs components and systems.
-      **Read [references/engine-skills.md](references/engine-skills.md) to pick the id.**
-      Ids do not track package names — importing `@forgeax/engine-render` does not mean a
+      Read [references/engine-skills.md](references/engine-skills.md), derived from the
+      Runtime package during the Game build, before choosing one. Ids do not track
+      package names — importing `@forgeax/engine-render` does not mean a
       `forgeax-engine-render` skill exists. A guessed id fails the lookup silently.
    2. **`.forgeax/engine-sdk/`** — the exact API surface: `packages/*/dist/*.d.ts` for
-      signatures, `examples/game-default/` for a game that already works.
+      signatures, `templates/game-default/` or `templates/game-empty/` for projects
+      that already work.
       Read [references/engine-authoring-traps.md](references/engine-authoring-traps.md)
       first: it lists the failures that render or run without error while still being
       wrong (fov units, dead keyboard, function-valued readpoints).
@@ -40,8 +42,8 @@ ask the user to clone ForgeaX Studio or start `bun fx`.
       contradicts them and you must trace an Engine-side bug. `forgeax://status`
       reports its path, also recorded as `sourceRoot` in `.forgeax/engine-sdk.json`.
 6. Make the smallest coherent change in the active game's directory.
-7. Call `forgeax_run_current_game`. It starts the verified bundled Runtime when
-   needed and reports the Runtime/Engine identity used by preview.
+7. Call `forgeax_run_current_game`. It builds or reuses the static preview through the
+   verified selected Runtime and reports the Runtime/Engine identity used by preview.
 8. Open the returned Play URL and verify the requested behavior. Follow
    [references/validation.md](references/validation.md).
 
@@ -51,8 +53,8 @@ ask the user to clone ForgeaX Studio or start `bun fx`.
 |:--|:--|
 | Project, game, service, or next-action status | `forgeax://status` |
 | Status when resources are unavailable | `forgeax_status_lite` |
-| Install/start the bundled Runtime and obtain preview/log locations | `forgeax_run_current_game` |
-| Learn how the Engine is meant to be used | `forgeax-engine-*` skills — ids in [references/engine-skills.md](references/engine-skills.md) |
+| Build/reuse the selected Runtime's static preview and obtain preview/log locations | `forgeax_run_current_game` |
+| Learn how the Engine is meant to be used | Installed `forgeax-engine-*` skills — ids in [references/engine-skills.md](references/engine-skills.md) |
 | Inspect Engine declarations, metadata, and examples | `.forgeax/engine-sdk/` |
 | Trace Engine behavior a skill and the declarations cannot settle | Engine source (`sourceRoot`) |
 | Diagnose a game that runs but renders or steers wrong | [references/engine-authoring-traps.md](references/engine-authoring-traps.md) |
@@ -69,10 +71,11 @@ surface exists so the model sees only high-frequency game-loop operations.
 - **No project:** run `forgeax-game init --game <slug>`; do not ask the user to prepare
   a ForgeaX checkout.
 - **No active game:** list `.forgeax/games/`, then run `forgeax-game use <slug>`.
-- **Runtime down:** call `forgeax_run_current_game`; it installs and starts the
-  manifest-selected bundled Runtime. Do not silently fall back to a Studio checkout.
+- **Runtime down:** call `forgeax_run_current_game`; it installs the platform-selected
+  Runtime package, builds the active game, and serves the static preview. Do not
+  silently fall back to a source checkout.
 - **Engine SDK missing:** run `forgeax-game upgrade` (or re-run `init`) before writing
-  imports. Do not guess an API that is absent from the bundled snapshot.
+  imports. Do not guess an API that is absent from the installed snapshot.
 - **Engine authoring skills missing or incomplete:** `forgeax://status` reports how many
   of the bundled `forgeax-engine-*` skills are installed. If any are missing, run
   `forgeax-game devkit install` and start a new session; writing game code without them

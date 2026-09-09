@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -17,7 +17,13 @@ import { join, resolve } from 'node:path';
 const BINARY = resolve(import.meta.dir, '..', 'dist', 'main.js');
 
 function run(args: readonly string[], cwd: string) {
-  const result = spawnSync(process.execPath, [BINARY, ...args], { cwd, encoding: 'utf8' });
+  const home = join(cwd, 'home');
+  mkdirSync(home, { recursive: true });
+  const result = spawnSync(process.execPath, [BINARY, ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
   return { ...result, output: `${result.stdout}${result.stderr}` };
 }
 
@@ -36,6 +42,7 @@ describe('client selection', () => {
       const result = run(['init', '--ide', 'nosuchide'], dir);
       expect(result.status).not.toBe(0);
       expect(result.output).toMatch(/unknown client/i);
+      expect(result.output).toContain('zcode');
     });
   });
 
@@ -62,6 +69,33 @@ describe('client selection', () => {
       expect(result.output).toMatch(/SKIPPED .*not installed yet/);
       // The project is still created; only the host mount is withheld.
       expect(result.output).toMatch(/Created and activated game demo/);
+    });
+  });
+
+  test('init recognizes ZCode config and mounts its native project skill', () => {
+    withDir((dir) => {
+      const configDir = join(dir, 'home', '.zcode', 'cli');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, 'config.json'),
+        JSON.stringify({
+          mcp: {
+            servers: {
+              forgeax: {
+                command: 'npx',
+                args: ['-y', '-p', '@forgeax/game', 'forgeax-game', 'mcp'],
+              },
+            },
+          },
+        }),
+      );
+
+      const result = run(['init', '--game', 'demo', '--ide', 'zcode'], dir);
+      expect(result.status).toBe(0);
+      expect(result.output).toContain('game development skills for: zcode');
+      expect(existsSync(join(dir, '.zcode', 'skills', 'forgeax-game', 'SKILL.md'))).toBeTrue();
+      expect(existsSync(join(dir, '.zcode', 'rules'))).toBeFalse();
+      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toContain('ForgeaX game development');
     });
   });
 });

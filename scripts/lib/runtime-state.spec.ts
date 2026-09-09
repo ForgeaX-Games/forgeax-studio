@@ -41,6 +41,22 @@ describe('RuntimeState contract', () => {
     expect(runtimeStateBelongsToInstance(instance, readRuntimeState(startup.stateFile))).toBe(true);
   });
 
+  test('requires the Engine MCP listener in managed state exactly when enabled', () => {
+    const { startup } = fixture(1, undefined, { FORGEAX_MCP_HTTP: '1', FORGEAX_MCP_PORT: '28940' });
+
+    expect(() => new RuntimeStateStore(startup, 123, {
+      server: startup.server.port,
+      interface: startup.interface.port,
+      engine: startup.engine.port,
+    })).toThrow('enabled Engine MCP port');
+    expect(new RuntimeStateStore(startup, 123, {
+      server: startup.server.port,
+      interface: startup.interface.port,
+      engine: startup.engine.port,
+      'engine-mcp': startup.mcp.port,
+    }).writeStarting().managedPorts['engine-mcp']).toBe(28940);
+  });
+
   test('rejects state from another root and every instance-owned path drift', () => {
     const owner = fixture(1);
     const other = fixture(2);
@@ -150,7 +166,7 @@ describe('RuntimeState contract', () => {
     const { instance, startup } = fixture(1);
     const owners = {
       server: { packageDir: join(instance.root, 'packages/server-override'), entry: 'src/override-main.ts' },
-      interface: { dir: join(instance.root, 'packages/interface') },
+      interface: { dir: join(instance.root, 'packages/ide') },
     };
     new RuntimeStateStore(startup, 123, {
       server: startup.server.port,
@@ -216,7 +232,7 @@ describe('RuntimeState contract', () => {
     const ports = { server: startup.server.port, interface: startup.interface.port, engine: startup.engine.port };
     const overrideState = new RuntimeStateStore(startup, 123, ports, {
       server: { packageDir: join(instance.root, 'packages/server-override'), entry: 'src/override-main.ts' },
-      interface: { dir: join(instance.root, 'packages/interface') },
+      interface: { dir: join(instance.root, 'packages/ide') },
     }).writeStarting();
     expect(runtimeStateBelongsToInstance(instance, overrideState)).toBe(true);
     for (const owners of [
@@ -243,6 +259,7 @@ function fixture(slot: number, publicOrigin?: string, overrides: NodeJS.ProcessE
   const root = mkdtempSync(join(tmpdir(), `forgeax-runtime-state-slot-${slot}-`));
   roots.push(root);
   writeServerRole(root, 'server', 'src/main.ts');
+  mkdirSync(join(root, 'packages/ide'), { recursive: true });
   writeRuntimeInstanceConfig({ root, slot });
   const instance = resolveRuntimeInstance({ root });
   const startup = resolveStartupEnvironment({

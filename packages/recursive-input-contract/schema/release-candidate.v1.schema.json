@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:forgeax:release-candidate:v1",
+  "title": "ForgeaX release candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "candidateId", "releaseSurface", "rootRevision", "recursiveInputIdentity", "attempt", "expectedSubjects", "actualSubjects", "criticalInputs"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "releaseSurface": { "type": "string", "enum": ["mirror-forward", "trusted-dry-run", "route-back", "desktop", "game-runtime"] },
+    "rootRevision": { "type": "string", "minLength": 1 },
+    "recursiveInputIdentity": { "type": "object", "additionalProperties": false, "required": ["repository", "revision", "inputDigest"], "properties": { "repository": { "type": "string", "minLength": 1 }, "revision": { "type": "string", "minLength": 1 }, "inputDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } },
+    "attempt": { "type": "string", "minLength": 1 },
+    "expectedSubjects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/subject" } },
+    "actualSubjects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/subject" } },
+    "criticalInputs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/criticalInput" } }
+  },
+  "$defs": {
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subjectId", "name", "digest", "digestAlgorithm"],
+      "properties": {
+        "subjectId": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string" },
+        "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "digestAlgorithm": { "type": "string", "const": "sha256" },
+        "sbom": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "subjectDigest"],
+          "properties": {
+            "status": { "type": "string", "enum": ["applicable", "inapplicable"] },
+            "subjectDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "reason": { "type": "string", "minLength": 1 }
+          },
+          "allOf": [
+            { "if": { "properties": { "status": { "const": "inapplicable" } } }, "then": { "required": ["reason"] } }
+          ]
+        }
+      }
+    },
+    "criticalInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputId", "kind", "identity", "status"],
+      "properties": {
+        "inputId": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["action", "cli", "sidecar", "scanner", "ruleset", "signing"] },
+        "identity": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["resolved", "unverified"] }
+      }
+    }
+  }
+}

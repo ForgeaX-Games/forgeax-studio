@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { INPUT_CLASSES, TRUST_SCOPES, type InputClass, type TrustScope } from './schema.ts';
+import { validateReleaseProducerManifest } from './release/producer-manifest.ts';
 
 export const CI_MANIFEST_VERSION = 'recursive-input-ci.v1' as const;
 export const CI_OUTPUT_CONTRACT_VERSION = 'recursive-input-ci-result.v1' as const;
@@ -33,8 +34,12 @@ export const CI_ERROR_CODES = [
 ] as const;
 
 export const CI_REQUIRED_CONTEXTS = [
+  // The root integration gate keeps the historical Studio QA context name for
+  // ruleset compatibility, but it no longer executes product QA. Keep this
+  // list, the producer manifest, workflow, and live `basic` ruleset in
+  // lockstep — the ruleset audit fails on any drift between the four.
   'typecheck + build + script smoke',
-  'SFC-07 stable aggregate',
+  'Studio QA required gate',
   'Runtime validation aggregate',
   'dependency-cruiser boundary lint',
   'mirror dry-run (assemble + scrub + gate)',
@@ -74,6 +79,7 @@ export type CiGovernanceExpectation = {
   repository: string;
   ref: 'main';
   enforcement: 'active';
+  strictRequiredStatusChecks: false;
   bypassActors: string[];
   currentUserCanBypass: 'never';
 };
@@ -130,6 +136,7 @@ export type CiContractFiles = {
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const REQUIRED_MANIFEST_KEYS = ['specVersion', 'manifestVersion', 'outputContractVersion', 'scope', 'producers', 'consumers', 'requiredContexts', 'governance'];
+const MANIFEST_KEYS = [...REQUIRED_MANIFEST_KEYS, 'releaseIntegrity'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -179,15 +186,27 @@ function validateProducer(value: unknown, index: number): CiContractError[] {
   return errors;
 }
 
+function validateReleaseIntegrity(value: unknown): CiContractError[] {
+  if (value === undefined) return [error('recursive-input.ci.release-integrity-invalid', '$.releaseIntegrity', 'canonical manifest must include the release registry')];
+  if (!isRecord(value)) return [error('recursive-input.ci.release-integrity-invalid', '$.releaseIntegrity', 'release registry must be an object')];
+  const validation = validateReleaseProducerManifest(value);
+  if (validation.ok) return [];
+  return validation.errors.map((releaseError) => {
+    const nestedPath = releaseError.path === '$' ? '$.releaseIntegrity' : `$.releaseIntegrity${releaseError.path.slice(1)}`;
+    return error('recursive-input.ci.release-integrity-invalid', nestedPath, `${releaseError.code}: ${releaseError.message}`);
+  });
+}
+
 export function validateCiManifest(value: unknown): CiManifestValidation {
   const errors: CiContractError[] = [];
-  if (!isRecord(value) || !hasOnlyKeys(value, REQUIRED_MANIFEST_KEYS)) {
+  if (!isRecord(value) || !hasOnlyKeys(value, MANIFEST_KEYS)) {
     return { ok: false, errors: [error('recursive-input.ci.manifest-invalid', '$', 'manifest is not a closed object')] };
   }
   if (value.specVersion !== 1) errors.push(error('recursive-input.ci.manifest-invalid', '$.specVersion', 'must be 1'));
   if (value.manifestVersion !== CI_MANIFEST_VERSION) errors.push(error('recursive-input.ci.manifest-invalid', '$.manifestVersion', `must be ${CI_MANIFEST_VERSION}`));
   if (value.outputContractVersion !== CI_OUTPUT_CONTRACT_VERSION) errors.push(error('recursive-input.ci.unsupported-output-version', '$.outputContractVersion', `must be ${CI_OUTPUT_CONTRACT_VERSION}`));
   if (value.scope !== 'recursive-input-direct-consumers') errors.push(error('recursive-input.ci.scope-invalid', '$.scope', 'must remain recursive-input-direct-consumers'));
+  errors.push(...validateReleaseIntegrity(value.releaseIntegrity));
 
   if (!Array.isArray(value.producers) || value.producers.length === 0) {
     errors.push(error('recursive-input.ci.manifest-invalid', '$.producers', 'must be non-empty'));
@@ -253,11 +272,11 @@ export function validateCiManifest(value: unknown): CiManifestValidation {
     });
   }
 
-  if (!isRecord(value.governance) || !hasOnlyKeys(value.governance, ['repository', 'ref', 'enforcement', 'bypassActors', 'currentUserCanBypass'])) {
+  if (!isRecord(value.governance) || !hasOnlyKeys(value.governance, ['repository', 'ref', 'enforcement', 'strictRequiredStatusChecks', 'bypassActors', 'currentUserCanBypass'])) {
     errors.push(error('recursive-input.ci.governance-invalid', '$.governance', 'governance expectation is not closed'));
   } else {
     if (typeof value.governance.repository !== 'string' || value.governance.repository.length === 0) errors.push(error('recursive-input.ci.governance-invalid', '$.governance.repository', 'must be non-empty'));
-    if (value.governance.ref !== 'main' || value.governance.enforcement !== 'active' || value.governance.currentUserCanBypass !== 'never') errors.push(error('recursive-input.ci.governance-invalid', '$.governance', 'must be active main enforcement with no bypass capability'));
+    if (value.governance.ref !== 'main' || value.governance.enforcement !== 'active' || value.governance.strictRequiredStatusChecks !== false || value.governance.currentUserCanBypass !== 'never') errors.push(error('recursive-input.ci.governance-invalid', '$.governance', 'must be active main enforcement with non-strict required checks and no bypass capability'));
     if (!Array.isArray(value.governance.bypassActors) || value.governance.bypassActors.length !== 0) errors.push(error('recursive-input.ci.governance-invalid', '$.governance.bypassActors', 'must be empty'));
   }
   return { ok: errors.length === 0, errors };

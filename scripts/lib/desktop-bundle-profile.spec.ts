@@ -35,13 +35,13 @@ describe('desktop bundle profile', () => {
     expect(desktopBundleCapabilities('lite')).toEqual({
       sampleGames: false,
       productExtensions: false,
-      productWorkbenchHost: false,
+      productExtensionHost: false,
       agentExtensions: true,
     });
     expect(desktopBundleCapabilities('full')).toEqual({
       sampleGames: true,
       productExtensions: true,
-      productWorkbenchHost: true,
+      productExtensionHost: true,
       agentExtensions: true,
     });
     expect(Object.keys(desktopBundleCapabilities('lite')).sort()).toEqual(
@@ -57,7 +57,7 @@ describe('desktop bundle profile', () => {
       capabilities: {
         sampleGames: true,
         productExtensions: true,
-        productWorkbenchHost: true,
+        productExtensionHost: true,
         agentExtensions: true,
       },
     });

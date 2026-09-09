@@ -10,9 +10,13 @@
   "assistant": {
     "name": "Forge",
     "avatarSrc": "assets/forge-avatar.png",
-    "personaOverride": {
-      "zh": "assets/persona-overlay.zh.md",
-      "en": "assets/persona-overlay.en.md"
+    "agent": {
+      "id": "forge",
+      "personaFiles": {
+        "zh": "personas/forge.zh.md",
+        "en": "personas/forge.en.md"
+      },
+      "tools": ["gen3d:*", "character:*", "team:*"]
     },
     "cardName": {
       "zh": "主线制作人",

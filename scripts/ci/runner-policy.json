@@ -11,17 +11,19 @@
   ],
   "hostedRunnerAllowlist": [
     {
-      "workflow": ".github/workflows/desktop-build.yml",
-      "job": "build",
+      "workflow": ".github/workflows/game-runtime-publish.yml",
+      "job": "runtime-scope",
       "runners": [
-        "macos-latest",
-        "macos-13",
-        "windows-latest"
+        "ubuntu-latest"
       ],
       "events": [
+        "pull_request",
+        "push:branch",
+        "push:tag",
+        "schedule",
         "workflow_dispatch"
       ],
-      "reason": "Native Tauri installer builds require the target operating system and SDK."
+      "reason": "Runtime scope only derives an immutable affected-platform manifest and must complete before scarce native and self-hosted capacity is admitted."
     },
     {
       "workflow": ".github/workflows/game-runtime-publish.yml",
@@ -30,25 +32,48 @@
         "macos-latest",
         "windows-latest"
       ],
+      "dynamicSelfHostedRunners": [
+        [
+          "self-hosted",
+          "Linux",
+          "X64",
+          "heavy"
+        ]
+      ],
       "events": [
+        "pull_request",
+        "push:branch",
+        "push:tag",
         "schedule",
-        "workflow_dispatch",
-        "push:tag"
-      ],
-      "reason": "Native Runtime packages run at low frequency on nightly/manual/tag validation; Linux stays self-hosted."
-    },
-    {
-      "workflow": ".github/workflows/weekly-release.yml",
-      "job": "desktop-build",
-      "runners": [
-        "macos-latest",
-        "macos-13",
-        "windows-latest"
-      ],
-      "events": [
         "workflow_dispatch"
       ],
-      "reason": "The release workflow builds signed native desktop installers."
+      "reason": "The tested affected-platform manifest admits only required native rows; macOS and Windows require hosted SDKs while Linux remains on the heavy self-hosted tier."
+    },
+    {
+      "workflow": ".github/workflows/submodule-pins.yml",
+      "job": "prerequisite-wait",
+      "runners": [
+        "ubuntu-latest"
+      ],
+      "events": [
+        "pull_request",
+        "push:branch",
+        "workflow_dispatch"
+      ],
+      "reason": "The prerequisite observer performs only GitHub API polling and must not reserve scarce self-hosted capacity while other required checks run."
+    },
+    {
+      "workflow": ".github/workflows/submodule-pins.yml",
+      "job": "check",
+      "runners": [
+        "ubuntu-latest"
+      ],
+      "events": [
+        "pull_request",
+        "push:branch",
+        "workflow_dispatch"
+      ],
+      "reason": "The required-context reporter only projects structured prerequisite and validator results; it does not materialize or execute Studio source."
     }
   ]
 }

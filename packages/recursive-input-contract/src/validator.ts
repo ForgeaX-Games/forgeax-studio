@@ -164,13 +164,21 @@ export function validateRecursiveInputResult(
   candidate: unknown,
   context: RecursiveInputValidationContext,
 ): RecursiveInputValidation {
-  const fallback = (failure: RecursiveInputFailure, retryable = false): RecursiveInputValidation => ({
-    ok: false,
-    result: withFailure({ ...context, producer: 'validator', failure: undefined }, {
-      ...failure,
-      retryable: retryable || failure.retryable,
-    }),
-  });
+  const fallback = (failure: RecursiveInputFailure, retryable = false): RecursiveInputValidation => {
+    const draft: RecursiveInputResultDraft = {
+      ...context,
+      producer: 'validator',
+      failure: undefined,
+      ...(isRecursiveInputResult(candidate) && candidate.ci ? { ci: candidate.ci } : {}),
+    };
+    return {
+      ok: false,
+      result: withFailure(draft, {
+        ...failure,
+        retryable: retryable || failure.retryable,
+      }),
+    };
+  };
 
   if (!isRecursiveInputResult(candidate)) {
     return fallback(failureFor('schema-invalid', 'schema-valid recursive input result', 'invalid result shape'));

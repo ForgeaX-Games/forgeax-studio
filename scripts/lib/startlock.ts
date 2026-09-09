@@ -7,8 +7,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createServer, type Server } from 'node:net';
-import { isAlive } from './proc.ts';
+import { canConnectPort, isAlive } from './proc.ts';
+import { RuntimePortStartupLock } from './runtime-port-lock.ts';
 
 export interface StartLockOwner {
   readonly schemaVersion: 1;
@@ -19,12 +19,16 @@ export interface StartLockOwner {
 const OWNER_FILE = 'owner.json';
 const adopted = new Map<string, StartLock>();
 export interface CleanupLockOptions {
-  /** Instance-owned core server port used as an OS-released recovery guard. */
+  /** Instance-owned core server port used as the host-level recovery mutex. */
   readonly guardPort: number;
   /** Test seam: invoked only after this caller atomically isolated a stale lock. */
   readonly onQuarantined?: () => void | Promise<void>;
   /** Test seam for the guard close boundary. Production callers omit this. */
-  readonly closeGuard?: (guard: Server) => Promise<void>;
+  readonly closeGuard?: (guard: CleanupGuard) => Promise<void>;
+}
+
+export interface CleanupGuard {
+  release(): void;
 }
 
 export interface InstanceInitLockOptions {
@@ -212,7 +216,7 @@ export class StartLock {
   static async acquireForCleanup(root: string, options: CleanupLockOptions): Promise<StartLock> {
     const lock = new StartLock(root);
     mkdirSync(join(lock.lockDir, '..'), { recursive: true });
-    const guard = await acquireCleanupGuard(options.guardPort);
+    const guard = await acquireCleanupGuard(root, options.guardPort);
     let quarantine = '';
     let published = false;
     let primaryError: unknown;
@@ -322,29 +326,33 @@ export class StartLock {
   }
 }
 
-function acquireCleanupGuard(guardPort: number): Promise<Server> {
+async function acquireCleanupGuard(root: string, guardPort: number): Promise<CleanupGuard> {
   if (!Number.isSafeInteger(guardPort) || guardPort < 1 || guardPort > 65_535) {
-    return Promise.reject(new Error(`cleanup guard port must be between 1 and 65535, got '${guardPort}'`));
+    throw new Error(`cleanup guard port must be between 1 and 65535, got '${guardPort}'`);
   }
-  return new Promise((resolve, reject) => {
-    const guard = createServer();
-    const fail = (error: Error) => {
-      guard.removeAllListeners();
-      reject(new Error(`could not acquire cleanup recovery guard on 127.0.0.1:${guardPort}: ${error.message}`));
-    };
-    guard.once('error', fail);
-    guard.once('listening', () => {
-      guard.removeListener('error', fail);
-      resolve(guard);
-    });
-    guard.listen({ host: '127.0.0.1', port: guardPort, exclusive: true });
-  });
+  let guard: RuntimePortStartupLock;
+  try {
+    // Do not bind the service port as a recovery mutex: a recently closed
+    // listener can leave the port unbindable even when lsof reports no LISTEN
+    // owner. The host-level lease serializes cleanup/start transitions without
+    // creating another TCP lifecycle on the application port.
+    guard = await RuntimePortStartupLock.acquire(guardPort, { root, waitMs: 0 });
+  } catch (error) {
+    throw new Error(`could not acquire cleanup recovery guard on 127.0.0.1:${guardPort}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  // Preserve the fail-closed behavior for an actively listening owner. A
+  // listener that appears after this check is caught by canFinalize() while
+  // the cleanup lease is held.
+  if (await canConnectPort(guardPort)) {
+    guard.release();
+    throw new Error(`could not acquire cleanup recovery guard on 127.0.0.1:${guardPort}: port is actively listening`);
+  }
+  return guard;
 }
 
-function closeCleanupGuard(guard: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    guard.close((error) => error ? reject(error) : resolve());
-  });
+function closeCleanupGuard(guard: CleanupGuard): Promise<void> {
+  guard.release();
+  return Promise.resolve();
 }
 
 export class StartLockHeldError extends Error {

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { RecursivePin, SourceIdentity } from './schema.ts';
 
 export type AuthoritativeGitGraphNode = {
@@ -21,16 +21,70 @@ export type ProjectedGitGraph = {
   unreachablePaths: string[];
 };
 
-function git(cwd: string, args: string[]): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+type SubmoduleEntry = {
+  name: string;
+  path: string;
+};
+
+function gitOutput(cwd: string, args: string[]): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' });
 }
 
-function submodulePaths(repo: string): string[] {
+function git(cwd: string, args: string[]): string {
+  return gitOutput(cwd, args).trim();
+}
+
+function submoduleReachable(repo: string, entry: SubmoduleEntry, child: string): boolean {
+  try {
+    const status = gitOutput(repo, ['submodule', 'status', '--', entry.path]);
+    const line = status.split(/\r?\n/).find((candidate) => candidate.length > 0);
+    // Git's leading status marker is meaningful here: '-' means that the
+    // worktree is not initialized.  '+' and 'U' still have a reachable
+    // worktree; pin correctness is enforced by the materializer post-check.
+    if (line && line[0] !== '-') return true;
+  } catch {
+    // Fall through to the explicit module-cache check below.  Some runners
+    // keep submodule gitdirs outside the worktree, which can make the status
+    // command lose its leading marker even though Git can still operate on
+    // the cached checkout.
+  }
+
+  try {
+    const moduleGitDirValue = git(repo, ['rev-parse', '--git-path', `modules/${entry.name}`]);
+    const moduleGitDir = resolve(repo, moduleGitDirValue);
+    if (!existsSync(moduleGitDir) || !existsSync(child)) return false;
+    if (!readdirSync(child).some((name) => name !== '.git')) return false;
+    execFileSync(
+      'git',
+      ['--git-dir', moduleGitDir, 'rev-parse', '--verify', 'HEAD^{commit}'],
+      { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'ignore', 'ignore'] },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function submoduleEntries(repo: string): SubmoduleEntry[] {
   try {
     return git(repo, ['config', '--file', '.gitmodules', '--get-regexp', 'path'])
       .split(/\r?\n/)
-      .map((line) => line.trim().split(/\s+/)[1])
-      .filter((path): path is string => Boolean(path));
+      .map((line) => {
+        const [key, ...pathParts] = line.trim().split(/\s+/);
+        if (!key?.startsWith('submodule.') || !key.endsWith('.path') || pathParts.length === 0) return null;
+        return { name: key.slice('submodule.'.length, -'.path'.length), path: pathParts.join(' ') };
+      })
+      .filter((entry): entry is SubmoduleEntry => {
+        if (entry === null || entry.name.length === 0 || entry.path.length === 0) return false;
+        try {
+          // update=none is the committed marketplace declaration for a retired
+          // recursive input. It remains a gitlink for history, but is not part
+          // of the current materialized input graph or its digest.
+          return git(repo, ['config', '--file', '.gitmodules', '--get', `submodule.${entry.name}.update`]) !== 'none';
+        } catch {
+          return true;
+        }
+      });
   } catch {
     return [];
   }
@@ -46,11 +100,11 @@ export function readAuthoritativeGitGraph(root: string): AuthoritativeGitGraph {
     }
   })();
 
-  const walk = (repo: string, prefix: string): AuthoritativeGitGraphNode[] => submodulePaths(repo).map((path) => {
-    const fullPath = prefix ? `${prefix}/${path}` : path;
-    const pin = git(repo, ['rev-parse', `:${path}`]);
-    const child = join(repo, path);
-    const reachable = existsSync(join(child, '.git'));
+  const walk = (repo: string, prefix: string): AuthoritativeGitGraphNode[] => submoduleEntries(repo).map((entry) => {
+    const fullPath = prefix ? `${prefix}/${entry.path}` : entry.path;
+    const pin = git(repo, ['rev-parse', `:${entry.path}`]);
+    const child = join(repo, entry.path);
+    const reachable = submoduleReachable(repo, entry, child);
     return {
       path: fullPath,
       pin,

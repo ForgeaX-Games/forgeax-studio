@@ -21,6 +21,48 @@ export function expectedTarballName(packageName: string): string {
   return `forgeax-${packageName.slice('@forgeax/'.length)}-${RUNTIME_VERSION}.tgz`;
 }
 
+function acceptCommonSdkSnapshot(commonTarball: string): void {
+  const entries = runTar(['-tzf', commonTarball]).split(/\r?\n/).filter(Boolean);
+  const versionEntry = 'package/assets/engine-sdk/engine-version.json';
+  if (!entries.includes(versionEntry)) throw new Error('common package has no Engine SDK snapshot');
+  const sdkVersion = JSON.parse(runTar(['-xOf', commonTarball, versionEntry])) as {
+    packageCount?: number;
+    packages?: string[];
+    packageDirectories?: string[];
+    templates?: string[];
+    skills?: string[];
+    sourcePackages?: string[];
+  };
+  const topDirectories = (prefix: string): string[] => [...new Set(
+    entries.flatMap((entry) => {
+      if (!entry.startsWith(prefix)) return [];
+      const name = entry.slice(prefix.length).split('/')[0];
+      return name ? [name] : [];
+    }),
+  )].sort();
+  const assertList = (label: string, declared: readonly string[] | undefined, actual: readonly string[]): void => {
+    if (JSON.stringify(declared ?? []) !== JSON.stringify(actual)) {
+      throw new Error(`common Engine SDK ${label} metadata does not match packed files`);
+    }
+  };
+  if (sdkVersion.packageCount !== sdkVersion.packages?.length) {
+    throw new Error('common Engine SDK packageCount does not match packages');
+  }
+  assertList('packageDirectories', sdkVersion.packageDirectories, topDirectories('package/assets/engine-sdk/packages/'));
+  assertList('templates', sdkVersion.templates, topDirectories('package/assets/engine-sdk/templates/'));
+  assertList('skills', sdkVersion.skills, topDirectories('package/assets/engine-sdk/skills/'));
+  assertList('sourcePackages', sdkVersion.sourcePackages, topDirectories('package/assets/engine-sdk/source/'));
+  for (const required of ['game-default', 'game-empty']) {
+    if (!sdkVersion.templates?.includes(required)) throw new Error(`common Engine SDK is missing ${required}`);
+  }
+  const forbiddenSourceTree = entries.find((entry) =>
+    /^package\/assets\/engine-sdk\/source\/[^/]+\/src\/(?:__)?(?:tests?|fixtures?|snapshots?)(?:__)?\//.test(entry)
+  );
+  if (forbiddenSourceTree) {
+    throw new Error(`common Engine SDK carries non-authoring source tree: ${forbiddenSourceTree}`);
+  }
+}
+
 export function acceptPackedRuntime(directory: string): Map<string, string> {
   const root = resolve(directory);
   const tarballs = readdirSync(root).filter((entry) => entry.endsWith('.tgz')).sort();
@@ -49,7 +91,12 @@ export function acceptPackedRuntime(directory: string): Map<string, string> {
       if (entries.some((entry) => entry.startsWith('/') || entry.replaceAll('\\', '/').split('/').includes('..'))) {
         throw new Error(`unsafe archive path in ${filename}`);
       }
-      if (entries.some((entry) => /(?:^|\/)(?:src|test|tests)(?:\/|$)|\.map$|(?:^|\/)bun\.lock$/u.test(entry))) {
+      if (entries.some((entry) => {
+        const authoredEngineSource = manifest.name === '@forgeax/game-runtime-common'
+          && entry.startsWith('package/assets/engine-sdk/source/');
+        if (/\.map$|(?:^|\/)bun\.lock$/u.test(entry)) return true;
+        return !authoredEngineSource && /(?:^|\/)(?:src|test|tests)(?:\/|$)/u.test(entry);
+      })) {
         throw new Error(`source, test, map, or lockfile leaked into ${filename}`);
       }
       const destination = join(unpackRoot, manifest.name.replace(/[^a-z0-9.-]/gi, '_'));
@@ -73,8 +120,19 @@ export function acceptPackedRuntime(directory: string): Map<string, string> {
       if (!entries.includes('package/dist/index.js')) throw new Error(`${name} has no generated platform entry`);
       const packageRoot = join(unpackRoot, name.replace(/[^a-z0-9.-]/gi, '_'), 'package');
       const runtimeManifest = JSON.parse(readFileSync(join(packageRoot, 'assets', 'runtime-manifest.json'), 'utf8')) as {
-        artifacts?: Array<{ version?: string; source?: string; sha256?: string; platform?: string; arch?: string; command?: string }>;
+        schemaVersion?: number;
+        artifacts?: Array<{
+          version?: string;
+          source?: string;
+          sha256?: string;
+          platform?: string;
+          arch?: string;
+          command?: string;
+          engineCommit?: string;
+          capabilities?: { build?: { script?: string }; serve?: { script?: string } };
+        }>;
       };
+      if (runtimeManifest.schemaVersion !== 2) throw new Error(`${name} must contain a Runtime v2 manifest`);
       if (runtimeManifest.artifacts?.length !== 1) throw new Error(`${name} must contain exactly one Runtime artifact`);
       const artifact = runtimeManifest.artifacts[0];
       if (!artifact.source || isAbsolute(artifact.source)) throw new Error(`${name} Runtime source is unsafe`);
@@ -84,15 +142,41 @@ export function acceptPackedRuntime(directory: string): Map<string, string> {
       if (path.startsWith('..') || isAbsolute(path) || !existsSync(archive)) throw new Error(`${name} Runtime archive is missing or outside assets`);
       if (!artifact.sha256 || sha256(archive) !== artifact.sha256) throw new Error(`${name} inner Runtime SHA-256 mismatch`);
       if (artifact.version !== RUNTIME_VERSION || !artifact.command?.startsWith('bin/bun-')) throw new Error(`${name} Runtime identity is invalid`);
+      if (!/^[a-f0-9]{7,64}$/i.test(artifact.engineCommit ?? '')) throw new Error(`${name} has no concrete Engine commit`);
+      if (
+        artifact.capabilities?.build?.script !== 'runtime/preview-build.mjs'
+        || artifact.capabilities?.serve?.script !== 'runtime/preview-serve.mjs'
+      ) {
+        throw new Error(`${name} does not expose build-once and static-preview capabilities`);
+      }
       const expectedIdentity = platformIdentity[name];
       if (artifact.platform !== expectedIdentity.platform || artifact.arch !== expectedIdentity.arch) {
         throw new Error(`${name} inner Runtime platform identity is invalid`);
       }
+      const innerEntries = runTar(['-tzf', archive]).split(/\r?\n/).filter(Boolean)
+        .map((entry) => entry.replace(/^\.\//, ''));
+      for (const required of [
+        artifact.command,
+        artifact.capabilities.build.script,
+        artifact.capabilities.serve.script,
+        'engine/vite.config.ts',
+        'engine/engine-vite-preset.mjs',
+      ]) {
+        if (!innerEntries.includes(required)) throw new Error(`${name} Runtime is missing ${required}`);
+      }
+      const unexpectedTopLevel = innerEntries.find((entry) => {
+        const top = entry.split('/')[0];
+        return top && !['bin', 'engine', 'runtime'].includes(top);
+      });
+      if (unexpectedTopLevel) throw new Error(`${name} Runtime carries non-preview payload: ${unexpectedTopLevel}`);
+      const forbidden = innerEntries.find((entry) =>
+        /(?:^|\/)(?:\.forgeax|chrome-webgpu-profile|checkpoints)(?:\/|$)/.test(entry)
+        || /^(?:games|interface|marketplace|server|workbench)(?:\/|$)/.test(entry)
+        || /(?:^|\/)@forgeax\/(?:wb-|workbench)/.test(entry)
+      );
+      if (forbidden) throw new Error(`${name} Runtime carries forbidden product state: ${forbidden}`);
     }
-    const commonEntries = runTar(['-tzf', paths.get('@forgeax/game-runtime-common')!]);
-    if (!commonEntries.includes('package/assets/engine-sdk/engine-version.json')) {
-      throw new Error('common package has no Engine SDK snapshot');
-    }
+    acceptCommonSdkSnapshot(paths.get('@forgeax/game-runtime-common')!);
     return paths;
   } finally {
     rmSync(unpackRoot, { recursive: true, force: true });

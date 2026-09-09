@@ -7,17 +7,23 @@ import {
   cleanableFloatingRepoPaths,
   cleanTreeFlags,
   cleanLockAction,
+  dispatchLifecycleCommand,
   didCreateStash,
+  fxCommandCatalog,
   formatUpdateReport,
   floatingRepoExclusionArgs,
   hasActiveGitProcess,
-  localCiEnvironment,
   lifecycleProcessEnv,
+  mergeManagedRestoreResult,
   parseSubmodulePaths,
+  hasUnmergedStatus,
   resolveCommand,
+  resolveStartClient,
+  restartAfterUpdate,
   startBusyPorts,
   stashPopArgsForRef,
   submoduleUpdateArgs,
+  updateFloatingPackageReportRows,
   updateShouldStash,
 } from './fx.ts';
 import {
@@ -42,19 +48,91 @@ afterEach(() => {
 });
 
 describe('scripts/fx.ts command routing', () => {
+  it('expands floating package update rows in the final report', () => {
+    const rows = updateFloatingPackageReportRows([
+      { path: 'packages/harness' },
+      { path: 'packages/games' },
+      { path: 'packages/ide' },
+    ], 0, false);
+
+    expect(rows).toEqual([
+      { repoType: 'floating-repo', repo: 'packages/harness', result: 'ok', detail: 'updated from .packages' },
+      { repoType: 'floating-repo', repo: 'packages/games', result: 'ok', detail: 'updated from .packages' },
+      { repoType: 'floating-repo', repo: 'packages/ide', result: 'ok', detail: 'updated from .packages' },
+    ]);
+    expect(stripAnsi(formatUpdateReport(rows))).toContain('packages/ide');
+  });
+
+  it('merges managed checkout restoration into the repository update row', () => {
+    const rows = updateFloatingPackageReportRows([
+      { path: 'packages/games' },
+      { path: 'packages/ide' },
+    ], 0, false);
+
+    expect(mergeManagedRestoreResult(rows, {
+      path: 'packages/games',
+      repoType: 'floating-repo',
+      ok: true,
+      detail: 'restored local checkout and changes',
+    }, false)).toEqual([
+      {
+        repoType: 'floating-repo',
+        repo: 'packages/games',
+        result: 'ok',
+        detail: 'updated from .packages; restored local checkout and changes',
+      },
+      {
+        repoType: 'floating-repo',
+        repo: 'packages/ide',
+        result: 'ok',
+        detail: 'updated from .packages',
+      },
+    ]);
+  });
+
+  it('makes a failed managed checkout restoration fail the existing update row', () => {
+    const rows = updateFloatingPackageReportRows([{ path: 'packages/ide' }], 0, false);
+
+    expect(mergeManagedRestoreResult(rows, {
+      path: 'packages/ide',
+      repoType: 'floating-repo',
+      ok: false,
+      detail: 'stash restore failed: conflict',
+    }, false)).toEqual([{
+      repoType: 'floating-repo',
+      repo: 'packages/ide',
+      result: 'failed',
+      detail: 'updated from .packages; stash restore failed: conflict',
+    }]);
+  });
+
+  it('marks each configured floating package failed when package update fails', () => {
+    const rows = updateFloatingPackageReportRows([
+      { path: 'packages/harness' },
+      { path: 'packages/ide' },
+    ], 1, false);
+
+    expect(rows).toEqual([
+      { repoType: 'floating-repo', repo: 'packages/harness', result: 'failed', detail: 'package update exited 1' },
+      { repoType: 'floating-repo', repo: 'packages/ide', result: 'failed', detail: 'package update exited 1' },
+    ]);
+  });
+
   it('starts the dev stack with a development NODE_ENV regardless of its parent shell', () => {
     const source = readFileSync(script('run.ts'), 'utf8');
 
-    expect(source).toContain("const DEV_NODE_ENV = 'development'");
-    expect(source).toMatch(/const devServiceEnv[\s\S]*NODE_ENV:\s*DEV_NODE_ENV/);
+    expect(source).toMatch(/const commonEnv[\s\S]*NODE_ENV:\s*'development'/);
     expect(source).toContain('new ServiceSupervisor({');
-    expect(source).toContain("spawn: { ...opts, env: devServiceEnv(opts.env) }");
+    expect(source).toContain('spawn: { cwd, env }');
   });
 
   it('keeps package.json scripts focused on fx plus checks', () => {
     const pkg = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
     expect(pkg.scripts.fx).toBe('bun scripts/fx.ts');
     expect(pkg.scripts.prepare).toBe('bun scripts/prepare.ts');
+    expect(pkg.scripts['test:forgeax-build-game']).toBe(
+      'bun test ./.forgeax-harness/skills/forgeax-build-game/scripts/cli/*.spec.ts',
+    );
     for (const legacy of ['setup', 'bootstrap', 'dev', 'dev:local', 'start', 'stop', 'app', 'web', 'build:plugins', 'version']) {
       expect(pkg.scripts[legacy]).toBeUndefined();
     }
@@ -101,6 +179,109 @@ describe('scripts/fx.ts command routing', () => {
     expect(startWebBody).toContain('--no-open was removed because start never opens a browser');
   });
 
+  it('preserves lifecycle arguments for start, desktop debug, and restart', () => {
+    expect(resolveStartClient([])).toEqual({ type: 'web', args: [] });
+    expect(resolveStartClient(['web', '--ensure'])).toEqual({ type: 'web', args: ['--ensure'] });
+    expect(resolveStartClient(['desktop', 'debug'])).toEqual({ type: 'desktop', args: ['debug'] });
+    expect(resolveStartClient(['desktop', 'debug', '--features', 'inspect'])).toEqual({
+      type: 'desktop',
+      args: ['debug', '--features', 'inspect'],
+    });
+    expect(resolveStartClient(['unknown-client'])).toEqual({
+      type: 'unknown',
+      client: 'unknown-client',
+      args: [],
+    });
+
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    expect(source).toContain("['ide', 'desktop', ...client.args]");
+    expect(source).toContain('await runScriptWithSignals(');
+    expect(source).toContain("await dependencies.start(args, 'restart')");
+  });
+
+  it('executes setup, update, start, and restart through the production dispatcher', async () => {
+    const calls: Array<{ command: string; args: string[]; existing?: string }> = [];
+    const dependencies = {
+      setup: (args: string[]) => { calls.push({ command: 'setup', args }); },
+      update: async (args: string[]) => { calls.push({ command: 'update', args }); },
+      start: async (args: string[], existing: 'error' | 'ensure' | 'restart') => {
+        calls.push({ command: 'start', args, existing });
+      },
+    };
+
+    expect(await dispatchLifecycleCommand('setup', ['--yes'], dependencies)).toBe(true);
+    expect(await dispatchLifecycleCommand('update', ['--dry-run', '--restart'], dependencies)).toBe(true);
+    expect(await dispatchLifecycleCommand('start', ['web', '--ensure'], dependencies)).toBe(true);
+    expect(await dispatchLifecycleCommand('restart', ['desktop', 'debug'], dependencies)).toBe(true);
+    expect(await dispatchLifecycleCommand('status', [], dependencies)).toBe(false);
+    expect(calls).toEqual([
+      { command: 'setup', args: ['--yes'] },
+      { command: 'update', args: ['--dry-run', '--restart'] },
+      { command: 'start', args: ['web', '--ensure'], existing: 'error' },
+      { command: 'start', args: ['desktop', 'debug'], existing: 'restart' },
+    ]);
+  });
+
+  it('restarts after update with restart ownership and keeps dry-run side-effect free', async () => {
+    const calls: Array<{ args: string[]; existing: string }> = [];
+    const start = async (args: string[], existing: 'error' | 'ensure' | 'restart') => {
+      calls.push({ args, existing });
+    };
+
+    await restartAfterUpdate(true, start);
+    expect(calls).toEqual([]);
+    await restartAfterUpdate(false, start);
+    expect(calls).toEqual([{ args: [], existing: 'restart' }]);
+    expect(readFileSync(script('fx.ts'), 'utf8')).not.toContain('restartStack(');
+  });
+
+  it('keeps every registered bun fx command family under a routing contract', () => {
+    expect(fxCommandCatalog()).toEqual({
+      public: ['ide', 'versions', 'teardown'],
+      script: [
+        'stop',
+        'open',
+        'instance',
+        'worktree',
+        'wt',
+        'packages',
+        'build:plugins',
+        'version',
+        'recover-fixed-ports',
+      ],
+      repository: ['sync', 'check', 'commit', 'bump'],
+      builtin: [
+        'setup',
+        'update',
+        'clean',
+        'ci',
+        'start',
+        'restart',
+        'status',
+        'doctor',
+        'recursive-inputs',
+        'release-integrity',
+        'build',
+        'help',
+        '--help',
+        '-h',
+      ],
+    });
+
+    for (const command of fxCommandCatalog().public) {
+      expect(resolveCommand([command, '--contract'])).toMatchObject({ type: 'script' });
+    }
+    for (const command of fxCommandCatalog().script) {
+      expect(resolveCommand([command, '--contract'])).toMatchObject({ type: 'script' });
+    }
+    for (const command of fxCommandCatalog().repository) {
+      expect(resolveCommand([command, '--contract'])).toMatchObject({ type: 'script' });
+    }
+    for (const command of fxCommandCatalog().builtin) {
+      expect(resolveCommand([command, '--contract'])).not.toMatchObject({ type: 'unknown' });
+    }
+  });
+
   it('checks every fixed stack port before start launches a new stack', () => {
     const { ports } = resolveRuntimeInstance({ root: ROOT });
     const owner = (port: number) => (
@@ -111,24 +292,6 @@ describe('scripts/fx.ts command routing', () => {
       ['server', ports.server, `pid-${ports.server}`],
       ['engine', ports.engine, `pid-${ports.engine}`],
     ]);
-  });
-
-  it('isolates editor CI web servers from the current Studio runtime', () => {
-    const instance = resolveRuntimeInstance({ root: ROOT });
-    const projected = localCiEnvironment({ FORGEAX_E2E_PORT: '41020', EXTRA_CI_FLAG: 'kept' });
-
-    expect(projected.CI).toBe('1');
-    expect(projected.EXTRA_CI_FLAG).toBe('kept');
-    expect(projected.FORGEAX_E2E_PORT).toBe('41020');
-    expect(projected.FORGEAX_E2E_EDIT_PORT).toBe(String(instance.ports.interface + 101));
-    expect(projected.FORGEAX_E2E_API_PORT).toBe(String(instance.ports.server + 100));
-    expect(projected.FORGEAX_E2E_ENGINE_PORT).toBe(String(instance.ports.engine + 100));
-    expect(projected.FORGEAX_E2E_TEMPLATE_PORT).toBe(String(instance.ports.interface + 102));
-    expect(projected.FORGEAX_E2E_TEMPLATE_EDIT_PORT).toBe(String(instance.ports.interface + 103));
-    expect(projected.FORGEAX_E2E_TEMPLATE_API_PORT).toBe(String(instance.ports.server + 102));
-    expect(projected.FORGEAX_E2E_TEMPLATE_ENGINE_PORT).toBe(String(instance.ports.engine + 102));
-    expect(projected.FORGEAX_E2E_BRIDGE_PORT).toBe(String(instance.ports.interface + 106));
-    expect(projected.FORGEAX_E2E_TEMPLATE_BRIDGE_PORT).toBe(String(instance.ports.interface + 108));
   });
 
   it('does not declare or launch the retired Studio-owned gateway relay', () => {
@@ -154,6 +317,14 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['stop'])).toEqual({ type: 'script', script: script('stop.ts'), args: [] });
   });
 
+  it('routes recover-fixed-ports (CI fixed-port maintenance) to its dedicated CLI', () => {
+    expect(resolveCommand(['recover-fixed-ports', '--sample-prefix', 'studio-qa-sample-', '--cleanup-workspaces'])).toEqual({
+      type: 'script',
+      script: script('recover-fixed-ports.ts'),
+      args: ['--sample-prefix', 'studio-qa-sample-', '--cleanup-workspaces'],
+    });
+  });
+
   it('routes worktree runtime instance commands to their dedicated CLI', () => {
     expect(resolveCommand(['instance', 'init', '--slot', '1'])).toEqual({
       type: 'script',
@@ -164,6 +335,14 @@ describe('scripts/fx.ts command routing', () => {
       type: 'script',
       script: script('instance.ts'),
       args: ['show'],
+    });
+  });
+
+  it('routes .packages lifecycle commands through the dedicated TypeScript CLI', () => {
+    expect(resolveCommand(['packages', 'sync', '--focus'])).toEqual({
+      type: 'script',
+      script: script('packages.ts'),
+      args: ['sync', '--focus'],
     });
   });
 
@@ -199,7 +378,8 @@ describe('scripts/fx.ts command routing', () => {
 
     expect(startWebBody).toContain('env: process.env');
     expect(startWebBody).not.toContain('env: lifecycleProcessEnv()');
-    expect(source).toContain("runScript(script('desktop.ts'), rest, lifecycleProcessEnv())");
+    expect(source).toContain("['ide', 'desktop', ...client.args]");
+    expect(source).toContain('await runScriptWithSignals(');
   });
 
   it('retains only an explicit parent agent-host socket when projecting lifecycle environment', () => {
@@ -240,7 +420,7 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['check', '--all'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['check', '--all'] });
     expect(resolveCommand(['commit', '-m', 'msg', '--push'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['commit', '-m', 'msg', '--push'] });
     expect(resolveCommand(['bump', 'packages/interface'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['bump', 'packages/interface'] });
-    expect(resolveCommand(['versions'])).toEqual({ type: 'script', script: script('repos.ts'), args: ['versions'] });
+    expect(resolveCommand(['versions'])).toEqual({ type: 'script', script: script('fx/index.ts'), args: ['versions'] });
   });
 
   it('routes recursive input discovery through one internal top-level entry', () => {
@@ -266,13 +446,19 @@ describe('scripts/fx.ts command routing', () => {
     expect(commitBody).not.toContain('--no-verify: gates SKIPPED');
   });
 
+  it('routes shared package delivery and local link commands through stable fx entries', () => {
+    for (const command of ['package-health', 'pack-smoke', 'source-reach-ins', 'artifact-fetch', 'link-package', 'unlink-package']) {
+      expect(resolveCommand([command, 'arg'])).toEqual({ type: 'unknown', command, args: ['arg'] });
+    }
+  });
+
   it('routes build and version aliases', () => {
     expect(resolveCommand(['build', 'plugins', '--force'])).toEqual({
       type: 'script',
       script: script('build-extensions.ts'),
       args: ['--force'],
     });
-    expect(resolveCommand(['build', 'desktop'])).toEqual({ type: 'script', script: script('desktop.ts'), args: ['build'] });
+    expect(resolveCommand(['build', 'desktop'])).toEqual({ type: 'script', script: script('fx/index.ts'), args: ['ide', 'build'] });
     expect(resolveCommand(['build', 'app'])).toEqual({ type: 'internal', command: 'build', args: ['app'] });
     expect(resolveCommand(['build:plugins'])).toEqual({ type: 'script', script: script('build-extensions.ts'), args: [] });
     expect(resolveCommand(['version', 'json'])).toEqual({ type: 'script', script: script('lib/version.ts'), args: ['json'] });
@@ -284,6 +470,13 @@ describe('scripts/fx.ts command routing', () => {
     expect(resolveCommand(['doctor', '--fix'])).toEqual({ type: 'internal', command: 'doctor', args: ['--fix'] });
     expect(resolveCommand(['ci'])).toEqual({ type: 'internal', command: 'ci', args: [] });
     expect(resolveCommand(['restart'])).toEqual({ type: 'internal', command: 'restart', args: [] });
+  });
+
+  it('dispatches restart through the same root stack lifecycle as start', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+
+    expect(source).toContain("case 'restart':\n      await dependencies.start(args, 'restart');");
+    expect(source).not.toContain("runPublicCommand(['ide', 'restart'");
   });
 
   it('respects gitignore during standard clean and only removes ignored files in deep mode', () => {
@@ -333,7 +526,7 @@ describe('scripts/fx.ts command routing', () => {
 
   it('keeps update separate from setup and build work', () => {
     const source = readFileSync(script('fx.ts'), 'utf8');
-    const updateBody = source.slice(source.indexOf('function update('), source.indexOf('function restartStack('));
+    const updateBody = source.slice(source.indexOf('async function update('), source.indexOf('export async function restartAfterUpdate('));
 
     expect(updateBody).not.toContain("script('setup.ts')");
     expect(updateBody).not.toContain('Running setup');
@@ -341,23 +534,20 @@ describe('scripts/fx.ts command routing', () => {
     expect(updateBody).not.toContain('--skip-bootstrap');
   });
 
-  it('refreshes the floating runtime harness only from update', () => {
+  it('refreshes manifest-owned floating packages only from update', () => {
     const source = readFileSync(script('fx.ts'), 'utf8');
-    const updateBody = source.slice(source.indexOf('function update('), source.indexOf('function restartStack('));
-    expect(source).toContain('function updateFloatingHarness');
-    expect(updateBody).toContain('updateFloatingHarness(dryRun)');
-    expect(readFileSync(script('prepare.ts'), 'utf8')).toContain('syncPackageHarness();');
+    const updateBody = source.slice(source.indexOf('async function update('), source.indexOf('export async function restartAfterUpdate('));
+    expect(source).toContain('function updateFloatingPackages');
+    expect(updateBody).toContain('updateFloatingPackages(dryRun)');
+    expect(readFileSync(script('prepare.ts'), 'utf8')).toContain("ensureManagedPackage('harness', true)");
   });
 
-  it('updates independent floating repos concurrently', () => {
+  it('updates every manifest-owned floating repo through one command', () => {
     const source = readFileSync(script('fx.ts'), 'utf8');
-    const floatingBlock = source.slice(
-      source.indexOf('// These checkouts are independent.'),
-      source.indexOf("console.log('[update] Updating submodules')"),
-    );
-    expect(floatingBlock).toContain('Promise.all');
-    expect(floatingBlock).toContain('updateFloatingHarness(dryRun)');
-    expect(floatingBlock).toContain('updateFloatingGames(dryRun)');
+    expect(source).toContain("const args = [script('packages.ts'), 'update']");
+    expect(source).toContain('results.push(...await updateFloatingPackages(dryRun))');
+    expect(source).toContain('spawnChild(BUN, args, packageGitEnvironment(ROOT))');
+    expect(source).toContain('managedFloatingPackageEntries()');
   });
 
   it('updates submodules explicitly after updating the root repo', () => {
@@ -367,6 +557,15 @@ describe('scripts/fx.ts command routing', () => {
       '',
     ].join('\n'))).toEqual(['packages/engine', 'packages/interface']);
     expect(submoduleUpdateArgs('packages/engine')).toEqual(['submodule', 'update', '--init', '--recursive', '--', 'packages/engine']);
+  });
+
+  it('stashes and restores dirty managed repositories around update', () => {
+    const source = readFileSync(script('fx.ts'), 'utf8');
+    const updateBody = source.slice(source.indexOf('async function update('), source.indexOf('export async function restartAfterUpdate('));
+    expect(updateBody).toContain('stashDirtyUpdateRepos(ROOT, managedUpdateRepos()');
+    expect(updateBody).toContain('restoreUpdateRepoStashes(ROOT, managedStashes');
+    expect(updateBody.indexOf('stashDirtyUpdateRepos')).toBeLessThan(updateBody.indexOf("['pull', '--ff-only'"));
+    expect(updateBody.lastIndexOf('restoreUpdateRepoStashes')).toBeGreaterThan(updateBody.indexOf('updateSubmodules'));
   });
 
   it('formats update results as a repo result table', () => {
@@ -388,6 +587,12 @@ describe('scripts/fx.ts command routing', () => {
     expect(updateShouldStash(['--stash'])).toBe(true);
     expect(updateShouldStash(['--dry-run'])).toBe(true);
     expect(updateShouldStash(['--no-stash'])).toBe(false);
+  });
+
+  it('detects unresolved index entries before update tries to stash', () => {
+    expect(hasUnmergedStatus('1 M. N... 100644 100644 100644 abc def ghi AGENTS.md')).toBe(false);
+    expect(hasUnmergedStatus('u UU N... 100644 100644 100644 100644 base ours theirs bun.lock')).toBe(true);
+    expect(hasUnmergedStatus('')).toBe(false);
   });
 
   it('restores only a stash that was actually created by update', () => {

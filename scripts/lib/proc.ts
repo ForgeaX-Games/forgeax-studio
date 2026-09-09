@@ -10,6 +10,7 @@
 
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createConnection, createServer, type Socket } from 'node:net';
 import { join } from 'node:path';
 
 export const IS_WIN = process.platform === 'win32';
@@ -181,7 +182,72 @@ export function isAlive(pid: number): boolean {
 
 // ── port-owner discovery ────────────────────────────────────────────────────
 
-/** PIDs LISTENing on `port`. POSIX: lsof; Windows: netstat -ano. */
+/**
+ * Parse the process ids from `ss -H -ltnp` output for one local TCP port.
+ *
+ * `ss` can still report a LISTEN socket without the `users:(pid=...)` detail
+ * when the runner lacks the required permission. `null` deliberately means
+ * "the socket was visible but its owner was not"; callers must try another
+ * probe rather than treating that as an unused port.
+ */
+export function parseSsListenPids(output: string, port: number): number[] | null {
+  const pids = new Set<number>();
+  let matched = false;
+  for (const line of output.split(/\r?\n/)) {
+    const columns = line.trim().split(/\s+/);
+    if (columns[0]?.toUpperCase() !== 'LISTEN') continue;
+    const localEndpoint = columns[3] ?? '';
+    const lastColon = localEndpoint.lastIndexOf(':');
+    if (lastColon < 0 || localEndpoint.slice(lastColon + 1) !== String(port)) continue;
+    matched = true;
+    const linePids = [...line.matchAll(/\bpid=(\d+)\b/g)]
+      .map((match) => Number.parseInt(match[1] ?? '', 10))
+      .filter((pid) => pid > 0);
+    if (linePids.length === 0) return null;
+    for (const pid of linePids) pids.add(pid);
+  }
+  return matched ? [...pids] : [];
+}
+
+/** Parse the process ids from `fuser -n tcp <port>` output. */
+export function parseFuserListenPids(output: string, port: number): number[] | null {
+  const marker = new RegExp(`(?:^|\\s)${port}\\/tcp:`);
+  const pids = new Set<number>();
+  let matched = false;
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(marker);
+    if (!match || match.index === undefined) continue;
+    matched = true;
+    const tail = line.slice(match.index + match[0].length);
+    const linePids = [...tail.matchAll(/\b(\d+)\b/g)]
+      .map((item) => Number.parseInt(item[1] ?? '', 10))
+      .filter((pid) => pid > 0);
+    if (linePids.length === 0) return null;
+    for (const pid of linePids) pids.add(pid);
+  }
+  return matched ? [...pids] : [];
+}
+
+function commandProbe(
+  command: string,
+  args: readonly string[],
+  parse: (output: string) => number[] | null,
+): number[] | null {
+  const result = spawnSync(command, [...args], { encoding: 'utf8' });
+  if (result.error) return null;
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  const parsed = parse(output);
+  // A successful command with a visible socket whose owner cannot be
+  // resolved is not a reliable "free" result. Let the next probe try, and
+  // ultimately fail closed if no probe can establish the owner set.
+  if (result.status === 0 && parsed !== null) return parsed;
+  // lsof/fuser use exit 1 for a successful no-match query. `ss` normally
+  // exits 0, but accepting an empty exit-1 result keeps the fallback portable.
+  if (result.status === 1 && output.trim() === '') return [];
+  return null;
+}
+
+/** PIDs LISTENing on `port`. POSIX: lsof → ss → fuser; Windows: netstat. */
 export function listenPids(port: number): number[] {
   if (IS_WIN) {
     const r = spawnSync('netstat', ['-ano'], { encoding: 'utf8', windowsHide: true });
@@ -199,17 +265,109 @@ export function listenPids(port: number): number[] {
     return [...pids];
   }
   // POSIX: lsof -ti gives bare PIDs; exits non-zero when nothing listens.
-  const r = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' });
-  if (!r.stdout) return [];
-  return r.stdout
-    .split('\n')
-    .map((s) => Number.parseInt(s.trim(), 10))
-    .filter((p) => p > 0);
+  const lsof = commandProbe(
+    'lsof',
+    ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
+    (output) => {
+      const pids = output
+        .split(/\r?\n/)
+        .map((line) => Number.parseInt(line.trim(), 10))
+        .filter((pid) => pid > 0);
+      return output.trim() === '' || pids.length > 0 ? [...new Set(pids)] : null;
+    },
+  );
+  if (lsof !== null) return lsof;
+
+  const ss = commandProbe(
+    'ss',
+    ['-H', '-ltnp'],
+    (output) => parseSsListenPids(output, port),
+  );
+  if (ss !== null) return ss;
+
+  const fuser = commandProbe(
+    'fuser',
+    ['-n', 'tcp', String(port)],
+    (output) => parseFuserListenPids(output, port),
+  );
+  if (fuser !== null) return fuser;
+
+  throw new Error(
+    `unable to inspect TCP listener ownership for :${port}; install lsof, ss, or fuser`,
+  );
 }
 
 /** True if anything currently LISTENs on `port`. */
 export function isPortBusy(port: number): boolean {
   return listenPids(port).length > 0;
+}
+
+/**
+ * Check the bind operation the next service will perform, not only whether a
+ * listener is visible in the process table.  A recently closed listener can
+ * be absent from `lsof` while the kernel still rejects the next bind.
+ */
+export function canBindPort(
+  port: number,
+  host = '0.0.0.0',
+  options: { readonly beforeClose?: (boundPort: number) => void | Promise<void> } = {},
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    const accepted = new Set<Socket>();
+    let settled = false;
+    let closing = false;
+    const finish = (value: boolean): void => {
+      if (settled) return;
+      settled = true;
+      for (const socket of accepted) socket.destroy();
+      resolve(value);
+    };
+    server.on('connection', (socket) => {
+      accepted.add(socket);
+      socket.once('close', () => accepted.delete(socket));
+      // Browser dev clients can reconnect during this short probe window.
+      // Once close starts, do not let an accepted socket keep its callback
+      // pending and strand the startup lease indefinitely.
+      if (closing) socket.destroy();
+    });
+    server.once('error', () => finish(false));
+    server.once('listening', () => {
+      const address = server.address();
+      const boundPort = address && typeof address !== 'string' ? address.port : port;
+      void Promise.resolve(options.beforeClose?.(boundPort)).then(() => {
+        closing = true;
+        server.close((error) => finish(!error));
+        for (const socket of accepted) socket.destroy();
+      }, () => {
+        closing = true;
+        server.close(() => finish(false));
+        for (const socket of accepted) socket.destroy();
+      });
+    });
+    try {
+      server.listen({ host, port, exclusive: true });
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+/** Return whether a live TCP listener accepts a loopback connection. */
+export function canConnectPort(port: number, host = '127.0.0.1'): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host, port });
+    let settled = false;
+    const finish = (value: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+    socket.setTimeout(250, () => finish(false));
+  });
 }
 
 // ── spawn ───────────────────────────────────────────────────────────────────

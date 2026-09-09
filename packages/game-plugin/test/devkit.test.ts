@@ -11,6 +11,7 @@ import {
   isEngineSkill,
   removeDevKit,
 } from '../src/devkit/install';
+import { prepareAuthoringAssets } from '../scripts/build-authoring-assets';
 
 describe('game development kit', () => {
   test('installs the packaged skill without requiring a harness checkout', () => {
@@ -30,7 +31,7 @@ describe('game development kit', () => {
       expect(existsSync(join(root, 'skills'))).toBeFalse();
       expect(existsSync(join(root, 'rules'))).toBeFalse();
 
-      // Only the named host is mounted; the other seven are not this user's problem.
+      // Only the named host is mounted; unrelated hosts are not this user's problem.
       expect(existsSync(join(root, '.claude', 'skills'))).toBeFalse();
       expect(existsSync(join(root, '.cursor', 'skills'))).toBeFalse();
 
@@ -44,17 +45,20 @@ describe('game development kit', () => {
   test('writes selected host mounts without a harness manifest', () => {
     const root = mkdtempSync(join(tmpdir(), 'forgeax-game-host-devkit-'));
     try {
-      const result = installHostDevKit(root, ['codex', 'workbuddy']);
+      const result = installHostDevKit(root, ['codex', 'workbuddy', 'zcode']);
       expect(result.skillPaths).toEqual([
         join(root, '.agents', 'skills'),
         join(root, '.codebuddy', 'skills'),
+        join(root, '.zcode', 'skills'),
       ]);
       expect(result.rulePaths).toEqual([
         join(root, '.agents', 'rules', 'forgeax-game.md'),
         join(root, '.codebuddy', 'rules', 'forgeax-game.md'),
       ]);
-      expect(result.note).toContain('installed for 2 hosts');
+      expect(result.note).toContain('installed for 3 hosts');
       expect(existsSync(join(root, '.codebuddy', 'skills', 'forgeax-game', 'SKILL.md'))).toBeTrue();
+      expect(existsSync(join(root, '.zcode', 'skills', 'forgeax-game', 'SKILL.md'))).toBeTrue();
+      expect(existsSync(join(root, '.zcode', 'rules'))).toBeFalse();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -75,14 +79,13 @@ describe('game development kit', () => {
       rmSync(source, { recursive: true, force: true });
     }
   });
-  // Engine skills arrive with the generated SDK snapshot. In a standalone clone before
-  // `build`, only the plugin's own skill exists — that is a build state, not a defect,
-  // so these two content assertions declare the precondition. The authoritative content
-  // gate is scripts/check-package-artifact.ts, which fails a release carrying zero.
+  // Engine skills arrive from Runtime Common's generated SDK snapshot. In a standalone
+  // clone before dependencies are installed, only the plugin's own skill exists, so
+  // these two content assertions declare the precondition.
   const engineSnapshotPresent = (): boolean =>
     bundledSkills().some((skill) => isEngineSkill(skill.id));
 
-  test.skipIf(!engineSnapshotPresent())('ships the Engine authoring skills alongside the plugin skill', () => {
+  test.skipIf(!engineSnapshotPresent())('discovers Runtime Common Engine skills alongside the plugin skill', () => {
     const engine = bundledSkills().filter((skill) => isEngineSkill(skill.id));
     // The ladder's first rung. Without these the model has only type signatures,
     // which cannot state Engine conventions such as schedule ordering.
@@ -102,6 +105,39 @@ describe('game development kit', () => {
     }
     // The trap that motivated it: the id does not track the package name.
     expect(text).toContain('forgeax-engine-render-pipeline');
+  });
+
+  test('builds only the plugin skill and Runtime Common-derived Engine index', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'forgeax-authoring-assets-'));
+    const sdk = join(root, 'common-sdk');
+    const previous = process.env.FORGEAX_ENGINE_SDK;
+    try {
+      mkdirSync(join(root, 'skills', 'forgeax-game', 'references'), { recursive: true });
+      writeFileSync(join(root, 'skills', 'forgeax-game', 'SKILL.md'), '# ForgeaX game\n');
+      mkdirSync(join(root, 'assets', 'engine-sdk'), { recursive: true });
+      writeFileSync(join(root, 'assets', 'engine-sdk', 'stale.txt'), 'duplicate');
+      const engineSkill = join(sdk, 'skills', 'forgeax-engine-ecs');
+      mkdirSync(engineSkill, { recursive: true });
+      writeFileSync(join(engineSkill, 'SKILL.md'), [
+        '---',
+        'description: ECS authoring guidance.',
+        '---',
+        '# ECS',
+      ].join('\n'));
+      process.env.FORGEAX_ENGINE_SDK = sdk;
+
+      const result = await prepareAuthoringAssets(root);
+      expect(result.skillIds).toEqual(['forgeax-engine-ecs']);
+      expect(existsSync(join(root, 'assets', 'engine-sdk'))).toBeFalse();
+      expect(existsSync(join(root, 'assets', 'skills', 'forgeax-game', 'SKILL.md'))).toBeTrue();
+      expect(
+        readFileSync(join(root, 'assets', 'skills', 'forgeax-game', 'references', 'engine-skills.md'), 'utf8'),
+      ).toContain('forgeax-engine-ecs');
+    } finally {
+      if (previous === undefined) delete process.env.FORGEAX_ENGINE_SDK;
+      else process.env.FORGEAX_ENGINE_SDK = previous;
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('never contributes Studio harness skills from a source checkout', () => {
@@ -148,7 +184,7 @@ describe('game development kit', () => {
   test('uninstall removes only what this plugin mounted', () => {
     const root = mkdtempSync(join(tmpdir(), 'forgeax-game-uninstall-'));
     try {
-      installDevKit(root, ['claude']);
+      installDevKit(root, ['claude', 'zcode']);
       // A neighbouring skill the user owns must survive.
       const foreign = join(root, '.claude', 'skills', 'my-own-skill');
       mkdirSync(foreign, { recursive: true });
@@ -160,6 +196,7 @@ describe('game development kit', () => {
       expect(hasDevKit(root)).toBeFalse();
       expect(installedEngineSkills(root)).toEqual([]);
       expect(existsSync(join(root, '.claude', 'rules', 'forgeax-game.md'))).toBeFalse();
+      expect(existsSync(join(root, '.zcode', 'skills', 'forgeax-game'))).toBeFalse();
       expect(existsSync(join(foreign, 'SKILL.md'))).toBeTrue();
     } finally {
       rmSync(root, { recursive: true, force: true });

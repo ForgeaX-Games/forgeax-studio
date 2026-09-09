@@ -8,7 +8,6 @@
       "closeSession": "session.close",
       "createNewSession": "session.create",
       "openOverlay": "overlay.open",
-      "openWorkbench": "workbench.open",
       "refreshSessions": "sessions.refresh",
       "renameTab": "session.rename",
       "setActiveGame": "game.switch",
@@ -98,8 +97,7 @@
       "overlay.close": "overlay.close",
       "overlay.open": "overlay.open",
       "panel.toggle_chatpanel": "panel.toggle_chatpanel",
-      "panel.toggle_sidebar": "panel.toggle_sidebar",
-      "workbench.open": "workbench.open"
+      "panel.toggle_sidebar": "panel.toggle_sidebar"
     },
     "actions": {
       "app.set_fullscreen": "app.set_fullscreen",
@@ -124,14 +122,13 @@
       "sessions.refresh": "sessions.refresh",
       "trajectory.clear": "trajectory.clear",
       "trajectory.read": "trajectory.read",
-      "workbench.list_plugins": "workbench.list_plugins",
-      "workbench.open": "workbench.open",
-      "workbench.open_plugin": "workbench.open_plugin"
+      "extension.list": "extension.list",
+      "extension.open": "extension.open"
     }
   },
   "server_endpoint_overrides": {
     "game.switch": [
-      "PUT /api/workbench/active-game"
+      "PUT /api/projects/active"
     ],
     "session.close": [
       "DELETE /api/sessions/:sid"

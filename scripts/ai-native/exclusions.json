@@ -281,7 +281,7 @@
       "file": "packages/interface/src/components/ExtensionHost/ExtensionIframeHost.tsx",
       "receiver": "port.surface",
       "method": "subscribe",
-      "reason": "Host-SDK surface-state transport synchronization, not a human-operated command",
+      "reason": "Extension transport surface-state synchronization, not a human-operated command",
       "verified_applicability": "Verified 2026-07-17: ExtensionIframeHost.tsx:107 mirrors plugin surface descriptors into the host surface store; user actions are inventoried at their declared surface controls."
     },
     {

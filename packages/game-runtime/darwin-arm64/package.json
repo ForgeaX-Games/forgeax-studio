@@ -1,6 +1,6 @@
 {
   "name": "@forgeax/game-runtime-darwin-arm64",
-  "version": "0.3.31",
+  "version": "0.3.33",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,7 +17,7 @@
     "README.md"
   ],
   "dependencies": {
-    "@forgeax/game-runtime-common": "0.3.31"
+    "@forgeax/game-runtime-common": "0.3.33"
   },
   "os": [
     "darwin"

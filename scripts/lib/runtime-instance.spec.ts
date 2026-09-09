@@ -7,7 +7,9 @@ import {
   readRuntimeInstanceConfig,
   resolveRuntimeInstance,
   runtimeInstanceConfigPath,
+  runtimeInstanceManifestPath,
   runtimeInstanceProcessEnv,
+  validateRuntimeInstanceManifest,
   validateRuntimeInstanceConfig,
   writeRuntimeInstanceConfig,
 } from './runtime-instance.ts';
@@ -67,6 +69,32 @@ describe('RuntimeInstance', () => {
     expect(instance.envFile).toBe('/private/credentials.env');
   });
 
+  test('publishes a strict credential-free resolved manifest for downstream consumers', () => {
+    const checkout = root('manifest');
+    writeRuntimeInstanceConfig({ root: checkout, slot: 2, envFile: '/private/credentials.env' });
+    const instance = resolveRuntimeInstance({ root: checkout });
+    const persisted = JSON.parse(readFileSync(runtimeInstanceManifestPath(checkout), 'utf8'));
+
+    expect(instance.manifestFile).toBe(runtimeInstanceManifestPath(checkout));
+    expect(instance.manifest).toEqual(persisted);
+    expect(persisted).toMatchObject({
+      schema: 'forgeax-runtime-instance/v1',
+      instanceId: instance.id,
+      slot: 2,
+      endpoints: {
+        server: { port: 38900, url: 'http://127.0.0.1:38900', healthPath: '/api/health' },
+        interface: { port: 38920, origin: 'http://localhost:38920', healthPath: '/' },
+        engine: { port: 35173, url: 'http://127.0.0.1:35173', healthPath: '/preview/' },
+      },
+    });
+    expect(JSON.stringify(persisted)).not.toContain('credentials.env');
+    expect(JSON.stringify(persisted)).not.toContain('API_KEY');
+    expect(() => validateRuntimeInstanceManifest({
+      ...persisted,
+      endpoints: { ...persisted.endpoints, interface: { ...persisted.endpoints.interface, port: 65535 } },
+    })).toThrow(/endpoints must match/);
+  });
+
   test('projects every managed source-runtime value to child environment', () => {
     const checkout = root('environment');
     writeRuntimeInstanceConfig({ root: checkout, slot: 2, isolateUser: true });
@@ -76,6 +104,7 @@ describe('RuntimeInstance', () => {
       FORGEAX_REEL_URL: 'http://127.0.0.1:35175', FORGEAX_RHI_REVIEWER_PORT: '35274',
       FORGEAX_BRIDGE_PORT: '35295', NARRATIVE_PORT: '38930', FACE_MASK_PORT: '38931',
       FORGEAX_PLUGIN_PORT_OFFSET: '20000',
+      FORGEAX_RUNTIME_MANIFEST_FILE: runtimeInstanceManifestPath(checkout),
       FORGEAX_ASSET_CORS_ORIGINS: 'http://localhost:38920,http://127.0.0.1:38920,https://localhost:38920,https://127.0.0.1:38920',
       FORGEAX_USER_DIR: join(checkout, '.forgeax/user'),
     });

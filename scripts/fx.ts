@@ -9,14 +9,31 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { parseSubmodulePaths } from './lib/repos.ts';
+import { packageGitEnvironment } from './lib/package-sync.ts';
+import {
+  readPackageFiles,
+  resolvePackageConfig,
+  type PackageEntry,
+} from './lib/package-manifest.ts';
+import {
+  parseRecursiveSubmoduleStatusPaths,
+  restoreUpdateRepoStashes,
+  stashDirtyUpdateRepos,
+  type ManagedUpdateRepo,
+  type UpdateRepoStash,
+} from './lib/update-repo-stash.ts';
 import {
   sourceRuntimePorts,
   sourceRuntimeStatusPorts,
   startSourceRuntime,
   liveRuntimeStateForInstance,
+  type ExistingRuntimePolicy,
 } from './lib/source-runtime-launcher.ts';
+import { listenPids } from './lib/proc.ts';
+import type { StopRefusal } from './lib/stop-execution.ts';
 import {
   isStartupProfile,
   resolveStartupEnvironment,
@@ -30,6 +47,7 @@ import {
   missingWorkspacePackageJson,
   readWorkspaceGlobs,
 } from './ensure-workspace-submodules.ts';
+import { wgpuWasmRoot } from './lib/workspace-paths.ts';
 import {
   createRecursiveInputResult,
   isRecursiveInputResult,
@@ -42,7 +60,10 @@ import {
 import {
   createRecursiveInputCliDependencies,
   executeRecursiveInputCli,
+  createReleaseIntegrityCliDependencies,
+  executeReleaseIntegrityCli,
 } from '../packages/recursive-input-contract/src/cli.ts';
+import { runPublicCommand, PUBLIC_WRAPPER } from './fx/index.ts';
 
 
 // Re-exported so existing consumers/specs keep one import site; the
@@ -66,12 +87,33 @@ type UpdateResult = {
   detail?: string;
 };
 
+type ManagedRestoreResult = {
+  path: string;
+  repoType: 'submodule' | 'floating-repo';
+  ok: boolean;
+  detail: string;
+};
+
 type StartPort = readonly [name: string, port: number];
 
 const ROOT = process.env.FORGEAX_WORKSPACE_ROOT
   ? resolve(process.env.FORGEAX_WORKSPACE_ROOT)
   : resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BUN = process.execPath;
+const ENGINE_WGPU_ROOT = wgpuWasmRoot(ROOT);
+
+function runReleaseIntegrityRouteBackAdapter(args: string[]) {
+  const adapter = spawnSync(BUN, [join(ROOT, 'scripts/mirror/route-back-contract.ts'), ...args], {
+    cwd: ROOT,
+    env: process.env,
+    encoding: 'utf8',
+  });
+  return {
+    exitCode: adapter.status ?? 1,
+    stdout: String(adapter.stdout ?? ''),
+    stderr: String(adapter.stderr ?? ''),
+  };
+}
 
 // Floating checkouts are not visible to `git submodule foreach`, so their
 // lifecycle policy must live in one place. `clean: false` protects state that
@@ -128,17 +170,25 @@ const SCRIPT_COMMANDS = new Map<string, string>([
   ['instance', 'instance.ts'],
   ['worktree', 'worktree.ts'],
   ['wt', 'worktree.ts'],
+  ['packages', 'packages.ts'],
 
   // build / metadata helpers
   ['build:plugins', 'build-extensions.ts'],
   ['version', 'lib/version.ts'],
+
+  // CI maintenance: port-anchored recovery of leftover fixed-port heavy samples
+  ['recover-fixed-ports', 'recover-fixed-ports.ts'],
 ]);
+
+// Root commands are a public-command-wrapper over independent repositories.
+// They may inspect a mount or public metadata, but never import product source.
+const PUBLIC_COMMANDS = new Set(['ide', 'versions', 'teardown']);
 
 // Multi-repo lifecycle commands, all implemented in scripts/repos.ts over one
 // shared scan (scripts/lib/repos.ts). `update` stays separate below: update is
 // the CONSUMER verb (align worktrees to the recorded pins, detaching), these
 // are the DEVELOPER/INTEGRATOR verbs (branches, gates, commits, pin bumps).
-const REPO_COMMANDS = new Set(['sync', 'check', 'commit', 'bump', 'versions']);
+const REPO_COMMANDS = new Set(['sync', 'check', 'commit', 'bump']);
 
 const BUILTIN_COMMANDS = new Set([
   // delegates to bun install → prepare lifecycle
@@ -157,6 +207,7 @@ const BUILTIN_COMMANDS = new Set([
   'status',
   'doctor',
   'recursive-inputs',
+  'release-integrity',
 
   // compound aliases
   'build',
@@ -167,8 +218,23 @@ const BUILTIN_COMMANDS = new Set([
   '-h',
 ]);
 
+export function fxCommandCatalog(): {
+  public: readonly string[];
+  script: readonly string[];
+  repository: readonly string[];
+  builtin: readonly string[];
+} {
+  return {
+    public: [...PUBLIC_COMMANDS],
+    script: [...SCRIPT_COMMANDS.keys()],
+    repository: [...REPO_COMMANDS],
+    builtin: [...BUILTIN_COMMANDS],
+  };
+}
+
 export function resolveCommand(argv: string[]): CommandPlan {
   const [cmd = 'help', ...args] = argv;
+  if (PUBLIC_COMMANDS.has(cmd)) return { type: 'script', script: script('fx/index.ts'), args: [cmd, ...args] };
   const route = SCRIPT_COMMANDS.get(cmd);
   if (route) return { type: 'script', script: script(route), args };
 
@@ -178,7 +244,7 @@ export function resolveCommand(argv: string[]): CommandPlan {
   if (cmd === 'build') {
     const [target = 'help', ...rest] = args;
     if (target === 'plugins') return { type: 'script', script: script('build-extensions.ts'), args: rest };
-    if (target === 'desktop') return { type: 'script', script: script('desktop.ts'), args: ['build', ...rest] };
+    if (target === 'desktop') return { type: 'script', script: script('fx/index.ts'), args: ['ide', 'build', ...rest] };
     return { type: 'internal', command: 'build', args };
   }
 
@@ -211,23 +277,27 @@ Common commands:
                         free RuntimeInstance slot. Options: --from REF, --slot N,
                         --isolate-user, --env-file PATH, --no-setup/--fast, --jobs N.
                         Alias: wt.
-  start [web|desktop]   Start Studio services (default: web); does not open a browser
-                        Add --rhi-debug to enable editor RHI capture; use
-                        --skip-setup-check only to bypass a stale setup snapshot.
-  open [--managed]      Focus/open Studio in your Chrome; --managed isolates + forces WebGPU
-  stop                  Stop web-dev stack
-  restart               Stop then start web-dev stack
+  start [args...]        Start the source runtime and wait for HTTP readiness
+  stop                  Stop root-owned integration processes
+  restart               Stop this checkout's source runtime, then start it again
+  ide <command>          Run a public command in packages/ide
+  teardown               Report the deterministic root teardown action
   status [--repos]      Show git/submodule/port/artefact status (--repos: full repo table)
   versions              Derived version manifest: pin / branch / nearest tag per submodule
   check [--all]         Run each dirty repo's own gates (lint/test); --all gates everything
-  ci                    Run the local Studio PR CI surface (root + template smoke contracts + editor CI)
+  ci                    Run the mounted IDE public CI command plus root integration checks
   commit -m "msg"       Leaf-first multi-repo commit [path...] [--push] [--dry-run] [--no-verify]
   bump <path...>        Advance a clean submodule (fetch+ff) and stage its new pin in root
   recursive-inputs      Materialize, verify, inspect, or discover the recursive input contract
+  release-integrity     Discover and verify release candidate integrity without external mutation (schema/status/verify)
   doctor [--fix]        Diagnose common local setup problems
-  build plugins         Rebuild missing/broken marketplace plugin dists
-  build desktop         Package the desktop app
+  build plugins         Verify/rebuild product-selected extension package dists
+  versions              Print public pin/version metadata as JSON
   version [args...]     Print version info
+  recover-fixed-ports [--sample-prefix P] [--cleanup-workspaces]
+                        CI-only: clear leftover fixed-port heavy samples by
+                        probing the fixed ports directly (port-anchored), then
+                        stop + remove generated /tmp sample workspaces
 
 Examples:
   bun install
@@ -317,6 +387,33 @@ function runScript(file: string, args: string[], env: NodeJS.ProcessEnv = proces
   process.exit(r.status ?? 1);
 }
 
+async function runScriptWithSignals(
+  file: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<never> {
+  const child = spawn(BUN, [file, ...args], { cwd: ROOT, stdio: 'inherit', env });
+  let forwardedSignal: NodeJS.Signals | undefined;
+  const forward = (signal: NodeJS.Signals): void => {
+    forwardedSignal = signal;
+    child.kill(signal);
+  };
+  const onSigint = (): void => forward('SIGINT');
+  const onSigterm = (): void => forward('SIGTERM');
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
+  const status = await new Promise<number>((resolveStatus) => {
+    child.once('error', () => resolveStatus(1));
+    child.once('exit', (code) => {
+      if (code !== null) return resolveStatus(code);
+      resolveStatus(forwardedSignal === 'SIGINT' ? 130 : 143);
+    });
+  });
+  process.off('SIGINT', onSigint);
+  process.off('SIGTERM', onSigterm);
+  process.exit(status);
+}
+
 function runGit(args: string[], opts: RunGitOptions = {}): string {
   if (opts.dryRun) {
     console.log(`[dry-run] git ${args.join(' ')}`);
@@ -363,8 +460,53 @@ export function updateShouldStash(args: string[]): boolean {
   return !args.includes('--no-stash');
 }
 
+export function hasUnmergedStatus(status: string): boolean {
+  return status.split(/\r?\n/).some((line) => line.startsWith('u '));
+}
+
+function unmergedPaths(): string[] {
+  const status = gitOut(['status', '--porcelain=v2', '--untracked-files=no']);
+  if (!hasUnmergedStatus(status)) return [];
+  return gitOut(['diff', '--name-only', '--diff-filter=U'])
+    .split(/\r?\n/)
+    .filter(Boolean);
+}
+
+export function formatUnmergedUpdateError(paths: string[]): string {
+  const files = paths.length > 0 ? paths.join(', ') : 'one or more files';
+  return [
+    `[update] unresolved merge conflicts detected: ${files}`,
+    '[update] resolve and stage those files before retrying bun fx update.',
+  ].join('\n');
+}
+
 function submodulePaths(): string[] {
   return parseSubmodulePaths(gitOut(['config', '--file', '.gitmodules', '--get-regexp', 'path']));
+}
+
+function managedUpdateRepos(): ManagedUpdateRepo[] {
+  const repos: ManagedUpdateRepo[] = parseRecursiveSubmoduleStatusPaths(
+    gitOut(['submodule', 'status', '--recursive']),
+  ).map((path) => ({ path, repoType: 'submodule' as const }));
+  for (const { path } of managedFloatingPackageEntries()) {
+    if (!existsSync(resolve(ROOT, path))) continue;
+    if (!gitOut(['-C', path, 'rev-parse', '--git-dir'])) continue;
+    repos.push({ path, repoType: 'floating-repo' });
+  }
+  return [...new Map(repos.map((repo) => [repo.path, repo])).values()];
+}
+
+function managedFloatingPackageEntries(): PackageEntry[] {
+  try {
+    const files = readPackageFiles(ROOT);
+    return resolvePackageConfig(files.base, files.local);
+  } catch {
+    return [FLOATING_REPOS.runtimeHarness, FLOATING_REPOS.runtimeGames].map((repo) => ({
+      path: repo.path,
+      url: '',
+      branch: 'main',
+    }));
+  }
 }
 
 export function submoduleUpdateArgs(path: string): string[] {
@@ -406,6 +548,34 @@ export function formatUpdateReport(rows: UpdateResult[]): string {
     widths.map((width) => '-'.repeat(width)).join('  '),
     ...tableRows.map((row) => formatRow(row, true)),
   ].join('\n');
+}
+
+export function mergeManagedRestoreResult(
+  rows: UpdateResult[],
+  restored: ManagedRestoreResult,
+  dryRun: boolean,
+): UpdateResult[] {
+  const index = rows.findIndex((row) => (
+    row.repo === restored.path && row.repoType === restored.repoType
+  ));
+  const restoreRow: UpdateResult = {
+    repoType: restored.repoType,
+    repo: restored.path,
+    result: dryRun ? 'planned' : restored.ok ? 'ok' : 'failed',
+    detail: restored.detail,
+  };
+  if (index < 0) return [...rows, restoreRow];
+
+  const updated = [...rows];
+  const original = updated[index]!;
+  updated[index] = {
+    ...original,
+    result: original.result === 'failed' || restoreRow.result === 'failed'
+      ? 'failed'
+      : original.result,
+    detail: [original.detail, restored.detail].filter(Boolean).join('; '),
+  };
+  return updated;
 }
 
 function runGitUpdateStep(repoType: 'root', repo: string, args: string[], dryRun: boolean, okDetail: string): UpdateResult {
@@ -454,54 +624,48 @@ function updateSubmodules(dryRun: boolean): UpdateResult[] {
   return rows;
 }
 
-function spawnChild(command: string, args: string[]): Promise<number> {
+function spawnChild(command: string, args: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
   return new Promise((resolveChild) => {
-    const child = spawn(command, args, { cwd: ROOT, stdio: 'inherit', env: process.env });
+    const child = spawn(command, args, { cwd: ROOT, stdio: 'inherit', env });
     child.once('error', () => resolveChild(1));
     child.once('close', (status) => resolveChild(status ?? 1));
   });
 }
 
-async function updateFloatingHarness(dryRun: boolean): Promise<UpdateResult> {
-  const repo = FLOATING_REPOS.runtimeHarness.path;
-  const syncScript = script('sync-package-harness.mjs');
-  if (!existsSync(join(ROOT, repo))) {
-    return Promise.resolve({ repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' });
+export function updateFloatingPackageReportRows(
+  entries: Pick<PackageEntry, 'path'>[],
+  status: number,
+  dryRun: boolean,
+): UpdateResult[] {
+  if (entries.length === 0) {
+    return [{
+      repoType: 'floating-repo',
+      repo: '.packages',
+      result: 'skipped',
+      detail: 'no floating packages configured',
+    }];
   }
-  const args = [syncScript, '--update'];
-  if (dryRun) args.push('--dry-run');
-  if (dryRun) console.log(`[dry-run] ${BUN} ${args.join(' ')}`);
-  else console.log(`[update] floating repo ${repo}`);
-  const status = dryRun ? 0 : await spawnChild(BUN, args);
-  return {
+  return entries.map((entry) => ({
     repoType: 'floating-repo',
-    repo,
+    repo: entry.path,
     result: status === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
     detail: status === 0
-      ? (dryRun ? `would run ${BUN} ${args.join(' ')}` : 'synced to forgeax-harness/main')
-      : `harness update exited ${status}`,
-  };
+      ? (dryRun ? 'would update from .packages' : 'updated from .packages')
+      : `package update exited ${status}`,
+  }));
 }
 
-async function updateFloatingGames(dryRun: boolean): Promise<UpdateResult> {
-  const repo = FLOATING_REPOS.runtimeGames.path;
-  const syncScript = script('sync-games.mjs');
-  if (!existsSync(join(ROOT, repo))) {
-    return Promise.resolve({ repoType: 'floating-repo', repo, result: 'skipped', detail: 'checkout absent' });
-  }
-  const args = [syncScript, '--update'];
+async function updateFloatingPackages(dryRun: boolean): Promise<UpdateResult[]> {
+  const args = [script('packages.ts'), 'update'];
   if (dryRun) args.push('--dry-run');
   if (dryRun) console.log(`[dry-run] ${BUN} ${args.join(' ')}`);
-  else console.log(`[update] floating repo ${repo}`);
-  const status = dryRun ? 0 : await spawnChild(BUN, args);
-  return {
-    repoType: 'floating-repo',
-    repo,
-    result: status === 0 ? (dryRun ? 'planned' : 'ok') : 'failed',
-    detail: status === 0
-      ? (dryRun ? `would run ${BUN} ${args.join(' ')}` : 'synced to forgeax-games/main')
-      : `games update exited ${status}`,
-  };
+  else console.log('[update] floating repos from .packages');
+  // Resolve the manifest's canonical HTTPS credentials in the already-loaded
+  // parent process. During a self-update the root stash temporarily restores
+  // the old package-sync.ts on disk before this child starts.
+  const entries = managedFloatingPackageEntries();
+  const status = await spawnChild(BUN, args, packageGitEnvironment(ROOT));
+  return updateFloatingPackageReportRows(entries, status, dryRun);
 }
 
 function currentBranch(): string {
@@ -513,7 +677,7 @@ function upstream(): string {
 }
 
 function wgpuWasmPath(): string {
-  return resolve(ROOT, 'packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm');
+  return resolve(ENGINE_WGPU_ROOT, 'pkg/wgpu_wasm_bg.wasm');
 }
 
 function wgpuWasmStatus(): 'missing' | 'stale' | 'fresh' {
@@ -521,10 +685,10 @@ function wgpuWasmStatus(): 'missing' | 'stale' | 'fresh' {
   if (!existsSync(wasm)) return 'missing';
   const wasmTime = statSync(wasm).mtimeMs;
   const candidates = [
-    'packages/engine/packages/wgpu-wasm/Cargo.toml',
-    'packages/engine/packages/wgpu-wasm/Cargo.lock',
-    'packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm.js',
-  ].map((p) => resolve(ROOT, p));
+    resolve(ENGINE_WGPU_ROOT, 'Cargo.toml'),
+    resolve(ENGINE_WGPU_ROOT, 'Cargo.lock'),
+    resolve(ENGINE_WGPU_ROOT, 'pkg/wgpu_wasm.js'),
+  ];
   for (const p of candidates) {
     if (existsSync(p) && statSync(p).mtimeMs > wasmTime) return 'stale';
   }
@@ -533,21 +697,7 @@ function wgpuWasmStatus(): 'missing' | 'stale' | 'fresh' {
 
 function portOwner(port: number): string {
   try {
-    if (process.platform === 'win32') {
-      const out = execFileSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8' });
-      const line = out
-        .split(/\r?\n/)
-        .find((l) => l.includes(`:${port}`) && /\bLISTENING\b/i.test(l));
-      return line?.trim().split(/\s+/).at(-1) ?? '';
-    }
-    return (
-      execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })
-        .trim()
-        .split(/\s+/)[0] ?? ''
-    );
+    return String(listenPids(port)[0] ?? '');
   } catch {
     return '';
   }
@@ -566,7 +716,10 @@ function touchWgpuWasm(): void {
   utimesSync(wasm, now, now);
 }
 
-function startStudio(args: string[]): never {
+async function startStudio(
+  args: string[],
+  existing: ExistingRuntimePolicy = 'error',
+): Promise<never> {
   const skipSetupCheck = args.includes('--skip-setup-check');
   const startArgs = args.filter((arg) => arg !== '--skip-setup-check');
   if (!skipSetupCheck) {
@@ -584,20 +737,42 @@ function startStudio(args: string[]): never {
     console.warn('[start] setup version check skipped');
   }
 
-  const [maybeMode, ...rest] = startArgs;
-  if (maybeMode === 'desktop') runScript(script('desktop.ts'), rest, lifecycleProcessEnv());
-  if (maybeMode && maybeMode !== 'web' && !maybeMode.startsWith('-')) {
-    console.error(`[start] unknown client: ${maybeMode}`);
+  const client = resolveStartClient(startArgs);
+  if (client.type === 'desktop') {
+    await runScriptWithSignals(
+      script('fx/index.ts'),
+      ['ide', 'desktop', ...client.args],
+      lifecycleProcessEnv(),
+    );
+  }
+  if (client.type === 'unknown') {
+    console.error(`[start] unknown client: ${client.client}`);
     console.error('[start] usage: bun fx start [web|desktop] [args...]');
     process.exit(2);
   }
-
-  const runArgs = maybeMode === 'web' ? rest : startArgs;
   // Floating on purpose: startWeb awaits unified HTTP readiness, then exits.
-  void startWeb(runArgs);
+  return startWeb(client.args, existing);
 }
 
-async function startWeb(runArgs: string[]): Promise<never> {
+export type StartClientPlan =
+  | { type: 'desktop'; args: string[] }
+  | { type: 'web'; args: string[] }
+  | { type: 'unknown'; client: string; args: string[] };
+
+export function resolveStartClient(args: string[]): StartClientPlan {
+  const [maybeMode, ...rest] = args;
+  if (maybeMode === 'desktop') return { type: 'desktop', args: rest };
+  if (maybeMode === 'web') return { type: 'web', args: rest };
+  if (maybeMode && !maybeMode.startsWith('-')) {
+    return { type: 'unknown', client: maybeMode, args: rest };
+  }
+  return { type: 'web', args };
+}
+
+async function startWeb(
+  runArgs: string[],
+  existing: ExistingRuntimePolicy = 'error',
+): Promise<never> {
   const ensure = runArgs.includes('--ensure');
   if (runArgs.includes('--no-open')) {
     console.error('[start] --no-open was removed because start never opens a browser; use bun fx open explicitly.');
@@ -609,8 +784,9 @@ async function startWeb(runArgs: string[]): Promise<never> {
     const result = await startSourceRuntime({
       root: ROOT,
       profile: sourceProfileFromEnvironment(),
-      existing: ensure ? 'ensure' : 'error',
+      existing: existing === 'restart' ? 'restart' : ensure ? 'ensure' : 'error',
       runArgs: launcherArgs,
+      approveUnownedStop: existing === 'restart' ? approveUnownedRuntimeStop : undefined,
       // source-runtime-launcher is the sole instance projection authority for
       // start; lifecycleProcessEnv remains for desktop/stop/status children.
       env: process.env,
@@ -627,6 +803,25 @@ async function startWeb(runArgs: string[]): Promise<never> {
     process.exit(1);
   }
   process.exit(0);
+}
+
+async function approveUnownedRuntimeStop(refusals: readonly StopRefusal[]): Promise<boolean> {
+  const unique = [...new Map(refusals.map((refusal) => [refusal.pid, refusal])).values()];
+  console.error('[restart] the following listener(s) are not owned by this checkout:');
+  for (const refusal of unique) {
+    console.error(`          pid=${refusal.pid} ${refusal.source} cwd=${refusal.cwd ?? '(unavailable)'}`);
+  }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.error('[restart] refusing non-interactive termination; rerun in an interactive terminal to confirm');
+    return false;
+  }
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await prompt.question('[restart] stop these processes and continue? [y/N] ')).trim().toLowerCase();
+    return answer === 'y' || answer === 'yes';
+  } finally {
+    prompt.close();
+  }
 }
 
 function sourceProfileFromEnvironment(): Exclude<StartupProfile, 'desktop-prod'> {
@@ -725,9 +920,29 @@ async function update(args: string[]): Promise<void> {
   const stash = updateShouldStash(args);
   const restart = args.includes('--restart');
   let stashedMessage = '';
-  const results: UpdateResult[] = [];
+  let managedStashes: UpdateRepoStash[] = [];
+  let results: UpdateResult[] = [];
+
+  const conflicts = unmergedPaths();
+  if (conflicts.length > 0) {
+    console.error(formatUnmergedUpdateError(conflicts));
+    process.exit(2);
+  }
 
   console.log('[update] Checking working tree');
+  if (stash) {
+    try {
+      managedStashes = stashDirtyUpdateRepos(ROOT, managedUpdateRepos(), updateStashMessage(), dryRun);
+      for (const repo of managedStashes) {
+        console.log(`${dryRun ? '[dry-run]' : '[update]'} stashed ${repo.path}`);
+      }
+    } catch (error) {
+      console.error(`[update] unable to preserve managed repository changes: ${
+        error instanceof Error ? error.message : String(error)
+      }`);
+      process.exit(2);
+    }
+  }
   if (isDirty()) {
     if (!stash) {
       console.error('[update] local changes detected; remove --no-stash or clean the worktree first.');
@@ -735,7 +950,13 @@ async function update(args: string[]): Promise<void> {
     }
     const stashBefore = dryRun ? '' : stashTopOid();
     stashedMessage = updateStashMessage();
-    runGit(['stash', 'push', '-u', '-m', stashedMessage], { dryRun, inherit: true });
+    try {
+      runGit(['stash', 'push', '-u', '-m', stashedMessage], { dryRun, inherit: true });
+    } catch (error) {
+      restoreUpdateRepoStashes(ROOT, managedStashes, dryRun);
+      console.error(`[update] root stash failed: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(2);
+    }
     const stashAfter = dryRun ? `stash^{/${stashedMessage}}` : stashTopOid();
     if (didCreateStash(stashBefore, stashAfter)) {
       stashedMessage = dryRun ? stashAfter : 'stash@{0}';
@@ -763,13 +984,7 @@ async function update(args: string[]): Promise<void> {
   const rootOk = !results.some((row) => row.repoType === 'root' && row.result === 'failed');
   if (rootOk) {
     if (!dryRun) dropStaleSubmoduleConfig();
-    // These checkouts are independent. Start both network fetches together so
-    // a slow floating remote cannot add another full fetch latency after the
-    // first one completes.
-    results.push(...await Promise.all([
-      updateFloatingHarness(dryRun),
-      updateFloatingGames(dryRun),
-    ]));
+    results.push(...await updateFloatingPackages(dryRun));
     console.log('[update] Updating submodules');
     results.push(...updateSubmodules(dryRun));
   } else {
@@ -779,6 +994,12 @@ async function update(args: string[]): Promise<void> {
   if (stashedMessage) {
     console.log('[update] Restoring pre-update stash');
     results.push(restoreStashResult(stashedMessage, dryRun));
+  }
+  if (managedStashes.length > 0) {
+    console.log('[update] Restoring managed repository stashes');
+    for (const restored of restoreUpdateRepoStashes(ROOT, managedStashes, dryRun)) {
+      results = mergeManagedRestoreResult(results, restored, dryRun);
+    }
   }
 
   console.log();
@@ -791,28 +1012,67 @@ async function update(args: string[]): Promise<void> {
   }
 
   if (restart) {
-    if (dryRun) console.log('[dry-run] bun fx restart');
-    else restartStack([]);
+    await restartAfterUpdate(dryRun);
   } else {
     console.log('[update] done (use --restart to restart the stack)');
   }
 }
 
-function restartStack(args: string[]): never {
-  const stop = spawnSync(BUN, [script('stop.ts'), '--force'], {
-    cwd: ROOT,
-    stdio: 'inherit',
-    env: lifecycleProcessEnv(),
-  });
-  if ((stop.status ?? 0) !== 0) process.exit(stop.status ?? 1);
-  startStudio(args);
+export async function restartAfterUpdate(
+  dryRun: boolean,
+  start: (args: string[], existing: ExistingRuntimePolicy) => Promise<void> = startStudio,
+): Promise<void> {
+  if (dryRun) {
+    console.log('[dry-run] bun fx restart');
+    return;
+  }
+  await start([], 'restart');
 }
+
+export type LifecycleCommandDependencies = {
+  setup(args: string[]): void;
+  start(args: string[], existing: ExistingRuntimePolicy): Promise<void>;
+  update(args: string[]): Promise<void>;
+};
+
+export async function dispatchLifecycleCommand(
+  command: string,
+  args: string[],
+  dependencies: LifecycleCommandDependencies = {
+    setup: runSetup,
+    start: startStudio,
+    update,
+  },
+): Promise<boolean> {
+  switch (command) {
+    case 'setup':
+      dependencies.setup(args);
+      return true;
+    case 'start':
+      await dependencies.start(args, 'error');
+      return true;
+    case 'restart':
+      await dependencies.start(args, 'restart');
+      return true;
+    case 'update':
+      await dependencies.update(args);
+      return true;
+    default:
+      return false;
+  }
+}
+
+const LOCAL_CI_GAME_API_PORT = 'FORGEAX_GAME_API_PORT' as const;
+const LOCAL_CI_GAME_API_DEFAULT = 15_281;
 
 export function localCiEnvironment(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const instance = resolveRuntimeInstance({ root: ROOT });
   const e2eHost = instance.ports.interface + 100;
   const e2eApi = instance.ports.server + 100;
   const e2eEngine = instance.ports.engine + 100;
+  // Editor B2 starts its own game-backend in addition to the E2E web
+  // projection. Keep that fixed default in the same reservation pass so a
+  // developer's standalone editor cannot poison local Studio CI.
   return {
     ...baseEnv,
     CI: '1',
@@ -820,6 +1080,7 @@ export function localCiEnvironment(baseEnv: NodeJS.ProcessEnv = process.env): No
     // another checkout's standalone stack. Keep its four web-server pairs in
     // a slot-derived, separate port block while still allowing explicit CI
     // overrides for runners that reserve their own ports.
+    FORGEAX_GAME_API_PORT: baseEnv[LOCAL_CI_GAME_API_PORT] ?? String(LOCAL_CI_GAME_API_DEFAULT),
     FORGEAX_E2E_PORT: baseEnv.FORGEAX_E2E_PORT ?? String(e2eHost),
     FORGEAX_E2E_EDIT_PORT: baseEnv.FORGEAX_E2E_EDIT_PORT ?? String(e2eHost + 1),
     FORGEAX_E2E_API_PORT: baseEnv.FORGEAX_E2E_API_PORT ?? String(e2eApi),
@@ -854,7 +1115,8 @@ const LOCAL_CI_E2E_PORT_KEYS = [
   'FORGEAX_E2E_TEMPLATE_BRIDGE_PORT',
 ] as const;
 
-type LocalCiPortKey = (typeof LOCAL_CI_E2E_PORT_KEYS)[number];
+const LOCAL_CI_PORT_KEYS = [...LOCAL_CI_E2E_PORT_KEYS, LOCAL_CI_GAME_API_PORT] as const;
+type LocalCiPortKey = (typeof LOCAL_CI_PORT_KEYS)[number];
 
 function probeCiPort(port: number): Promise<ReturnType<typeof createServer> | null> {
   return new Promise((resolveProbe) => {
@@ -888,7 +1150,7 @@ async function reserveLocalCiE2ePorts(
   inheritedEnv: NodeJS.ProcessEnv,
 ): Promise<{ env: NodeJS.ProcessEnv; release: () => Promise<void>; offset: number }> {
   const instance = resolveRuntimeInstance({ root: ROOT });
-  const hasExplicitPorts = LOCAL_CI_E2E_PORT_KEYS.some((key) => inheritedEnv[key] !== undefined);
+  const hasExplicitPorts = LOCAL_CI_PORT_KEYS.some((key) => inheritedEnv[key] !== undefined);
   const offsets = hasExplicitPorts
     ? [0]
     : Array.from({ length: 100 }, (_, index) => index * 100);
@@ -900,6 +1162,7 @@ async function reserveLocalCiE2ePorts(
       const e2eApi = instance.ports.server + 100 + offset;
       const e2eEngine = instance.ports.engine + 100 + offset;
       const defaults: Record<LocalCiPortKey, string> = {
+        FORGEAX_GAME_API_PORT: String(LOCAL_CI_GAME_API_DEFAULT + offset),
         FORGEAX_E2E_PORT: String(e2eHost),
         FORGEAX_E2E_EDIT_PORT: String(e2eHost + 1),
         FORGEAX_E2E_API_PORT: String(e2eApi),
@@ -911,10 +1174,10 @@ async function reserveLocalCiE2ePorts(
         FORGEAX_E2E_BRIDGE_PORT: String(e2eHost + 6),
         FORGEAX_E2E_TEMPLATE_BRIDGE_PORT: String(e2eHost + 8),
       };
-      for (const key of LOCAL_CI_E2E_PORT_KEYS) candidate[key] = defaults[key];
+      for (const key of LOCAL_CI_PORT_KEYS) candidate[key] = defaults[key];
     }
 
-    const ports = [...new Set(LOCAL_CI_E2E_PORT_KEYS.map((key) => Number(candidate[key])))];
+    const ports = [...new Set(LOCAL_CI_PORT_KEYS.map((key) => Number(candidate[key])))];
     if (ports.some((port) => !Number.isInteger(port) || port < 1024 || port > 65535)) {
       throw new Error('[ci] editor E2E port environment contains an invalid port');
     }
@@ -956,10 +1219,10 @@ async function reserveLocalCiE2ePorts(
   throw new Error(`[ci] ${hint}`);
 }
 
-// Local PR gate for the Studio superrepo. Keep this as a deterministic local
-// projection of the remote CI surface: install the pinned graph, run the root
-// contracts, verify the engine-owned template path, then delegate the editor
-// leaf's own CI to its checked-out CLI.
+// Local PR gate for the Studio integration workspace. Product execution and
+// engine/editor builds belong to the independently checked-out IDE; this gate
+// validates root-owned contracts, public wrappers, and then delegates the IDE
+// leaf's own public CI command.
 async function ci(args: string[]): Promise<never> {
   if (args.length > 0) {
     console.error('usage: bun fx ci');
@@ -975,36 +1238,18 @@ async function ci(args: string[]): Promise<never> {
     FORGEAX_SKIP_HARNESS: '1',
     FORGEAX_SKIP_GAMES: '1',
     FORGEAX_SKIP_BOOTSTRAP: '1',
+    FORGEAX_SKIP_SUBMODULE_INIT: '1',
+    FORGEAX_ROOT_INTEGRATION_ONLY: '1',
+    FORGEAX_SKIP_PLUGINS: '1',
   });
-  const harness = spawnSync(BUN, [script('sync-package-harness.mjs'), '--ensure'], {
-    cwd: ROOT,
-    stdio: 'inherit',
-    env: ciEnv,
-  });
-  if ((harness.status ?? 1) !== 0) {
-    console.error('[ci] FAIL: source Studio harness checkout is unavailable');
-    process.exit(harness.status ?? 1);
-  }
   const steps: readonly [string, string, string[], string][] = [
-    ['recursive submodule checkout', 'git', ['submodule', 'update', '--init', '--recursive'], ROOT],
-    ['root frozen Bun install + prepare', BUN, ['install', '--frozen-lockfile'], ROOT],
-    ['root repository gates', BUN, [script('repos.ts'), 'check', '.'], ROOT],
+    ['root frozen Bun install + integration prepare', BUN, ['install', '--frozen-lockfile'], ROOT],
+    ['root layer gate', BUN, ['run', 'lint:layers'], ROOT],
+    ['root integration tests', BUN, ['run', 'test:layers'], ROOT],
     ['required-checks ruleset audit', BUN, ['scripts/ci/audit-required-checks-ruleset.mjs'], ROOT],
-    ['games floating checkout contract', BUN, ['test', 'scripts/games-floating-contract.test.ts'], ROOT],
-    ['bun fx command contract', BUN, ['test', 'scripts/fx-ci-contract.test.ts'], ROOT],
-    ['Studio editor smoke contract', BUN, ['run', 'test:studio-smoke-contract'], ROOT],
-    [
-      'server engine-template catalog and creation tests',
-      BUN,
-      [
-        'test',
-        'test/game-templates.test.ts',
-        'test/workbench-create-game-default.test.ts',
-        'test/workbench-link-idempotency.test.ts',
-      ],
-      join(ROOT, 'packages', 'server'),
-    ],
-    ['editor engine setup', BUN, ['scripts/fx.ts', 'setup'], join(ROOT, 'packages', 'editor')],
+    ['bun fx command contract', BUN, ['test', './scripts/fx-ci-contract.test.ts'], ROOT],
+    ['root cutover contract', BUN, ['test', './scripts/cutover/root-cutover.spec.ts', './scripts/check-root-runtime-exit.spec.ts'], ROOT],
+    ['public wrapper discovery', BUN, ['scripts/fx.ts', 'versions'], ROOT],
   ];
   for (const [name, command, argv, cwd] of steps) {
     console.log(`\n[ci] ${name}`);
@@ -1015,30 +1260,17 @@ async function ci(args: string[]): Promise<never> {
     }
   }
 
-  console.log('\n[ci] editor PR CI projection');
-  let editorPorts: Awaited<ReturnType<typeof reserveLocalCiE2ePorts>>;
-  try {
-    editorPorts = await reserveLocalCiE2ePorts(ciEnv, process.env);
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
+  console.log('\n[ci] IDE public CI');
+  const ideResult = spawnSync(BUN, [script('fx.ts'), 'ide', 'ci'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: ciEnv,
+  });
+  if ((ideResult.status ?? 1) !== 0) {
+    console.error('[ci] FAIL: IDE public CI');
+    process.exit(ideResult.status ?? 1);
   }
-  console.log(`[ci] editor E2E port block offset=${editorPorts.offset}`);
-  // The reservation closes immediately before spawn: it prevents selection
-  // against a transient outbound socket, while the child gets the actual
-  // ports. A second process can still race the handoff, but this is the only
-  // unavoidable window and is retried by the normal CI command if it occurs.
-  await editorPorts.release();
-  const editorResult = spawnSync(
-    BUN,
-    ['scripts/fx.ts', 'ci'],
-    { cwd: join(ROOT, 'packages', 'editor'), stdio: 'inherit', env: editorPorts.env },
-  );
-  if ((editorResult.status ?? 1) !== 0) {
-    console.error('[ci] FAIL: editor PR CI projection');
-    process.exit(editorResult.status ?? 1);
-  }
-  console.log('\n[ci] PASS: local Studio PR CI');
+  console.log('\n[ci] PASS: local Studio integration CI');
   process.exit(0);
 }
 
@@ -1396,21 +1628,16 @@ async function main(): Promise<void> {
     usage();
     process.exit(2);
   }
+  if (await dispatchLifecycleCommand(plan.command, plan.args)) return;
   switch (plan.command) {
     case 'help':
     case '--help':
     case '-h':
       usage();
       break;
-    case 'setup':
-      runSetup(plan.args);
-      break;
     case 'status':
       if (plan.args.includes('--repos')) runScript(script('repos.ts'), ['status']);
       status();
-      break;
-    case 'start':
-      startStudio(plan.args);
       break;
     case 'doctor':
       doctor(plan.args);
@@ -1421,17 +1648,20 @@ async function main(): Promise<void> {
       if (result.stderr) process.stderr.write(result.stderr);
       process.exit(result.exitCode);
     }
-    case 'update':
-      await update(plan.args);
-      break;
+    case 'release-integrity': {
+      const result = executeReleaseIntegrityCli(plan.args, {
+        ...createReleaseIntegrityCliDependencies(ROOT),
+        runRouteBackAdapter: runReleaseIntegrityRouteBackAdapter,
+      });
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+      process.exit(result.exitCode);
+    }
     case 'clean':
       clean(plan.args);
       break;
     case 'ci':
-      await ci(plan.args);
-      break;
-    case 'restart':
-      restartStack(plan.args);
+      process.exit(runPublicCommand(['ide', 'ci', ...plan.args], ROOT));
       break;
     case 'build':
       usage();

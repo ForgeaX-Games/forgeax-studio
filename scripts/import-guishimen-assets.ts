@@ -10,7 +10,7 @@ import { mergeSharedAssetManifest } from './video-asset-manifest'
 const SRC = '/Users/you/Downloads/video.chi1.4.boarding-1'
 const REPO = '/Users/you/github/forgeax-studio'
 const GAME = join(REPO, '.forgeax/games/guishimen')
-const GV = join(GAME, 'game-video')
+const GV = join(GAME, 'video-game')
 const ASSETS = join(GAME, 'assets')
 const BLOBS = join(ASSETS, 'blobs')
 const NOW = 1751414400000 // 固定时间戳,保证幂等(不用 Date.now())
@@ -60,8 +60,8 @@ function main() {
       {
         name: 'guishimen',
         displayName: '鬼市门',
-        description: '互动影游 · 幽冥渡(剧情线 + Boss 战 / QTE,wb-game-video)',
-        projectType: 'game-video',
+        description: '互动影游 · 幽冥渡(剧情线 + Boss 战 / QTE,video-game)',
+        projectType: 'video-game',
         forgeVersion: '1.0.0',
         createdAt: '2026-07-02T00:00:00.000Z',
       },

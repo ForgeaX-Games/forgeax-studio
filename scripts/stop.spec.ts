@@ -45,20 +45,20 @@ function stateFor(target: ReturnType<typeof resolveRuntimeInstance>) {
 function scope(target: ReturnType<typeof resolveRuntimeInstance>, state: ReturnType<typeof stateFor> | null) {
   return resolveInstanceStopScope(target, state, {
     activeServer: { packageDir: join(target.root, 'packages/server'), entry: 'src/main.ts' },
-    interfaceDir: join(target.root, 'packages/studio'),
-    plugins: new Map([['lowpoly', { shortId: 'lowpoly', dir: join(target.root, 'packages/marketplace/extensions/wb-lowpoly-obj'), commands: ['dev', 'serve'] }]]),
+    interfaceDir: join(target.root, 'packages/ide'),
+    plugins: new Map([['lowpoly', { shortId: 'lowpoly', dir: join(target.root, 'packages/marketplace/extensions/lowpoly'), commands: ['dev', 'serve'] }]]),
   });
 }
 
 function recoveryScope(target: ReturnType<typeof resolveRuntimeInstance>) {
   return resolveInstanceStopScope(target, null, {
     activeServer: { packageDir: join(target.root, 'packages/server'), entry: 'src/main.ts' },
-    interfaceDir: join(target.root, 'packages/studio'),
+    interfaceDir: join(target.root, 'packages/ide'),
   });
 }
 
 function pluginFixture(target: ReturnType<typeof resolveRuntimeInstance>, id = '@forgeax/lowpoly') {
-  const dir = join(target.root, 'packages/marketplace/extensions/wb-lowpoly-obj');
+  const dir = join(target.root, 'packages/marketplace/extensions/lowpoly');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'forgeax-extension.json'), JSON.stringify({ id, entry: { standalone: { embeddedAlso: false, start: 'dev' } } }));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { dev: 'vite' } }));
@@ -143,7 +143,7 @@ describe('instance-scoped stop discovery', () => {
       engine: target.ports.engine,
     }, {
       server: { packageDir: join(target.root, 'packages/server-override'), entry: 'src/override-main.ts' },
-      interface: { dir: join(target.root, 'packages/interface') },
+      interface: { dir: join(target.root, 'packages/ide') },
     });
     state.setServicePid('server', 102);
     const persisted = state.setServicePid('interface', 103);
@@ -155,7 +155,7 @@ describe('instance-scoped stop discovery', () => {
     const server = result.pids.find((item) => item.key === 'server')!.owners[0]!;
     const interfaceOwner = result.pids.find((item) => item.key === 'interface')!.owners[0]!;
     expect(server.activeServer).toEqual({ packageDir: join(target.root, 'packages/server-override'), entry: 'src/override-main.ts' });
-    expect(interfaceOwner.interfaceDir).toBe(join(target.root, 'packages/interface'));
+    expect(interfaceOwner.interfaceDir).toBe(join(target.root, 'packages/ide'));
     expect(result.ports.find((item) => item.key === 'server')!.owner.activeServer).toEqual(server.activeServer);
     expect(result.ports.find((item) => item.key === 'interface')!.owner.interfaceDir).toBe(interfaceOwner.interfaceDir);
   });
@@ -168,15 +168,15 @@ describe('instance-scoped stop discovery', () => {
     writeRecovery(target, { generatedBy: 'scripts/local-runtime.ts', plugins: {} }, [
       `FORGEAX_RUN_SERVER_PACKAGE_DIR="${join(target.root, 'packages/server')}"`,
       'FORGEAX_RUN_SERVER_ENTRY="src/main.ts"',
-      `FORGEAX_RUN_INTERFACE_DIR="${join(target.root, 'packages/interface')}"`,
+      `FORGEAX_RUN_INTERFACE_DIR="${join(target.root, 'packages/ide')}"`,
       'FORGEAX_RUN_PIDS="702 703"',
     ].join('\n'));
     const result = scope(target, null);
     const server = result.ports.find((item) => item.key === 'server')!.owner;
     const interfaceOwner = result.ports.find((item) => item.key === 'interface')!.owner;
     expect(server.activeServer).toEqual({ packageDir: join(target.root, 'packages/server'), entry: 'src/main.ts' });
-    expect(interfaceOwner.interfaceDir).toBe(join(target.root, 'packages/interface'));
-    expect(result.pids.every((pidTarget) => pidTarget.owners.some((owner) => owner.activeServer?.packageDir === join(target.root, 'packages/server') || owner.interfaceDir === join(target.root, 'packages/interface')))).toBe(true);
+    expect(interfaceOwner.interfaceDir).toBe(join(target.root, 'packages/ide'));
+    expect(result.pids.every((pidTarget) => pidTarget.owners.some((owner) => owner.activeServer?.packageDir === join(target.root, 'packages/server') || owner.interfaceDir === join(target.root, 'packages/ide')))).toBe(true);
   });
 
   test('partial or forged recovery owner evidence blocks cleanup and never falls back to shell owners', () => {
@@ -188,7 +188,7 @@ describe('instance-scoped stop discovery', () => {
       [
         `FORGEAX_RUN_SERVER_PACKAGE_DIR="${forged}"`,
         'FORGEAX_RUN_SERVER_ENTRY="src/main.ts"',
-        `FORGEAX_RUN_INTERFACE_DIR="${join(target.root, 'packages/interface')}"`,
+        `FORGEAX_RUN_INTERFACE_DIR="${join(target.root, 'packages/ide')}"`,
         'FORGEAX_RUN_PIDS="702"',
       ].join('\n'),
     ]) {
@@ -202,7 +202,7 @@ describe('instance-scoped stop discovery', () => {
 
   test('recovery discovery accepts real Node-local Vite interface and engine listeners', () => {
     const target = instance(1);
-    const interfaceDir = join(target.root, 'packages/interface');
+    const interfaceDir = join(target.root, 'packages/ide');
     const engineDir = join(target.root, 'packages/editor/packages/play-runtime');
     writeRecovery(target, { generatedBy: 'scripts/local-runtime.ts', plugins: {} }, [
       `FORGEAX_RUN_SERVER_PACKAGE_DIR="${join(target.root, 'packages/server')}"`,
@@ -212,7 +212,7 @@ describe('instance-scoped stop discovery', () => {
     const result = scope(target, null);
     const snapshots = new Map([
       [811, { pid: 811, commandLine: `node ${interfaceDir}/node_modules/.bin/vite`, cwd: interfaceDir }],
-      [812, { pid: 812, commandLine: `node ${engineDir}/node_modules/.bin/vite`, cwd: engineDir }],
+      [812, { pid: 812, commandLine: `node ${target.root}/packages/editor/node_modules/vite/bin/vite.js`, cwd: engineDir }],
     ]);
     const discovery = discoverStopTargets(result, {
       listenPids: (port) => port === target.ports.interface ? [811] : port === target.ports.engine ? [812] : [],
@@ -238,11 +238,10 @@ describe('instance-scoped stop discovery', () => {
     expect(headless.owners.some((owner) => runtimeProcessBelongsToInstance(foreign, owner))).toBe(false);
   });
 
-  test('run persists non-zero headless renderer PIDs into dev-stack recovery evidence', () => {
+  test('run persists supervised service PIDs into runtime state recovery evidence', () => {
     const source = readFileSync(join(process.cwd(), 'scripts/run.ts'), 'utf8');
-    expect(source).toContain('const headlessPids: number[] = [];');
-    expect(source).toContain('if (headlessPid > 0) headlessPids.push(headlessPid);');
-    expect(source).toContain('...extensionPids, ...headlessPids');
+    expect(source).toContain('if (event.pid) state.setServicePid(event.name, event.pid);');
+    expect(source).toContain("if (event.status === 'stopped' || event.status === 'failed') state.setServicePid(event.name, 0);");
   });
 
   test('cleanup paths are confined to the current project root', () => {
@@ -273,6 +272,8 @@ describe('instance-scoped stop discovery', () => {
       source: `:${port.port} server`,
       reason: 'ownership-unproven',
       cwd: '/other/worktree',
+      commandLine: 'vite --port 28900',
+      startToken: null,
     }]);
     expect(foreign.blocked).toBe(true);
 
@@ -308,6 +309,98 @@ describe('instance-scoped stop discovery', () => {
       isPortBusy: () => false,
     });
     expect(owned.found.get(78)).toBe('server');
+  });
+
+  test('operator approval is bound to the exact unowned PID and never overrides protected ancestors', () => {
+    const target = instance(1);
+    const result = scope(target, stateFor(target));
+    const port = result.ports[0]!;
+    const base = {
+      listenPids: () => [77, 78, 79],
+      readSnapshot: (pid: number) => ({ pid, commandLine: 'vite --port 28900', cwd: '/other/worktree', startToken: `started-${pid}` }),
+      owns: () => false,
+      isAlive: () => true,
+      isPortBusy: () => true,
+      protectedPids: new Set([79]),
+      approvedUnownedProcesses: new Map([[77, {
+        pid: 77,
+        commandLine: 'vite --port 28900',
+        cwd: '/other/worktree',
+        startToken: 'started-77',
+      }]]),
+    };
+
+    const discovery = discoverStopTargets({ ...result, ports: [port], pids: [] }, base);
+    expect(discovery.found).toEqual(new Map([[77, 'server']]));
+    expect(discovery.refusals).toEqual([
+      { pid: 78, source: `:${port.port} server`, reason: 'ownership-unproven', cwd: '/other/worktree', commandLine: 'vite --port 28900', startToken: 'started-78' },
+      { pid: 79, source: `:${port.port} server`, reason: 'protected-ancestor', cwd: '/other/worktree', commandLine: 'vite --port 28900', startToken: 'started-79' },
+    ]);
+    expect(discovery.blocked).toBe(true);
+  });
+
+  test('operator approval does not follow a PID replacement on the approved port', () => {
+    const target = instance(1);
+    const result = scope(target, stateFor(target));
+    const port = result.ports[0]!;
+    const discovery = discoverStopTargets({ ...result, ports: [port], pids: [] }, {
+      listenPids: () => [88],
+      readSnapshot: (pid) => ({ pid, commandLine: 'vite', cwd: '/replacement', startToken: 'replacement-start' }),
+      owns: () => false,
+      isAlive: () => true,
+      isPortBusy: () => true,
+      approvedUnownedProcesses: new Map([[77, { pid: 77, commandLine: 'vite', cwd: '/other/worktree', startToken: 'original-start' }]]),
+    });
+
+    expect(discovery.found.size).toBe(0);
+    expect(discovery.refusals[0]?.pid).toBe(88);
+    expect(discovery.blocked).toBe(true);
+  });
+
+  test('operator approval does not follow same-PID process identity reuse', () => {
+    const target = instance(1);
+    const result = scope(target, stateFor(target));
+    const port = result.ports[0]!;
+    const discovery = discoverStopTargets({ ...result, ports: [port], pids: [] }, {
+      listenPids: () => [77],
+      readSnapshot: () => ({ pid: 77, commandLine: 'node replacement.js', cwd: '/replacement', startToken: 'replacement-start' }),
+      owns: () => false,
+      isAlive: () => true,
+      isPortBusy: () => true,
+      approvedUnownedProcesses: new Map([[77, {
+        pid: 77,
+        commandLine: 'vite --port 28900',
+        cwd: '/other/worktree',
+        startToken: 'original-start',
+      }]]),
+    });
+
+    expect(discovery.found.size).toBe(0);
+    expect(discovery.refusals[0]).toMatchObject({ pid: 77, cwd: '/replacement' });
+    expect(discovery.blocked).toBe(true);
+  });
+
+  test('operator approval does not follow same-PID same-command process reincarnation', () => {
+    const target = instance(1);
+    const result = scope(target, stateFor(target));
+    const port = result.ports[0]!;
+    const discovery = discoverStopTargets({ ...result, ports: [port], pids: [] }, {
+      listenPids: () => [77],
+      readSnapshot: () => ({ pid: 77, commandLine: 'vite', cwd: '/other/worktree', startToken: 'new-start' }),
+      owns: () => false,
+      isAlive: () => true,
+      isPortBusy: () => true,
+      approvedUnownedProcesses: new Map([[77, {
+        pid: 77,
+        commandLine: 'vite',
+        cwd: '/other/worktree',
+        startToken: 'old-start',
+      }]]),
+    });
+
+    expect(discovery.found.size).toBe(0);
+    expect(discovery.refusals[0]).toMatchObject({ pid: 77, startToken: 'new-start' });
+    expect(discovery.blocked).toBe(true);
   });
 
   test('unknown live declared resources and post-force non-listener survivors block final cleanup', () => {
@@ -360,7 +453,7 @@ describe('instance-scoped stop discovery', () => {
     const result = recoveryScope(a);
     expect(result.ports.map((target) => target.key)).toContain('plugin-lowpoly-frontend');
     expect(result.ports.map((target) => target.key)).toContain('plugin-lowpoly-backend');
-    const discovery = discoverStopTargets(result, { listenPids: (port) => port === 41_001 ? [71] : [], readSnapshot: () => ({ pid: 71, commandLine: 'vite', cwd: join(a.root, 'packages/marketplace/extensions/wb-lowpoly-obj') }), owns: () => true, isAlive: (pid) => pid === 777, isPortBusy: (port) => port === 41_001 });
+    const discovery = discoverStopTargets(result, { listenPids: (port) => port === 41_001 ? [71] : [], readSnapshot: () => ({ pid: 71, commandLine: 'vite', cwd: join(a.root, 'packages/marketplace/extensions/lowpoly') }), owns: () => true, isAlive: (pid) => pid === 777, isPortBusy: (port) => port === 41_001 });
     expect(discovery.found.get(71)).toBe('plugin-lowpoly-frontend');
     expect(discovery.blocked).toBe(false);
   });
@@ -369,7 +462,7 @@ describe('instance-scoped stop discovery', () => {
     const a = instance(1); const b = instance(2); pluginFixture(a); pluginFixture(b);
     writeRecovery(a, { generatedBy: 'scripts/local-runtime.ts', plugins: { '@forgeax/lowpoly': { frontendPort: 41_011, backendPort: 41_012 } } });
     const target = recoveryScope(a).ports.find((port) => port.key === 'plugin-lowpoly-frontend')!;
-    expect(runtimeProcessBelongsToInstance({ pid: 88, commandLine: 'vite', cwd: join(b.root, 'packages/marketplace/extensions/wb-lowpoly-obj') }, target.owner)).toBe(false);
+    expect(runtimeProcessBelongsToInstance({ pid: 88, commandLine: 'vite', cwd: join(b.root, 'packages/marketplace/extensions/lowpoly') }, target.owner)).toBe(false);
     writeRecovery(a, '{broken'); const malformed = recoveryScope(a);
     const empty = { found: new Map<number, string>(), refusedPorts: new Set<number>(), refusedPids: new Set<number>() };
     expect(malformed.untrusted).toBe(true); expect(canFinalizeStop(malformed, empty, { isAlive: () => false, isPortBusy: () => false })).toBe(false);

@@ -11,7 +11,7 @@ import { realpathSync } from 'node:fs';
 
 /** Default ports. Kept in sync with docs/PORTS.md; overridable for non-default stacks. */
 export const DEFAULT_PORTS = {
-  /** forgeax-server: chat, sessions, workbench, files. http. */
+  /** forgeax-server: chat, sessions, projects, extensions, files. http. */
   server: 18900,
   /** Studio UI vite. HTTP by default; HTTPS is opt-in for non-localhost use. */
   interface: 18920,

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "defaultMaxGrowthPercent": 20,
+  "packages": {
+    "@forgeax/npc-client": {
+      "version": "0.1.0",
+      "packedBytes": 140404,
+      "unpackedBytes": 839538,
+      "maxGrowthPercent": 20
+    }
+  }
+}

@@ -7,41 +7,22 @@
  * fallback remain useful for development and migration, but are never inferred.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { ensureRuntime, launcherForRuntime, resolveInstalledRuntime } from '../runtime/manager';
-import { runtimeEnvironment, type RuntimeEnvOverrides } from '../runtime/env';
-
-/** Marker package name identifying a Studio checkout that can run `bun fx start`. */
-const STUDIO_PACKAGE_NAME = 'forgeax-studio';
+import {
+  ensureRuntime,
+  launcherForRuntime,
+  resolveInstalledRuntime,
+  runtimeEnvironment,
+  type RuntimeEnvOverrides,
+} from '@forgeax/game-runtime';
 
 export interface StackLauncher {
-  readonly kind: 'explicit' | 'installed-runtime' | 'development-fallback';
+  readonly kind: 'explicit' | 'installed-runtime';
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
   readonly env?: Record<string, string>;
   /** Human-readable account of why this launcher was chosen. */
   readonly description: string;
-}
-
-/** Walk up looking for a Studio checkout, identified by its root package.json name. */
-function findStudioCheckout(start: string): string | undefined {
-  let dir = resolve(start);
-  for (;;) {
-    const pkg = join(dir, 'package.json');
-    if (existsSync(pkg)) {
-      try {
-        const name = (JSON.parse(readFileSync(pkg, 'utf8')) as { name?: string }).name;
-        if (name === STUDIO_PACKAGE_NAME) return dir;
-      } catch {
-        /* unreadable package.json — keep walking */
-      }
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
 }
 
 /**
@@ -82,20 +63,6 @@ export function resolveLauncher(
     };
   }
 
-  // Studio discovery is deliberately opt-in. It is a useful contributor fallback,
-  // but a published plugin must not silently depend on a sibling checkout.
-  const checkout = process.env.FORGEAX_RUNTIME_DEV_FALLBACK === '1' ? findStudioCheckout(projectRoot) : undefined;
-  if (checkout) {
-    return {
-      kind: 'development-fallback',
-      command: 'bun',
-      args: ['scripts/fx.ts', 'start'],
-      cwd: checkout,
-      env: runtimeEnvironment(overrides),
-      description: `development fallback: Studio checkout at ${checkout}`,
-    };
-  }
-
   return undefined;
 }
 
@@ -126,15 +93,10 @@ export function launchGuidance(): string {
     'Cannot start the ForgeaX stack: no verified ForgeaX runtime is installed,',
     'and FORGEAX_START_COMMAND is not set.',
     '',
-    'The published plugin must include assets/runtime-manifest.json and the bundled',
-    'Runtime archive (or set FORGEAX_RUNTIME_MANIFEST for a private deployment).',
-    'Install a release that includes those assets, then call this tool again.',
+    'Install a supported @forgeax/game-runtime package, then call this tool again.',
     '',
     'Advanced override (not recommended for normal installs):',
     '  export FORGEAX_START_COMMAND="<command that brings up server :18900 and engine :15173>"',
-    '',
-    'Contributor-only fallback:',
-    '  export FORGEAX_RUNTIME_DEV_FALLBACK=1',
   ].join('\n');
 }
 

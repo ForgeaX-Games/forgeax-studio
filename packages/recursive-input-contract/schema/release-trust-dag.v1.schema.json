@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:forgeax:release-trust-dag:v1",
+  "title": "ForgeaX release trust DAG",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "candidateId", "nodes", "edges", "mutations"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "nodes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/edge" } },
+    "mutations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/mutation" } }
+  },
+  "$defs": {
+    "node": { "type": "object", "additionalProperties": false, "required": ["nodeId", "role", "identity", "permissions"], "properties": { "nodeId": { "type": "string", "minLength": 1 }, "role": { "type": "string", "enum": ["producer", "verifier", "publisher", "target", "mutation"] }, "identity": { "type": "string", "minLength": 1 }, "permissions": { "type": "array", "items": { "type": "string" } } } },
+    "edge": { "type": "object", "additionalProperties": false, "required": ["edgeId", "from", "to", "kind"], "properties": { "edgeId": { "type": "string", "minLength": 1 }, "from": { "type": "string", "minLength": 1 }, "to": { "type": "string", "minLength": 1 }, "kind": { "type": "string", "enum": ["evidence", "precondition", "binding", "order"] } } },
+    "mutation": { "type": "object", "additionalProperties": false, "required": ["mutationId", "targetNodeId", "publisherNodeId", "operation", "requiredPreconditions"], "properties": { "mutationId": { "type": "string", "minLength": 1 }, "targetNodeId": { "type": "string", "minLength": 1 }, "publisherNodeId": { "type": "string", "minLength": 1 }, "operation": { "type": "string", "minLength": 1 }, "requiredPreconditions": { "type": "array", "items": { "type": "string", "minLength": 1 } } } }
+  }
+}

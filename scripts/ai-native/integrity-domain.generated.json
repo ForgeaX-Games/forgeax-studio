@@ -21,8 +21,8 @@
     ]
   },
   "domain_files": [
+    ".forgeax-harness/docs/ai-native/other-team-gap-ownership.md",
     "package.json",
-    "packages/harness/docs/ai-native/other-team-gap-ownership.md",
     "scripts/ai-native/alias-map.json",
     "scripts/ai-native/baseline-literal.spec.ts",
     "scripts/ai-native/baseline-state.ts",
@@ -53,8 +53,8 @@
     "scripts/ai-native/vocab-config.json"
   ],
   "configuration_files": [
+    ".forgeax-harness/docs/ai-native/other-team-gap-ownership.md",
     "package.json",
-    "packages/harness/docs/ai-native/other-team-gap-ownership.md",
     "scripts/ai-native/alias-map.json",
     "scripts/ai-native/baseline-literal.spec.ts",
     "scripts/ai-native/baseline-state.ts",
@@ -84,12 +84,12 @@
   ],
   "configuration_file_hashes": [
     {
-      "path": "package.json",
-      "sha256": "6cd6bc964e8dc29b6fe4c98152a73e8042d051ba5ae0294492ef00644f9d2c84"
+      "path": ".forgeax-harness/docs/ai-native/other-team-gap-ownership.md",
+      "sha256": "c860ce27e150b93211d5b6b1cf980d271f7994887e4ea7f3f32edf7b1530b559"
     },
     {
-      "path": "packages/harness/docs/ai-native/other-team-gap-ownership.md",
-      "sha256": "0557a76d0b9d7b5b408df3a628806b85c90ddcaf342c2f0ab6ae088ad0aa72ef"
+      "path": "package.json",
+      "sha256": "d3aad951ddcb1f0cb140d999f0d35d469028ec4068ef89f005b059f8f53ee9c5"
     },
     {
       "path": "scripts/ai-native/alias-map.json",
@@ -117,7 +117,7 @@
     },
     {
       "path": "scripts/ai-native/effect-adjudications-v1.jsonl",
-      "sha256": "9e2230a3eb696ffe5bc3a70a3170d9483941ec15ccb81c65cf6a27a7d9a15bb7"
+      "sha256": "9ad05f1003e244d11494df0e444ecbe93521e7c4a765c9caee3815c36e2e8103"
     },
     {
       "path": "scripts/ai-native/evidence-manifest.schema.spec.ts",
@@ -129,19 +129,19 @@
     },
     {
       "path": "scripts/ai-native/exclusions.json",
-      "sha256": "cfa112f2cb760a6d1d6dec0dd68c46b853f7159c3311f25626c8a2181becc7d2"
+      "sha256": "582764dc167242992667928a63834e11f1b54b556f36016973b56f9ab4e76e43"
     },
     {
       "path": "scripts/ai-native/integrity-domain.spec.ts",
-      "sha256": "7790799a80a2487ba0b0282b53a9e5f3a72f4fe094dbb88c97e9799e4dccf37a"
+      "sha256": "2731172e1cf71aef03f0d5eec84968ec97a4ba933459fe66bf025bb77f126641"
     },
     {
       "path": "scripts/ai-native/integrity-domain.ts",
-      "sha256": "f300ec8354f9c333aeab843caa7427e8673957a5c5bd99198413763eca8cf9e1"
+      "sha256": "95a21ddcc65329e198f82a55bbe51386dd89da295b220675e3b24eea5f0051bb"
     },
     {
       "path": "scripts/ai-native/ledger-v1.schema.spec.ts",
-      "sha256": "a0708696e2e134e415bd556187d0241f96fa80289d28b6ff6db4e46f1b896d4c"
+      "sha256": "4ef8242aaab2ca91ab0c8f8a4abc629704a00a7e226fbba94ca4a5416ba5a409"
     },
     {
       "path": "scripts/ai-native/ledger-v1.schema.ts",
@@ -169,7 +169,7 @@
     },
     {
       "path": "scripts/ai-native/runtime-artifact-integrity.ts",
-      "sha256": "5b2b4c6a0f0ca7e23e5a274574647afcbf30621da48eac8cd66fef7ef5dd7b06"
+      "sha256": "a2349a81973a5db6b90dfe401656729602792bbf7874a3e3e030c70501c1b7e9"
     },
     {
       "path": "scripts/ai-native/scanner-config.json",
@@ -177,11 +177,11 @@
     },
     {
       "path": "scripts/ai-native/scanner.spec.ts",
-      "sha256": "a992ce1c07d404c0e2e0dba0b038490cd96f780f4902a2be324b00fcb14b2ccd"
+      "sha256": "eabbc599e8b19b786229dd34d0071519b6dd3ae2397873b6b6d2a2f2d6dc3b1b"
     },
     {
       "path": "scripts/ai-native/scanner.ts",
-      "sha256": "11ab54c0708ca89608ac4c5ea5dd2e3db473563fa7b580eae8f87070214047ec"
+      "sha256": "b1e8f8bbc47e7a6c17002e30d2dd001ec5186a4acb62b02e4d0d70c7dac6ca1f"
     },
     {
       "path": "scripts/ai-native/tsconfig.json",
@@ -193,11 +193,11 @@
     },
     {
       "path": "scripts/ai-native/vocab-config.json",
-      "sha256": "dcd34ceb6529d9b62470400af07d8cb89b1095e9fc8bfae392ab27d36aa91653"
+      "sha256": "aab625dee21bfb28530dca36b118e0a73839fff39cc4299337208858307a7ed6"
     }
   ],
   "scanner_configuration_files": [
-    "packages/harness/docs/ai-native/other-team-gap-ownership.md",
+    ".forgeax-harness/docs/ai-native/other-team-gap-ownership.md",
     "scripts/ai-native/alias-map.json",
     "scripts/ai-native/exclusions.json",
     "scripts/ai-native/manual-pool-effect-promotions.json",
@@ -206,8 +206,8 @@
     "scripts/ai-native/vocab-config.json"
   ],
   "snapshot_boundary_inputs": [
+    ".forgeax-harness/docs/ai-native/other-team-gap-ownership.md",
     "bun.lock",
-    "packages/harness/docs/ai-native/other-team-gap-ownership.md",
     "scripts/ai-native/alias-map.json",
     "scripts/ai-native/exclusions.json",
     "scripts/ai-native/manual-pool-effect-promotions.json",

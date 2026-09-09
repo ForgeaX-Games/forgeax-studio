@@ -63,6 +63,8 @@ describe('ordinary recursive input CI contract', () => {
     expect(action).toContain('source-work-status=');
     expect(action).toContain('recursive-input.consumer-work-suppressed');
     expect(action).toContain('exit 3');
+    expect(action).toContain('CONTRACT_PRE_ADMISSION=1');
+    expect(action.indexOf('CONTRACT_PRE_ADMISSION=1')).toBeLessThan(action.indexOf('materialize-submodules.sh'));
   });
 
   it('accepts the current ordinary attempt and rejects trust, attempt, and class drift', () => {
@@ -99,7 +101,7 @@ describe('ordinary recursive input CI contract', () => {
     for (const workflowPath of ordinaryWorkflowPaths) {
       const workflow = read(workflowPath);
       const actionIndex = workflow.indexOf('uses: ./.github/actions/fetch-submodules');
-      const manifestIndex = workflow.indexOf('manifest-path: ${{ runner.temp }}/forgeax-recursive-input-');
+      const manifestIndex = workflow.search(/manifest-path: \$\{\{ runner\.temp \}\}\/forgeax-(?:desktop-)?recursive-input-/);
       const consumerIndex = Math.max(workflow.lastIndexOf('bun install'), workflow.lastIndexOf('smoke-install.sh'));
       expect(actionIndex).toBeGreaterThanOrEqual(0);
       expect(manifestIndex).toBeGreaterThan(actionIndex);
@@ -131,7 +133,8 @@ describe('recursive-input CI contract entry', () => {
         expect(files.manifest.consumers.some((consumer) => consumer.consumerId === consumerId)).toBe(true);
       }
     }
-    expect(read('packages/harness/docs/contracts/recursive-inputs.md')).toContain('status --scope ci --live-ruleset');
-    expect(read('packages/harness/docs/contracts/recursive-inputs.md')).toContain('sourceWork.status = suppressed');
+    expect(read('packages/recursive-input-contract/ci/producer-manifest.v1.json')).toContain('Studio QA required gate');
+    expect(read('.github/workflows/ci.yml')).toContain('integration-only gate');
   });
+
 });

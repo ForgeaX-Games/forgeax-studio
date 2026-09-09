@@ -6,7 +6,6 @@ import { STATIC_GATES, VITE_BUILDS } from './run-post-install-checks.ts';
 describe('post-install CI stages', () => {
   it('keeps the independent static contract set complete', () => {
     expect(STATIC_GATES.map((task) => task.name)).toEqual([
-      'Test @forgeax/agent-runtime',
       'Typecheck @forgeax/platform-io',
       'interface package-boundary guard',
       'interface app-agnostic import guard',
@@ -16,8 +15,8 @@ describe('post-install CI stages', () => {
     ]);
   });
 
-  it('runs the two Vite-only builds as a separate bounded stage', () => {
-    expect(VITE_BUILDS).toHaveLength(2);
+  it('runs the base interface Vite build as a separate bounded stage', () => {
+    expect(VITE_BUILDS).toHaveLength(1);
     for (const task of VITE_BUILDS) {
       expect(task.args).toEqual(['run', 'vite', 'build']);
     }
@@ -30,7 +29,5 @@ describe('post-install CI stages', () => {
     };
     expect(packageBuild('packages/interface/package.json'))
       .toBe('tsc -b tsconfig.lint.json && vite build');
-    expect(packageBuild('packages/studio/package.json'))
-      .toBe('tsc -b && vite build');
   });
 });

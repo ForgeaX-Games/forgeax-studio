@@ -1,6 +1,6 @@
 {
   "name": "@forgeax/game-runtime-common",
-  "version": "0.3.31",
+  "version": "0.3.33",
   "description": "Shared verified Runtime installation, launch, and Engine SDK APIs for ForgeaX platform packages.",
   "type": "module",
   "main": "./dist/index.js",

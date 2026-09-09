@@ -9,7 +9,12 @@ import {
   runtimeTargetForMachine,
   sidecarNameForTriple,
 } from './lib/runtime-resource-assembler';
-import { buildRuntimeTarget, platformDeclarationSource, platformEntrySource } from './build-game-runtime';
+import {
+  buildRuntimeTarget,
+  platformDeclarationSource,
+  platformEntrySource,
+  runtimeTarArgs,
+} from './build-game-runtime';
 import { buildGameRuntimeSdk } from './build-game-runtime-sdk';
 
 const fixtures: string[] = [];
@@ -56,6 +61,19 @@ describe('Game Runtime native target contract', () => {
     expect(declarations).toContain("GameRuntimeDistribution['runtimeCacheRoot']");
     expect(declarations).not.toMatch(/darwin-arm64|win32-x64|linux-x64/);
   });
+
+  test('forces Windows drive-letter tar outputs to stay local', () => {
+    const args = runtimeTarArgs(
+      String.raw`C:\Temp\runtime-inputs.tar`,
+      String.raw`C:\Temp\resources`,
+      String.raw`C:\Temp\runtime-inputs.txt`,
+      'win32',
+      ['--owner=0'],
+    );
+    expect(args).toContain('--force-local');
+    expect(runtimeTarArgs('/tmp/runtime.tar', '/tmp/resources', '/tmp/inputs.txt', 'darwin', []))
+      .not.toContain('--force-local');
+  });
 });
 
 describe('Runtime resource assembly', () => {
@@ -64,11 +82,13 @@ describe('Runtime resource assembly', () => {
     const source = join(root, 'desktop-resources');
     const destination = join(root, 'runtime-resources');
     const files: Record<string, string> = {
-      'runtime/local-runtime.mjs': 'launcher',
-      'server/src/main.ts': 'server',
       'engine/vite.config.ts': 'engine',
+      'engine/engine-vite-preset.mjs': 'preset',
       'engine/node_modules/@dimforge/runtime.js': 'physics',
-      'node_modules/sharp/index.js': 'native image dependency',
+      'node_modules/fzstd/index.js': 'codec',
+      'node_modules/@bokuweb/zstd-wasm/index.js': 'codec wasm',
+      'node_modules/@dimforge/rapier2d-compat/index.js': 'physics 2d',
+      'node_modules/@dimforge/rapier3d-compat/index.js': 'physics 3d',
       'interface/dist/studio.js': 'product UI',
       'games/demo/src/main.ts': 'bundled game',
       'marketplace/extensions/video/src/index.ts': 'authoring extension',
@@ -86,28 +106,27 @@ describe('Runtime resource assembly', () => {
 
     const result = assembleRuntimeResources({ sourceRoot: source, destinationRoot: destination });
 
-    for (const retained of [
-      'runtime/local-runtime.mjs',
-      'server/src/main.ts',
-      'engine/vite.config.ts',
-      'engine/node_modules/@dimforge/runtime.js',
-      'node_modules/sharp/index.js',
-    ]) {
-      expect(readFileSync(join(destination, retained), 'utf8')).toBe(files[retained]);
+    for (const [retained, contents] of Object.entries({
+      'engine/vite.config.ts': 'engine',
+      'engine/engine-vite-preset.mjs': 'preset',
+      'engine/node_modules/@dimforge/runtime.js': 'physics',
+      'engine/node_modules/fzstd/index.js': 'codec',
+      'engine/node_modules/@bokuweb/zstd-wasm/index.js': 'codec wasm',
+      'engine/node_modules/@dimforge/rapier2d-compat/index.js': 'physics 2d',
+      'engine/node_modules/@dimforge/rapier3d-compat/index.js': 'physics 3d',
+    })) {
+      expect(readFileSync(join(destination, retained), 'utf8')).toBe(contents);
     }
     for (const removed of [
       'interface',
       'games',
       'marketplace/extensions',
-      'node_modules/pkg/test',
-      'node_modules/pkg/index.js.map',
-      'node_modules/pkg/bun.lock',
       'engine/assets/learn-opengl',
       'engine/assets/trailer.mp4',
     ]) {
       expect(existsSync(join(destination, removed))).toBe(false);
     }
-    expect(result.removedEntries).toBeGreaterThanOrEqual(8);
+    expect(result.removedEntries).toBeGreaterThanOrEqual(2);
   });
 
   test('builds the native platform archive, manifest, and generated entry from fixture resources', () => {
@@ -119,9 +138,12 @@ describe('Runtime resource assembly', () => {
     mkdirSync(packageRoot, { recursive: true });
     writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ version: '0.3.27' }));
     for (const [relative, contents] of Object.entries({
-      'runtime/local-runtime.mjs': 'runtime',
-      'server/src/main.ts': 'server',
-      'engine/vite.config.ts': 'const health = {\n          instanceRootAbs,\n};',
+      'engine/vite.config.ts': 'export default {};',
+      'engine/engine-vite-preset.mjs': 'export const preset = {};',
+      'node_modules/fzstd/index.js': 'codec',
+      'node_modules/@bokuweb/zstd-wasm/index.js': 'codec wasm',
+      'node_modules/@dimforge/rapier2d-compat/index.js': 'physics 2d',
+      'node_modules/@dimforge/rapier3d-compat/index.js': 'physics 3d',
     })) {
       const path = join(resources, relative);
       mkdirSync(join(path, '..'), { recursive: true });
@@ -136,16 +158,32 @@ describe('Runtime resource assembly', () => {
       sidecarPath: sidecar,
       fromResources: true,
       skipSdk: true,
+      engineCommit: '0123456789abcdef0123456789abcdef01234567',
     });
     const manifest = JSON.parse(readFileSync(result.manifest, 'utf8')) as {
-      artifacts: Array<{ version: string; platform: string; arch: string; command: string; sha256: string }>;
+      schemaVersion: number;
+      artifacts: Array<{
+        version: string;
+        platform: string;
+        arch: string;
+        command: string;
+        sha256: string;
+        engineCommit: string;
+        capabilities: { build: { script: string }; serve: { script: string } };
+      }>;
     };
     expect(existsSync(result.archive)).toBe(true);
+    expect(manifest.schemaVersion).toBe(2);
     expect(manifest.artifacts[0]).toMatchObject({
       version: '0.3.27',
       platform: target.platform,
       arch: target.arch,
       command: `bin/${target.sidecar}`,
+      engineCommit: '0123456789abcdef0123456789abcdef01234567',
+      capabilities: {
+        build: { script: 'runtime/preview-build.mjs' },
+        serve: { script: 'runtime/preview-serve.mjs' },
+      },
     });
     expect(manifest.artifacts[0].sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(readFileSync(join(packageRoot, 'dist/index.js'), 'utf8')).toBe(platformEntrySource());
@@ -160,16 +198,19 @@ describe('Runtime resource assembly', () => {
     mkdirSync(packageRoot, { recursive: true });
     writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ version: '0.3.27' }));
     for (const [relative, contents] of Object.entries({
-      'runtime/local-runtime.mjs': 'runtime',
-      'server/src/main.ts': 'server',
-      'engine/vite.config.ts': 'const health = {\n          instanceRootAbs,\n};',
+      'engine/vite.config.ts': 'export default {};',
+      'engine/engine-vite-preset.mjs': 'export const preset = {};',
+      'node_modules/fzstd/index.js': 'codec',
+      'node_modules/@bokuweb/zstd-wasm/index.js': 'codec wasm',
+      'node_modules/@dimforge/rapier2d-compat/index.js': 'physics 2d',
+      'node_modules/@dimforge/rapier3d-compat/index.js': 'physics 3d',
     })) {
       const path = join(resources, relative);
       mkdirSync(join(path, '..'), { recursive: true });
       writeFileSync(path, contents);
     }
     writeFileSync(sidecar, 'bun');
-    chmodSync(join(resources, 'runtime/local-runtime.mjs'), 0o600);
+    chmodSync(join(resources, 'engine/vite.config.ts'), 0o600);
 
     const first = buildRuntimeTarget({
       root,
@@ -178,9 +219,10 @@ describe('Runtime resource assembly', () => {
       sidecarPath: sidecar,
       fromResources: true,
       skipSdk: true,
+      engineCommit: '0123456789abcdef0123456789abcdef01234567',
     });
     const firstDigest = createHash('sha256').update(readFileSync(first.archive)).digest('hex');
-    chmodSync(join(resources, 'runtime/local-runtime.mjs'), 0o666);
+    chmodSync(join(resources, 'engine/vite.config.ts'), 0o666);
     const second = buildRuntimeTarget({
       root,
       target,
@@ -188,6 +230,7 @@ describe('Runtime resource assembly', () => {
       sidecarPath: sidecar,
       fromResources: true,
       skipSdk: true,
+      engineCommit: '0123456789abcdef0123456789abcdef01234567',
     });
     const secondDigest = createHash('sha256').update(readFileSync(second.archive)).digest('hex');
     expect(second.archive).toBe(first.archive);
@@ -206,38 +249,81 @@ describe('Runtime Engine SDK assembly', () => {
   test('writes the platform-neutral SDK only to the requested common root', () => {
     const root = fixture();
     const engine = join(root, 'packages/editor/packages/engine');
-    const packageRoot = join(engine, 'packages/math');
+    const packageRoot = join(engine, 'packages/engine-math-source');
     mkdirSync(join(packageRoot, 'dist'), { recursive: true });
-    writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: '@forgeax/engine-math' }));
-    writeFileSync(join(packageRoot, 'dist/index.d.ts'), 'export declare const vector: true;');
+    writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({
+      name: '@forgeax/engine-math',
+      types: './dist/index.d.ts',
+      exports: { '.': { types: './dist/index.d.ts' } },
+    }));
+    writeFileSync(join(packageRoot, 'dist/index.d.ts'), "export { vector } from './vector.js';");
+    writeFileSync(join(packageRoot, 'dist/vector.d.ts'), 'export declare const vector: true;');
+    writeFileSync(join(packageRoot, 'dist/private-fixture.d.ts'), 'export declare const privateFixture: true;');
     mkdirSync(join(packageRoot, 'src'), { recursive: true });
     writeFileSync(join(packageRoot, 'src/index.ts'), 'export const vector = true;');
     mkdirSync(join(packageRoot, 'src/__tests__'), { recursive: true });
     writeFileSync(join(packageRoot, 'src/__tests__/fixture.test.ts'), "const localPath = '/Users/you/private';");
+    mkdirSync(join(packageRoot, 'src/fixtures'), { recursive: true });
+    writeFileSync(join(packageRoot, 'src/fixtures/private.ts'), 'export const fixture = true;');
+    mkdirSync(join(packageRoot, 'src/snapshots'), { recursive: true });
+    writeFileSync(join(packageRoot, 'src/snapshots/private.ts'), 'export const snapshot = true;');
     mkdirSync(join(engine, 'templates/game-default'), { recursive: true });
     writeFileSync(join(engine, 'templates/game-default/main.ts'), 'game');
-    mkdirSync(join(engine, 'skills/engine-authoring'), { recursive: true });
-    writeFileSync(join(engine, 'skills/engine-authoring/SKILL.md'), '# Skill');
+    mkdirSync(join(engine, 'templates/game-empty'), { recursive: true });
+    writeFileSync(join(engine, 'templates/game-empty/main.ts'), 'empty');
+    mkdirSync(join(engine, 'skills/forgeax-engine-math'), { recursive: true });
+    writeFileSync(join(engine, 'skills/forgeax-engine-math/SKILL.md'), '# Skill');
     const output = join(root, 'common-assets/engine-sdk');
 
     expect(buildGameRuntimeSdk({ root, output })).toBe(output);
-    expect(existsSync(join(output, 'packages/math/dist/index.d.ts'))).toBe(true);
-    expect(existsSync(join(output, 'examples/game-default/main.ts'))).toBe(true);
-    expect(existsSync(join(output, 'skills/engine-authoring/SKILL.md'))).toBe(true);
-    expect(existsSync(join(output, 'source/math/src/index.ts'))).toBe(true);
-    expect(existsSync(join(output, 'source/math/src/__tests__'))).toBe(false);
+    expect(existsSync(join(output, 'packages/engine-math-source/dist/index.d.ts'))).toBe(true);
+    expect(existsSync(join(output, 'packages/engine-math-source/dist/vector.d.ts'))).toBe(true);
+    expect(existsSync(join(output, 'packages/engine-math-source/dist/private-fixture.d.ts'))).toBe(false);
+    // Mirrored under the Engine's own name so a model starts from a template rather
+    // than imitating an "example", and game-empty travels with game-default.
+    expect(existsSync(join(output, 'templates/game-default/main.ts'))).toBe(true);
+    expect(existsSync(join(output, 'templates/game-empty/main.ts'))).toBe(true);
+    expect(existsSync(join(output, 'examples'))).toBe(false);
+    expect(existsSync(join(output, 'skills/forgeax-engine-math/SKILL.md'))).toBe(true);
+    expect(existsSync(join(output, 'source/engine-math-source/src/index.ts'))).toBe(true);
+    expect(existsSync(join(output, 'source/engine-math-source/src/__tests__'))).toBe(false);
+    expect(existsSync(join(output, 'source/engine-math-source/src/fixtures'))).toBe(false);
+    expect(existsSync(join(output, 'source/engine-math-source/src/snapshots'))).toBe(false);
     expect(existsSync(join(root, 'packages/game-runtime/darwin-arm64/assets/engine-sdk'))).toBe(false);
+    expect(JSON.parse(readFileSync(join(output, 'engine-version.json'), 'utf8'))).toMatchObject({
+      packageCount: 1,
+      packages: ['@forgeax/engine-math'],
+      packageDirectories: ['engine-math-source'],
+      templates: ['game-default', 'game-empty'],
+      skills: ['forgeax-engine-math'],
+      sourcePackages: ['engine-math-source'],
+    });
+    expect(JSON.parse(readFileSync(join(output, 'tsconfig.json'), 'utf8'))).toMatchObject({
+      compilerOptions: {
+        paths: {
+          '@forgeax/engine-math': ['packages/engine-math-source/dist/index.d.ts'],
+        },
+      },
+    });
   });
 
   test('builds missing Engine declarations before snapshotting the SDK', () => {
     const root = fixture();
     const enginePackage = join(root, 'packages/editor/packages/engine/packages/ecs');
     mkdirSync(join(enginePackage, 'src'), { recursive: true });
-    writeFileSync(join(enginePackage, 'package.json'), JSON.stringify({ name: '@forgeax/engine-ecs' }));
+    writeFileSync(join(enginePackage, 'package.json'), JSON.stringify({
+      name: '@forgeax/engine-ecs',
+      types: './dist/index.d.ts',
+    }));
     writeFileSync(join(enginePackage, 'src/index.ts'), 'export interface World {}\n');
     const skills = join(root, 'packages/editor/packages/engine/skills/forgeax-engine-ecs');
     mkdirSync(skills, { recursive: true });
     writeFileSync(join(skills, 'SKILL.md'), '# ECS\n');
+    for (const name of ['game-default', 'game-empty']) {
+      const template = join(root, 'packages/editor/packages/engine/templates', name);
+      mkdirSync(template, { recursive: true });
+      writeFileSync(join(template, 'main.ts'), name);
+    }
     let builds = 0;
     const output = buildGameRuntimeSdk({
       root,

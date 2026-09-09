@@ -106,6 +106,49 @@ describe('recursive input semantic validator', () => {
     expectRejected(wrongDigest, context(), 'recursive-input.digest-mismatch');
   });
 
+  test('retains a valid CI binding while reporting semantic graph rejection', () => {
+    const candidate = readyResult() as RecursiveInputResult & {
+      ci: {
+        producerId: string;
+        outputContractVersion: string;
+        repository: string;
+        revision: string;
+        run: string;
+        attempt: string;
+        job: string;
+        trustScope: 'ordinary-ci';
+        inputProvenance: { producerId: string; outputContractVersion: string; repository: string; revision: string; inputDigest: string };
+      };
+    };
+    candidate.ci = {
+      producerId: 'producer-id',
+      outputContractVersion: 'recursive-input-ci-result.v1',
+      repository: 'forgeax-studio',
+      revision: 'root-a',
+      run: 'run-1',
+      attempt: 'attempt-1',
+      job: 'test-job',
+      trustScope: 'ordinary-ci',
+      inputProvenance: {
+        producerId: 'producer-id',
+        outputContractVersion: 'recursive-input-ci-result.v1',
+        repository: 'forgeax-studio',
+        revision: 'root-a',
+        inputDigest: candidate.content.inputDigest,
+      },
+    };
+    const outcome = validateRecursiveInputResult(
+      candidate,
+      context({ graph: { ...projected, unreachablePaths: ['packages/editor/packages/engine'] } }),
+    );
+    expect(outcome.ok).toBe(false);
+    expect(outcome.result.status).toBe('non-ready');
+    if (outcome.result.status === 'non-ready') {
+      expect(outcome.result.failure.code).toBe('recursive-input.pin-unreachable');
+      expect(outcome.result.ci).toEqual(candidate.ci);
+    }
+  });
+
   test('rejects wrong attempt, trust scope, missing class, and build-output mixing', () => {
     const wrongAttempt = readyResult();
     wrongAttempt.provenance.attempt = 'attempt-old';

@@ -64,27 +64,48 @@ describe('runtimeProcessBelongsToInstance', () => {
   });
 
   test('accepts Vite only from its exact interface and engine cwd', () => {
-    expect(runtimeProcessBelongsToInstance(snapshot('bun x vite', `${root}/packages/studio`), {
+    expect(runtimeProcessBelongsToInstance(snapshot('bun run dev:web', `${root}/packages/ide`), {
+      root, service: 'interface', stateServiceKey: 'interface',
+    })).toBe(true);
+    expect(runtimeProcessBelongsToInstance(snapshot('bun run dev:web', `${root}/packages/ide`), {
+      root, service: 'interface', managedPortKey: 'interface',
+    })).toBe(false);
+    expect(runtimeProcessBelongsToInstance(snapshot('bun x vite', `${root}/packages/ide`), {
       root, service: 'interface', stateServiceKey: 'interface', managedPortKey: 'interface',
     })).toBe(true);
     expect(runtimeProcessBelongsToInstance(snapshot('bun x vite', `${root}/packages/interface`), {
       root, service: 'interface', interfaceDir: `${root}/packages/interface`,
-    })).toBe(true);
+    })).toBe(false);
     expect(runtimeProcessBelongsToInstance(snapshot('bun x vite', `${root}/packages/interface`), {
       root, service: 'interface',
     })).toBe(false);
-    expect(runtimeProcessBelongsToInstance(snapshot('bun x vite', `${root}/packages/editor/packages/play-runtime`), {
+    expect(runtimeProcessBelongsToInstance(snapshot(
+      `node ${root}/packages/editor/node_modules/vite/bin/vite.js`,
+      `${root}/packages/editor/packages/play-runtime`,
+    ), {
       root, service: 'engine', stateServiceKey: 'engine', managedPortKey: 'engine',
     })).toBe(true);
+    expect(runtimeProcessBelongsToInstance(snapshot(
+      'bun run dev:web -- --host 0.0.0.0 --port 18920 --strictPort',
+      `${root}/packages/ide`,
+    ), { root, service: 'interface', stateServiceKey: 'interface' })).toBe(true);
+    expect(runtimeProcessBelongsToInstance(snapshot(
+      'bun run dev:web -- --host 0.0.0.0 --port 18920 --strictPort',
+      `${root}/packages/ide`,
+    ), { root, service: 'interface', managedPortKey: 'interface' })).toBe(false);
     for (const [service, cwd, commandLine] of [
-      ['interface', `${root}/packages/interface`, `node ${root}/packages/interface/node_modules/.bin/vite`] as const,
-      ['engine', `${root}/packages/editor/packages/play-runtime`, `node ${root}/packages/editor/packages/play-runtime/node_modules/vite/bin/vite.js`] as const,
+      ['interface', `${root}/packages/ide`, `node ${root}/packages/ide/node_modules/.bin/vite`] as const,
+      ['engine', `${root}/packages/editor/packages/play-runtime`, `node ${root}/packages/editor/node_modules/vite/bin/vite.js`] as const,
       ['rhi-debug-reviewer', `${root}/packages/editor/packages/engine`, `node ${root}/packages/editor/packages/engine/node_modules/.bin/vite`] as const,
     ]) {
       expect(runtimeProcessBelongsToInstance(snapshot(commandLine, cwd), {
         root, service, ...(service === 'interface' ? { interfaceDir: cwd } : {}),
       })).toBe(true);
     }
+    expect(runtimeProcessBelongsToInstance(snapshot(
+      `node ${root}/packages/editor/packages/play-runtime/node_modules/vite/bin/vite.js`,
+      `${root}/packages/editor/packages/play-runtime`,
+    ), { root, service: 'engine' })).toBe(false);
     expect(runtimeProcessBelongsToInstance(snapshot(
       `node ${root}/packages/interface-copy/node_modules/.bin/vite`, `${root}/packages/interface`,
     ), { root, service: 'interface', interfaceDir: `${root}/packages/interface` })).toBe(false);
@@ -96,6 +117,21 @@ describe('runtimeProcessBelongsToInstance', () => {
     })).toBe(false);
   });
 
+  test('accepts Windows bun wrappers for the exact interface package script', () => {
+    for (const commandLine of [
+      String.raw`C:\Users\forgeax\.bun\bin\bun.exe run dev:web`,
+      String.raw`"C:\Users\forgeax\.bun\bin\bun.exe" run dev:web`,
+    ]) {
+      expect(runtimeProcessBelongsToInstance(snapshot(commandLine, `${root}/packages/ide`), {
+        root, service: 'interface', stateServiceKey: 'interface',
+      })).toBe(true);
+    }
+    expect(runtimeProcessBelongsToInstance(snapshot(
+      String.raw`"C:\Users\forgeax\.bun\bin\bun.exe" run dev:web-copy`,
+      `${root}/packages/ide`,
+    ), { root, service: 'interface', stateServiceKey: 'interface' })).toBe(false);
+  });
+
   test('handles narrative, reviewer, and all plugin process shapes with exact boundaries', () => {
     expect(runtimeProcessBelongsToInstance(snapshot(
       'npx tsx --env-file=.env src/api/server.ts', `${root}/packages/marketplace/extensions/wb-narrative`,
@@ -103,7 +139,7 @@ describe('runtimeProcessBelongsToInstance', () => {
     expect(runtimeProcessBelongsToInstance(snapshot('pnpm exec vite', `${root}/packages/editor/packages/engine`), {
       root, service: 'rhi-debug-reviewer', stateServiceKey: 'rhi-debug-reviewer', managedPortKey: 'rhi-reviewer',
     })).toBe(true);
-    const pluginDir = `${root}/packages/marketplace/extensions/wb-lowpoly-obj`;
+    const pluginDir = `${root}/packages/marketplace/extensions/lowpoly`;
     expect(runtimeProcessBelongsToInstance(snapshot('bun run dev', pluginDir), {
       root, service: 'plugin-frontend', pluginDir, pluginShortId: 'lowpoly', pluginCommand: 'dev', stateServiceKey: 'plugin-lowpoly', managedPortKey: 'plugin-lowpoly-frontend',
     })).toBe(true);
@@ -116,6 +152,12 @@ describe('runtimeProcessBelongsToInstance', () => {
     expect(runtimeProcessBelongsToInstance(snapshot('vite --host 127.0.0.1', pluginDir), {
       root, service: 'plugin-frontend', pluginDir, pluginShortId: 'lowpoly', pluginCommand: 'dev', managedPortKey: 'plugin-lowpoly-frontend',
     })).toBe(true);
+    expect(runtimeProcessBelongsToInstance(snapshot('node ./node_modules/.bin/vite --host', pluginDir), {
+      root, service: 'plugin-frontend', pluginDir, pluginShortId: 'lowpoly', pluginCommand: 'dev', managedPortKey: 'plugin-lowpoly-frontend',
+    })).toBe(true);
+    expect(runtimeProcessBelongsToInstance(snapshot('node ./node_modules/.bin/vite-copy --host', pluginDir), {
+      root, service: 'plugin-frontend', pluginDir, pluginShortId: 'lowpoly', pluginCommand: 'dev', managedPortKey: 'plugin-lowpoly-frontend',
+    })).toBe(false);
     expect(runtimeProcessBelongsToInstance(snapshot(`node ${pluginDir}/node_modules/vite/bin/vite.js`, `${pluginDir}/frontend`), {
       root, service: 'plugin-frontend', pluginDir, pluginShortId: 'lowpoly', pluginCommand: 'dev', managedPortKey: 'plugin-lowpoly-frontend',
     })).toBe(true);
@@ -161,7 +203,7 @@ describe('runtimeProcessBelongsToInstance', () => {
     expect(runtimeProcessBelongsToInstance(null, { root, service: 'launcher' })).toBe(false);
     expect(runtimeProcessBelongsToInstance(snapshot(null, root), { root, service: 'launcher' })).toBe(false);
     expect(runtimeProcessBelongsToInstance(snapshot(`bun ${root}/scripts/local-runtime.ts`, null), { root, service: 'launcher' })).toBe(false);
-    expect(runtimeProcessBelongsToInstance(snapshot('bun x vite', `${root}/packages/studio`), {
+    expect(runtimeProcessBelongsToInstance(snapshot('bun x vite', `${root}/packages/ide`), {
       root, service: 'unknown-service' as never,
     })).toBe(false);
   });
@@ -185,14 +227,17 @@ describe('runtimeProcessBelongsToInstance', () => {
     expect(runtimeProcessBelongsToInstance(windowsSnapshot('vite --host 127.0.0.1', [localRuntimeAncestor]), {
       root, service: 'interface', stateServiceKey: 'interface', managedPortKey: 'interface',
     })).toBe(true);
-    const pluginDir = `${root}/packages/marketplace/extensions/wb-lowpoly-obj`;
+    const pluginDir = `${root}/packages/marketplace/extensions/lowpoly`;
     expect(runtimeProcessBelongsToInstance(windowsSnapshot('vite --host 127.0.0.1', [localRuntimeAncestor]), {
       root, service: 'plugin-frontend', pluginDir, pluginShortId: 'lowpoly', pluginCommand: 'dev', managedPortKey: 'plugin-lowpoly-frontend',
     })).toBe(true);
 
     // Every non-launcher source service needs the actual local-runtime parent
     // in addition to its production command signature.
-    expect(runtimeProcessBelongsToInstance(windowsSnapshot('bun x vite', [localRuntimeAncestor]), {
+    expect(runtimeProcessBelongsToInstance(windowsSnapshot(
+      String.raw`node ${root}\packages\editor\node_modules\vite\bin\vite.js`,
+      [localRuntimeAncestor],
+    ), {
       root, service: 'engine', stateServiceKey: 'engine', managedPortKey: 'engine',
     })).toBe(true);
     expect(runtimeProcessBelongsToInstance(windowsSnapshot(

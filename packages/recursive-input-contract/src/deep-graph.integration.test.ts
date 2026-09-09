@@ -63,8 +63,8 @@ function createNestedFixture(): string {
   addSubmodule(studio, games, 'packages/games');
   addSubmodule(studio, contracts, 'packages/contracts');
   git(studio, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '--init', '--recursive']);
-  git(studio, ['remote', 'add', 'origin', 'fixture-root']);
-  return studio;
+    git(studio, ['remote', 'add', 'origin', 'fixture-root']);
+    return studio;
 }
 
 function readyResult(graph: ProjectedGitGraph): RecursiveInputResult {
@@ -92,6 +92,11 @@ function context(graph: ProjectedGitGraph) {
 describe('deep recursive input graph integration', () => {
   test('projects arbitrary two-level nested pins and rejects historical blocker-shaped gaps before consumption', () => {
     const root = createNestedFixture();
+    // Self-hosted CI can keep a submodule's gitdir in an external cache and
+    // leave the worktree without its .git file. The graph must still inspect
+    // that checked-out leaf as reachable.
+    rmSync(join(root, 'packages/contracts/types/.git'), { force: true });
+    writeFileSync(join(root, 'packages/contracts/types/runner-note.txt'), 'runner-local state\n');
     const complete = projectGitlinkGraph(readAuthoritativeGitGraph(root));
     const expectedPaths = [
       'packages/contracts',
@@ -126,6 +131,18 @@ describe('deep recursive input graph integration', () => {
       expect(rejected.result.failure.recoveryActions.length).toBeGreaterThan(0);
       expect(rejected.result.failure.actual).not.toContain('ENOENT');
     }
+  });
+
+  test('omits submodules declared update=none from the current recursive input graph', () => {
+    const root = createNestedFixture();
+    git(root, ['config', '--file', '.gitmodules', 'submodule.packages/contracts.update', 'none']);
+
+    const projected = projectGitlinkGraph(readAuthoritativeGitGraph(root));
+    expect(projected.pins.map((pin) => pin.path)).toEqual([
+      'packages/games',
+      'packages/games/paopaotang/src/npcs',
+    ]);
+    expect(projected.unreachablePaths).toEqual([]);
   });
 });
 

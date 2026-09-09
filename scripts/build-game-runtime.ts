@@ -2,7 +2,6 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
 import {
   chmodSync,
   closeSync,
@@ -100,29 +99,70 @@ function archiveEntries(root: string): string[] {
   return entries;
 }
 
+function tarOwnershipArgs(): string[] {
+  const help = spawnSync('tar', ['--help'], { encoding: 'utf8' });
+  const text = `${help.stdout ?? ''}\n${help.stderr ?? ''}`;
+  if (text.includes('--owner')) return ['--owner=0', '--group=0', '--numeric-owner'];
+  if (text.includes('--uid') && text.includes('--gid')) return ['--uid=0', '--gid=0'];
+  return [];
+}
+
+export function runtimeTarArgs(
+  rawTarPath: string,
+  staging: string,
+  listPath: string,
+  platform: NodeJS.Platform = process.platform,
+  ownershipArgs: string[] = tarOwnershipArgs(),
+): string[] {
+  return [
+    '--no-recursion',
+    // GNU tar treats the colon in a Windows drive path as remote-archive
+    // syntax unless local path handling is forced explicitly.
+    ...(platform === 'win32' ? ['--force-local'] : []),
+    ...ownershipArgs,
+    '-cf',
+    rawTarPath,
+    '-C',
+    staging,
+    '--null',
+    '-T',
+    listPath,
+  ];
+}
+
 function createRuntimeArchive(archive: string, staging: string, root: string): void {
   normalizeArchiveTree(staging);
   const listPath = join(dirname(staging), 'runtime-archive-inputs.txt');
   const rawTarPath = join(dirname(staging), 'runtime-archive-inputs.tar');
   writeFileSync(listPath, archiveEntries(staging).map((entry) => `${entry}\0`).join(''));
   try {
-    run('tar', [
-      '--no-recursion',
-      '--owner=0',
-      '--group=0',
-      '--numeric-owner',
-      '-cf',
-      rawTarPath,
-      '-C',
-      staging,
-      '--null',
-      '-T',
-      listPath,
-    ], root);
-    // Keep the gzip header timestamp-free. `tar -czf` delegates compression
-    // to the host gzip and therefore embeds wall-clock metadata on some
-    // runners even when the tar members themselves are normalized.
-    writeFileSync(archive, gzipSync(readFileSync(rawTarPath)));
+    run('tar', runtimeTarArgs(rawTarPath, staging, listPath), root);
+    /**
+     * Keep the gzip header timestamp-free while avoiding a full archive-sized
+     * allocation. Runtime resources are large enough that readFileSync here
+     * previously failed with ENOMEM on macOS after tar had successfully created
+     * the archive.
+     */
+    // Bun's child_process compatibility layer can pass an invalid descriptor
+    // when a numeric fd is used as stdout. Delegate that streaming boundary to
+    // Node so the archive remains constant-memory on every native runner.
+    const compressor = `
+      const { closeSync, openSync } = require('node:fs');
+      const { spawnSync } = require('node:child_process');
+      const output = openSync(process.argv[2], 'w');
+      try {
+        const result = spawnSync('gzip', ['-n', '-c', process.argv[1]], {
+          stdio: ['ignore', output, 'inherit'],
+        });
+        if (result.status !== 0) process.exit(result.status ?? 1);
+      } finally {
+        closeSync(output);
+      }
+    `;
+    const compressed = spawnSync('node', ['-e', compressor, rawTarPath, archive], {
+      stdio: 'inherit',
+    });
+    if (compressed.status !== 0) throw new Error(`gzip failed with status ${compressed.status ?? 'signal'}`);
   } finally {
     rmSync(listPath, { force: true });
     rmSync(rawTarPath, { force: true });
@@ -150,6 +190,8 @@ export const allocateRuntimePorts = runtimeDistribution.allocateRuntimePorts;
 export const loadRuntimeManifest = runtimeDistribution.loadRuntimeManifest;
 export const engineSdkRoot = runtimeDistribution.engineSdkRoot;
 export const installEngineSdk = runtimeDistribution.installEngineSdk;
+export const parsePreviewBuildManifest = runtimeDistribution.parsePreviewBuildManifest;
+export const parsePreviewHealthIdentity = runtimeDistribution.parsePreviewHealthIdentity;
 export default runtimeDistribution;
 `;
 }
@@ -168,6 +210,8 @@ export declare const allocateRuntimePorts: GameRuntimeDistribution['allocateRunt
 export declare const loadRuntimeManifest: GameRuntimeDistribution['loadRuntimeManifest'];
 export declare const engineSdkRoot: GameRuntimeDistribution['engineSdkRoot'];
 export declare const installEngineSdk: GameRuntimeDistribution['installEngineSdk'];
+export declare const parsePreviewBuildManifest: GameRuntimeDistribution['parsePreviewBuildManifest'];
+export declare const parsePreviewHealthIdentity: GameRuntimeDistribution['parsePreviewHealthIdentity'];
 export default runtimeDistribution;
 `;
 }
@@ -179,15 +223,40 @@ export function writePlatformEntry(packageRoot: string): void {
   writeFileSync(join(dist, 'index.d.ts'), platformDeclarationSource());
 }
 
-function injectRuntimeIdentity(resourceRoot: string, version: string, engineCommit: string): void {
-  const config = join(resourceRoot, 'engine', 'vite.config.ts');
+function stagePreviewScripts(staging: string, root: string): void {
+  const runtimeDirectory = join(staging, 'runtime');
+  mkdirSync(runtimeDirectory, { recursive: true });
+  for (const [source, output] of [
+    ['scripts/game-runtime/preview-build.ts', 'preview-build.mjs'],
+    ['scripts/game-runtime/preview-serve.ts', 'preview-serve.mjs'],
+  ] as const) {
+    run(process.execPath, [
+      'build',
+      join(root, source),
+      '--target=node',
+      '--format=esm',
+      '--outfile',
+      join(runtimeDirectory, output),
+    ], root);
+  }
+}
+
+function preparePreviewEngine(staging: string): void {
+  const config = join(staging, 'engine', 'vite.config.ts');
   const source = readFileSync(config, 'utf8');
-  const marker = '          instanceRootAbs,\n';
-  if (!source.includes(marker)) throw new Error(`bundled Engine health route has no identity marker: ${config}`);
-  writeFileSync(config, source.replace(
-    marker,
-    `${marker}          runtimeVersion: ${JSON.stringify(version)},\n          engineVersion: ${JSON.stringify(engineCommit)},\n`,
-  ));
+  const patched = source
+    .replace(
+      /from\s+['"]\.\.\/core\/src\/asset-roots['"]/g,
+      "from '@forgeax/editor-core/asset-roots'",
+    )
+    .replace(
+      /from\s+['"]\.\.\/\.\.\/scripts\/vite\/engine-vite-preset['"]/g,
+      "from './engine-vite-preset.mjs'",
+    );
+  if (patched.includes("../../scripts/vite/engine-vite-preset")) {
+    throw new Error(`preview Engine config still references the Studio checkout: ${config}`);
+  }
+  writeFileSync(config, patched);
 }
 
 export interface BuildRuntimeTargetOptions {
@@ -200,6 +269,7 @@ export interface BuildRuntimeTargetOptions {
   readonly skipInstall?: boolean;
   readonly skipFrontend?: boolean;
   readonly skipSdk?: boolean;
+  readonly engineCommit?: string;
 }
 
 export function buildRuntimeTarget(options: BuildRuntimeTargetOptions): { archive: string; manifest: string; packageRoot: string } {
@@ -210,39 +280,38 @@ export function buildRuntimeTarget(options: BuildRuntimeTargetOptions): { archiv
   const version = options.version ?? packageManifest.version;
   if (version !== packageManifest.version) throw new Error(`Runtime version ${version} does not match ${packageManifest.version}`);
 
-  if (!options.skipSdk) buildGameRuntimeSdk({ root });
   if (!options.fromResources) {
-    const args = ['scripts/build-desktop.ts', '--triple', options.target.triple];
-    if (options.skipInstall) args.push('--skip-install');
-    if (options.skipFrontend) args.push('--skip-frontend');
-    run(process.execPath, args, root, {
-      ...process.env,
-      FORGEAX_PLUGIN_RUNTIME: '1',
-      FORGEAX_RUNTIME_PACKAGE_VERSION: version,
-    });
+    throw new Error('Desktop runtime assembly belongs to forgeax-ide; use its public build command and pass prepared resources');
   }
+  if (!options.skipSdk) buildGameRuntimeSdk({ root });
 
-  const resourceRoot = resolve(options.resourceRoot ?? join(root, 'packages', 'interface', 'src-tauri', 'resources'));
-  const sidecarPath = resolve(options.sidecarPath ?? join(root, 'packages', 'interface', 'src-tauri', 'binaries', options.target.sidecar));
+  if (!options.resourceRoot || !options.sidecarPath) {
+    throw new Error('Prepared runtime resources and sidecar path are required; root does not assemble desktop payloads');
+  }
+  const resourceRoot = resolve(options.resourceRoot);
+  const sidecarPath = resolve(options.sidecarPath);
   if (!existsSync(sidecarPath)) throw new Error(`Runtime sidecar is missing: ${sidecarPath}`);
   const stagingParent = mkdtempSync(join(tmpdir(), `forgeax-runtime-${options.target.id}-`));
   const staging = join(stagingParent, 'resources');
   try {
     assembleRuntimeResources({ sourceRoot: resourceRoot, destinationRoot: staging });
+    preparePreviewEngine(staging);
     mkdirSync(join(staging, 'bin'), { recursive: true });
     copyFileSync(sidecarPath, join(staging, 'bin', options.target.sidecar));
+    stagePreviewScripts(staging, repositoryRoot);
 
     const sdkVersionPath = join(root, 'packages', 'game-runtime', 'common', 'assets', 'engine-sdk', 'engine-version.json');
-    let engineCommit = existsSync(sdkVersionPath)
+    let engineCommit = options.engineCommit ?? (existsSync(sdkVersionPath)
       ? (JSON.parse(readFileSync(sdkVersionPath, 'utf8')) as { engineCommit?: string }).engineCommit ?? 'unknown'
-      : 'unknown';
+      : 'unknown');
     if (engineCommit === 'unknown') {
       const engineRoot = join(root, 'packages', 'editor', 'packages', 'engine');
       const git = spawnSync('git', ['-C', engineRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
       if (git.status === 0) engineCommit = git.stdout.trim();
     }
-    injectRuntimeIdentity(staging, version, engineCommit);
-
+    if (!/^[a-f0-9]{7,64}$/i.test(engineCommit)) {
+      throw new Error(`Runtime requires a concrete Engine commit, received ${JSON.stringify(engineCommit)}`);
+    }
     const assetDirectory = join(packageRoot, 'assets', 'runtime', options.target.id);
     rmSync(join(packageRoot, 'assets'), { recursive: true, force: true });
     rmSync(join(packageRoot, 'dist'), { recursive: true, force: true });
@@ -252,7 +321,7 @@ export function buildRuntimeTarget(options: BuildRuntimeTargetOptions): { archiv
     const digest = sha256File(archive);
     const manifest = join(packageRoot, 'assets', 'runtime-manifest.json');
     writeFileSync(manifest, `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       runtimeId: 'forgeax-game-runtime',
       artifacts: [{
         version,
@@ -260,9 +329,14 @@ export function buildRuntimeTarget(options: BuildRuntimeTargetOptions): { archiv
         arch: options.target.arch,
         source: `./runtime/${options.target.id}/${basename(archive)}`,
         sha256: digest,
+        engineCommit,
+        capabilities: {
+          build: { script: 'runtime/preview-build.mjs' },
+          serve: { script: 'runtime/preview-serve.mjs' },
+        },
         format: 'archive',
         command: `bin/${options.target.sidecar}`,
-        args: ['runtime/local-runtime.mjs', '--profile', 'desktop-prod'],
+        args: [],
       }],
     }, null, 2)}\n`);
     writePlatformEntry(packageRoot);

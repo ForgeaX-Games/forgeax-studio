@@ -1,5 +1,15 @@
 export type ExtensionPackage = {
+  name?: string;
   packageManager?: string;
+  scripts?: Record<string, string>;
+};
+
+export type ExtensionManifest = {
+  id?: string;
+  entry?: {
+    frontend?: string;
+    standalone?: { embeddedAlso?: boolean };
+  };
 };
 
 export type ExtensionPackageManager = 'bun' | 'pnpm';
@@ -40,10 +50,14 @@ export function extensionPackageManager(
   throw new UnsupportedExtensionPackageManagerError(pkg.packageManager);
 }
 
-export function extensionBuildCommands(pkg: ExtensionPackage): ExtensionBuildCommand[] {
-  if (extensionPackageManager(pkg) === 'bun') {
+export function extensionBuildCommands(
+  pkg: ExtensionPackage,
+  fallback?: ExtensionPackageManager,
+): ExtensionBuildCommand[] {
+  const manager = extensionPackageManager(pkg, fallback);
+  if (manager === 'bun') {
     return [
-      ['bun', ['install', '--frozen-lockfile']],
+      ['bun', pkg.packageManager ? ['install', '--frozen-lockfile'] : ['install']],
       ['bun', ['run', 'build']],
     ];
   }
@@ -51,4 +65,51 @@ export function extensionBuildCommands(pkg: ExtensionPackage): ExtensionBuildCom
     ['pnpm', ['install', '--no-frozen-lockfile']],
     ['pnpm', ['build']],
   ];
+}
+
+export function extensionPreparationCommands(
+  pkg: ExtensionPackage,
+  fallback: ExtensionPackageManager | undefined,
+  options: { hasFrontend: boolean; artifactBroken: boolean; force: boolean },
+): ExtensionBuildCommand[] {
+  const [install, build] = extensionBuildCommands(pkg, fallback);
+  return options.hasFrontend && pkg.scripts?.build && (options.force || options.artifactBroken)
+    ? [install!, build!]
+    : [install!];
+}
+
+/**
+ * Resolve the browser artifact consumed by the server's /extensions/:id mount.
+ *
+ * A manifest frontend can be either a released HTML artifact or a source panel
+ * entry used by the Extension Platform. Buildable source entries still need the
+ * server convention's dist/index.html for iframe delivery.
+ */
+export function extensionFrontendArtifact(manifest: ExtensionManifest): string | undefined {
+  const frontend = manifest.entry?.frontend;
+  if (!frontend) return undefined;
+  return frontend.endsWith('.html') ? frontend : './dist/index.html';
+}
+
+/** Marketplace sources are discovered by contract, not legacy directory name. */
+export function isExtensionSourceDirectory(
+  name: string,
+  options: { symbolicLink: boolean; hasManifest: boolean; hasPackage: boolean },
+): boolean {
+  return name !== '_template'
+    && !options.symbolicLink
+    && options.hasManifest
+    && options.hasPackage;
+}
+
+export function matchesExtensionSelector(
+  selector: string | undefined,
+  directoryName: string,
+  pkg: ExtensionPackage,
+  manifest: ExtensionManifest,
+): boolean {
+  return selector === undefined
+    || selector === directoryName
+    || selector === pkg.name
+    || selector === manifest.id;
 }

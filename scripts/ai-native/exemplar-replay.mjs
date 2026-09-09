@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // exemplar-replay.mjs — agent-native 打样 case 的确定性回放与验收。
 //
-// 复现 packages/harness/docs/ai-native/agent-native-exemplar.md 描述的 demo,并断言五条不变量。
+// 复现 .forgeax-harness/docs/ai-native/agent-native-exemplar.md 描述的 demo,并断言五条不变量。
 // 按需跑的验收脚本,不是 CI 门禁 —— 需要一套跑着的 Studio 栈。
 //
 // 断言纪律(反冻结镜像):只断言"门"的不变量 —— 经 dispatch 进门、账本带
@@ -63,9 +63,9 @@ async function api(path, init) {
 
 // ── 一次性舞台:建游戏 + 激活(记住原激活位,退出时还原)──────────────
 const slug = `demo-exemplar-${Math.random().toString(36).slice(2, 8)}`;
-const prevActive = (await api('/api/workbench/active-slug')).body?.activeSlug ?? null;
+const prevActive = (await api('/api/projects/active')).body?.activeSlug ?? null;
 {
-  const created = await api('/api/workbench/games', {
+  const created = await api('/api/projects', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ slug, name: 'Agent Exemplar Replay' }),
@@ -74,7 +74,11 @@ const prevActive = (await api('/api/workbench/active-slug')).body?.activeSlug ??
     console.error(`cannot create stage game: ${JSON.stringify(created.body)}`);
     process.exit(2);
   }
-  await api(`/api/workbench/games/${slug}/activate`, { method: 'POST' });
+  await api('/api/projects/active', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug }),
+  });
 }
 
 const browser = await chromium.launch();
@@ -186,7 +190,11 @@ try {
 } finally {
   await browser.close();
   if (prevActive && prevActive !== slug) {
-    await api(`/api/workbench/games/${prevActive}/activate`, { method: 'POST' }).catch(() => {});
+    await api('/api/projects/active', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: prevActive }),
+    }).catch(() => {});
   }
 }
 

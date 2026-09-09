@@ -5,4 +5,5 @@ export * from './env';
 export * from './manager';
 export * from './manifest';
 export * from './ports';
+export * from './preview';
 export * from './types';

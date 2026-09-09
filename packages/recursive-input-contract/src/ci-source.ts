@@ -85,6 +85,11 @@ export function inspectCiSources(
     }
     const consumers = consumerForSource(manifest, workflow, source);
     const canonical = canonicalWorkflowPath(workflow);
+    // A workflow without manifest consumers is intentionally outside the
+    // recursive-input contract. Keep it visible in `outsideContract`, but do
+    // not treat its similarly named fetch steps as undeclared or duplicate
+    // governed calls.
+    if (consumers.length === 0) continue;
     const jobs = parsed.jobs ?? {};
     const actualContractCalls: Array<{ job: string; consumerId: string; trustScope: string; index: number; step: ParsedStep }> = [];
     for (const [job, definition] of Object.entries(jobs)) {
@@ -113,9 +118,6 @@ export function inspectCiSources(
       if (!actualContractCalls.some((actual) => actual.consumerId === declaration.consumerId && actual.job === declaration.job)) {
         errors.push(`recursive-input.ci.missing-source-call: ${declaration.consumerId}`);
       }
-    }
-    if (consumers.length === 0) {
-      continue;
     }
     for (const consumer of consumers) {
       const block = jobBlock(source, consumer.job);

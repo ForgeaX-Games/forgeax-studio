@@ -93,6 +93,19 @@ class VerifyReleaseArtifactTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.extract_to.exists())
 
+    def test_rechecks_archive_bytes_before_extraction(self):
+        payload = b"safe"
+        source = tarfile.TarInfo("package/index.js")
+        source.size = len(payload)
+        digest = self.write_tarball([(source, payload)])
+        tarball = self.candidate / "package.tgz"
+        tarball.write_bytes(tarball.read_bytes() + b"changed-after-digest")
+
+        result = self.run_verifier(expected_sha=digest)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.extract_to.exists())
+
     def test_requires_exactly_one_tarball_and_one_matching_sidecar(self):
         result = self.run_verifier()
         self.assertNotEqual(result.returncode, 0)

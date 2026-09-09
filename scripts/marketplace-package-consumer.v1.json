@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "owner": "ForgeaX-Games/forgeax-ide",
+  "active": {
+    "@forgeax-extension/diffusion-renderer": "0.1.1",
+    "@forgeax-extension/plugin-author": "0.1.0",
+    "@forgeax-extension/model-anthropic-text": "0.1.0",
+    "@forgeax-extension/skill-author-plugin": "0.1.0",
+    "@forgeax-extension/skill-make-game-design": "0.1.0",
+    "@forgeax-extension/team-forge": "0.1.0",
+    "@forgeax-extension/tool-balance-resim": "0.1.0",
+    "@forgeax-extension/ai-asset": "0.1.4",
+    "@forgeax-extension/character-3d": "0.1.5",
+    "@forgeax-extension/animation": "0.1.32",
+    "@forgeax-extension/skill-effects": "0.1.1",
+    "@forgeax-extension/system-configuration": "0.1.0",
+    "@forgeax-extension/agent-persona": "0.1.0",
+    "@forgeax-extension/game-balance": "0.1.0",
+    "@forgeax-extension/source-navigation": "0.1.0",
+    "@forgeax-extension/color-grading": "0.1.0"
+  },
+  "deferred": {},
+  "legacyRuntimeSlugs": {
+    "@forgeax-extension/diffusion-renderer": ["diffusion-renderer", "wb-diffusion-renderer"],
+    "@forgeax-extension/plugin-author": ["plugin-author", "wb-plugin-author"],
+    "@forgeax-extension/team-forge": ["team-forge", "wb-team-forge"],
+    "@forgeax-extension/ai-asset": ["ai-asset", "wb-ai-asset"],
+    "@forgeax-extension/character-3d": ["gen3d", "wb-gen3d"],
+    "@forgeax-extension/animation": ["animation", "anim", "wb-anim"],
+    "@forgeax-extension/skill-effects": ["skill-effects", "skill", "wb-skill"],
+    "@forgeax-extension/system-configuration": ["admin"],
+    "@forgeax-extension/agent-persona": ["agent-persona"],
+    "@forgeax-extension/game-balance": ["balance"],
+    "@forgeax-extension/source-navigation": ["code"],
+    "@forgeax-extension/color-grading": ["look"]
+  }
+}

@@ -75,7 +75,7 @@ bun fx open          # 在常用 Chrome 中聚焦/打开 Studio
 | [`interface`](https://github.com/ForgeaX-Games/forgeax-interface) | 三栏 Studio 界面 + Tauri 2 桌面外壳 |
 | [`editor`](https://github.com/ForgeaX-Games/forgeax-editor) | 可视化场景编辑器——Edit/Play 同享一份落盘场景 |
 | [`orchestrator`](https://github.com/ForgeaX-Games/forgeax-orchestrator) | 多 agent 编排层——AgentTree、XML 账本、slot 提示 |
-| [`marketplace`](https://github.com/ForgeaX-Games/forgeax-marketplace) | 人格 agent · 技能 · 可视化 workbench 插件(内容即数据) |
+| [`marketplace`](https://github.com/ForgeaX-Games/forgeax-marketplace) | 人格 agent · 技能 · 扩展身份元数据 |
 | [`build`](https://github.com/ForgeaX-Games/forgeax-build) | 构建与打包——recipe + validator 流水线 |
 
 ## 🖥️ 运行形态

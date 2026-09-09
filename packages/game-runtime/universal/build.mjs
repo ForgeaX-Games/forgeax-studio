@@ -38,6 +38,8 @@ export declare const allocateRuntimePorts: GameRuntimeDistribution['allocateRunt
 export declare const loadRuntimeManifest: GameRuntimeDistribution['loadRuntimeManifest'];
 export declare const engineSdkRoot: GameRuntimeDistribution['engineSdkRoot'];
 export declare const installEngineSdk: GameRuntimeDistribution['installEngineSdk'];
+export declare const parsePreviewBuildManifest: GameRuntimeDistribution['parsePreviewBuildManifest'];
+export declare const parsePreviewHealthIdentity: GameRuntimeDistribution['parsePreviewHealthIdentity'];
 export default runtimeDistribution;
 `);
 

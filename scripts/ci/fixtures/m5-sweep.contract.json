@@ -1,0 +1,16 @@
+{
+  "milestoneCISweep": {
+    "M5": [
+      "find scripts -maxdepth 2 -name '*.sh' -print0 \\| xargs -0 -n1 bash -n",
+      "pnpm run lint + bun run lint:boundaries",
+      "bun run test:layers",
+      "bash scripts/mirror/publish-multi.sh push",
+      "bash scripts/mirror/protect-repos.sh",
+      "bun \"$GITHUB_WORKSPACE/.trusted-base/scripts/ci/validate-workflow-sources.ts\" --root \"$GITHUB_WORKSPACE/pr-head\" --actionlint actionlint",
+      "bun \"$GITHUB_WORKSPACE/.trusted-base/scripts/ci/audit-required-checks-ruleset.mjs\" --root \"$GITHUB_WORKSPACE\"",
+      "MIRROR_DRY_RUN=1 bash .trusted-base/scripts/mirror/publish-multi.sh push",
+      "bun fx release-integrity verify --surface desktop --candidate \"$RUNNER_TEMP/release-candidate.json\" + gh release upload \"$VER\" \"$f\" --repo \"ForgeaX-Games/forgeax-studio\"",
+      "gh release create \"$VER\" --repo \"ForgeaX-Games/forgeax-studio\""
+    ]
+  }
+}

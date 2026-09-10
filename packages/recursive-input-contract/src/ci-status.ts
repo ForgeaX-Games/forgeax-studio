@@ -63,6 +63,7 @@ export function reduceCiStatus(localStatic: LocalStaticStatus, externalRuleset: 
       externalRuleset: 'aligned',
       contexts: manifest.requiredContexts.map((context) => context.name),
       enforcement: manifest.governance.enforcement,
+      strictRequiredStatusChecks: manifest.governance.strictRequiredStatusChecks,
       bypassActors: manifest.governance.bypassActors,
       currentUserCanBypass: manifest.governance.currentUserCanBypass,
     },

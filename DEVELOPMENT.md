@@ -39,7 +39,7 @@ Two mode caveats worth internalizing:
   must be **repackaged** (`bun fx build desktop`) to pick anything up.
 - **desktop-dev and the `.app` are both WKWebView** → 3D rendering is bounded by
   **WebKit WebGPU** (weaker than Chrome's Dawn). Details:
-  [`packages/harness/docs/deploy-notes.md`](./packages/harness/docs/deploy-notes.md) §".app 渲染: WebKit WebGPU vs 新引擎".
+  [`.forgeax-harness/docs/deploy-notes.md`](./.forgeax-harness/docs/deploy-notes.md) §".app 渲染: WebKit WebGPU vs 新引擎".
 
 ## Prerequisites
 
@@ -119,7 +119,7 @@ immediately.
 ### Optional headless screenshot renderer
 
 The setup step also provisions the Chromium and Chromium headless-shell
-binaries required by the `wb-3d-lowpoly` and `wb-scene-generator` screenshot
+binaries required by the `3d-lowpoly` and `scene-generator` screenshot
 renderers. If the default Playwright CDN is unreachable, set
 `PLAYWRIGHT_DOWNLOAD_HOST` (or `PLAYWRIGHT_CHROMIUM_DOWNLOAD_HOST`) to an
 internal artifact mirror and rerun `bun fx setup`. When the browser download is
@@ -183,15 +183,15 @@ Game Runtime is a separate five-package release surface owned by Studio:
 @forgeax/game-runtime
 ```
 
-All five currently share version `0.3.27`. Native archives must be produced on their
+All five currently share version `0.3.33`. Native archives must be produced on their
 matching GitHub runner; Linux x64 means glibc. The release workflow installs the
 pinned Engine pnpm graph, builds the Engine SDK into Common, builds/scans native
 packages on macOS/Windows/Linux, validates one five-package release train, then
-publishes Common → platform packages → Universal. `@forgeax/game@0.1.3` is released
-from its own repository only after Universal `0.3.27` is visible in npm.
+publishes Common → platform packages → Universal. `@forgeax/game` is released from
+its own repository only after Universal `0.3.33` is visible in npm.
 
 For local structural verification, use the Runtime commands in
-[`packages/harness/docs/testing.md`](./packages/harness/docs/testing.md). Do not infer Windows/Linux native readiness
+[`.forgeax-harness/docs/testing.md`](./.forgeax-harness/docs/testing.md). Do not infer Windows/Linux native readiness
 from a local Darwin run, and do not hand-create a registry lock before the packages
 exist.
 

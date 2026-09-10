@@ -17,20 +17,14 @@ export type TypecheckTask = {
 };
 
 export const TYPECHECK_TASKS: readonly TypecheckTask[] = [
-  // Start the heaviest composite project immediately so the second worker can
-  // drain smaller packages while editor's graph is still running.
-  { path: 'editor', name: '@forgeax/editor' },
-  { path: 'contracts/agent-runtime', name: '@forgeax/agent-runtime' },
+  // Editor owns its complete package graph and runs it in forgeax-editor CI.
+  // Studio keeps only the facade consumer and product-assembly packages here.
   { path: 'interface/packages/design', name: '@forgeax/design' },
-  { path: 'host-sdk', name: '@forgeax/host-sdk' },
-  { path: 'contracts/types', name: '@forgeax/types' },
   { path: 'server', name: '@forgeax/server' },
   { path: 'interface', name: '@forgeax/interface' },
   { path: 'chat', name: '@forgeax/chat' },
-  { path: 'workbench', name: '@forgeax/workbench' },
   { path: 'settings', name: '@forgeax/settings' },
   { path: 'dashboard', name: '@forgeax/dashboard' },
-  { path: 'studio', name: '@forgeax/studio' },
 ];
 
 type TypecheckResult = {

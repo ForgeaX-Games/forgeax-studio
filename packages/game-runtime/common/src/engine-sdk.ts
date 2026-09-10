@@ -7,7 +7,18 @@ export function engineSdkRoot(commonRoot: string): string {
 }
 
 export function installEngineSdkFrom(commonRoot: string, projectRoot: string): EngineSdkInstall {
-  const source = engineSdkRoot(commonRoot);
+  return installEngineSdkSnapshot(engineSdkRoot(commonRoot), projectRoot);
+}
+
+/**
+ * Materialize an explicit Engine SDK snapshot.
+ *
+ * Normal package consumers call installEngineSdkFrom with this common package's root.
+ * This lower-level entry exists only for standalone tooling that deliberately selects
+ * a snapshot through FORGEAX_ENGINE_SDK.
+ */
+export function installEngineSdkSnapshot(sourceRoot: string, projectRoot: string): EngineSdkInstall {
+  const source = resolve(sourceRoot);
   const destination = join(resolve(projectRoot), '.forgeax', 'engine-sdk');
   if (!existsSync(source)) return { changed: false, sdkRoot: destination };
 
@@ -20,7 +31,11 @@ export function installEngineSdkFrom(commonRoot: string, projectRoot: string): E
     filter: (entry) => {
       if (entry === source) return true;
       const top = entry.slice(source.length + 1).split(sep)[0];
-      return top !== 'skills' && top !== 'source';
+      // Skills mount into the host's own skill directories rather than the game. The
+      // Engine source does travel with the project: an absolute path back into the
+      // package dies with an evicted `npx` cache, taking the escalation rung of the
+      // knowledge ladder with it.
+      return top !== 'skills';
     },
   });
 
@@ -30,13 +45,13 @@ export function installEngineSdkFrom(commonRoot: string, projectRoot: string): E
   } catch {
     // Metadata is informative; declarations remain usable without it.
   }
-  const bundledSource = join(source, 'source');
-  const sourceRoot = existsSync(bundledSource) ? bundledSource : undefined;
+  const installedSource = join(destination, 'source');
+  const installedSourceRoot = existsSync(installedSource) ? installedSource : undefined;
   writeFileSync(join(resolve(projectRoot), '.forgeax', 'engine-sdk.json'), `${JSON.stringify({
     version: 2,
     engineCommit: engineCommit ?? 'unknown',
     sdkRoot: destination,
-    ...(sourceRoot ? { sourceRoot } : {}),
+    ...(installedSourceRoot ? { sourceRoot: installedSourceRoot } : {}),
   }, null, 2)}\n`, 'utf8');
 
   const gamesRoot = join(resolve(projectRoot), '.forgeax', 'games');
@@ -52,5 +67,10 @@ export function installEngineSdkFrom(commonRoot: string, projectRoot: string): E
       }
     }
   }
-  return { changed: true, sdkRoot: destination, engineCommit, ...(sourceRoot ? { sourceRoot } : {}) };
+  return {
+    changed: true,
+    sdkRoot: destination,
+    engineCommit,
+    ...(installedSourceRoot ? { sourceRoot: installedSourceRoot } : {}),
+  };
 }

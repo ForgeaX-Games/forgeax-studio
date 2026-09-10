@@ -24,7 +24,7 @@ export interface ToolCallBody {
   toolId: string;
   args: unknown;
   caller: {
-    kind: 'user' | 'ai' | 'skill' | 'workbench' | 'cli';
+    kind: 'user' | 'ai' | 'skill' | 'extension' | 'cli';
     sessionId?: string;
     threadId?: string;
   };
@@ -197,7 +197,7 @@ export class GoldenApi {
   /** Product-level deletion also clears active-game.json when it owns slug. */
   deleteGame(slug: string): Promise<ApiResponse<Record<string, unknown>>> {
     return this.requestJson<Record<string, unknown>>(
-      `/api/workbench/games/${encodeURIComponent(safeSegment(slug, 'slug'))}`,
+      `/api/projects/${encodeURIComponent(safeSegment(slug, 'slug'))}`,
       { method: 'DELETE' },
     );
   }

@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { delimiter, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { PREPARE_ENGINE_BUILD_FILTERS } from './ci/build-engine-packages';
+import { IDE_INTEGRATION_WORKSPACES } from './lib/ide-integration-workspace.ts';
 
 const ROOT = resolve(import.meta.dir, '..');
 const prepareSource = () => readFileSync(join(ROOT, 'scripts/prepare.ts'), 'utf8');
+const buildExtensionsSource = () => readFileSync(join(ROOT, 'scripts/build-extensions.ts'), 'utf8');
 const runSource = () => readFileSync(join(ROOT, 'scripts/run.ts'), 'utf8');
 const studioViteSource = () => readFileSync(join(ROOT, 'packages/studio/vite.config.ts'), 'utf8');
 const engineEntryFreshnessSource = () =>
@@ -23,14 +27,89 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain('FORGEAX_SKIP_PREPARE');
     expect(src).toContain('FORGEAX_FORCE_PREPARE');
   });
-  it('builds linked shared contracts before the CLI consumes their exports', () => {
+  it('installs IDE product dependencies without preparing retired Marketplace source', () => {
     const src = prepareSource();
-    const contractsBuild = "spawnSync('node', ['scripts/build-packages.mjs']";
-    const cliBuild = "spawnSync('bun', ['run', 'build']";
-    expect(src).toContain("join(ROOT, 'packages/contracts')");
-    expect(src).toContain('types/dist/permission-rules.js');
-    expect(src).toContain('agent-runtime/dist/index.js');
-    expect(src.indexOf(contractsBuild)).toBeLessThan(src.indexOf(cliBuild));
+    expect(src).toContain("ensureManagedPackage('ide', true)");
+    expect(src).not.toContain("cwd: ideDir");
+    expect(IDE_INTEGRATION_WORKSPACES).toContain('../../packages/ide');
+    expect(IDE_INTEGRATION_WORKSPACES).toContain('../../packages/ide/packages/*');
+    expect(src).toContain("ok('@forgeax/ide integration workspace dependencies ready')");
+    expect(src).not.toContain("join(ROOT, 'scripts/build-extensions.ts')");
+    expect(src).not.toContain("join(ROOT, 'packages/marketplace/extensions')");
+    expect(src).not.toContain('FORGEAX_SKIP_PLUGINS');
+    expect(src).not.toContain('Marketplace Extension');
+  });
+  it('does not mistake an uninitialized non-recursive clone for integration-only CI', () => {
+    const src = prepareSource();
+    expect(src).toContain("const integrationOnly = process.env.FORGEAX_ROOT_INTEGRATION_ONLY === '1';");
+    expect(src).not.toMatch(/integrationOnly\s*=\s*[\s\S]{0,200}packages\/server\/package\.json/);
+  });
+  it('installs the selected private server role dependencies during prepare', () => {
+    const src = prepareSource();
+    expect(src).toContain('resolveActiveServerRole');
+    expect(src).toContain('if (!publicDistribution)');
+    expect(src).toContain("activeServer.packageName !== '@forgeax/server'");
+    expect(src).toContain("repairWindowsDirectoryAlias(join(activeServer.packageDir, 'patches'))");
+    expect(src).toContain('prepareWindowsWorkspaceJunctions(activeServer.packageDir)');
+    expect(src).toContain('bunWorkspaceInstallArgs()');
+    expect(src).toContain('restoreWindowsDirectoryAlias(patchesAlias)');
+    expect(src).toContain('cwd: activeServer.packageDir');
+    expect(src).toContain('runtime dependencies ready');
+  });
+  it('installs the independently mounted IDE before start can invoke Vite', () => {
+    const src = prepareSource();
+    expect(src).toContain("ensureManagedPackage('ide', true)");
+    expect(IDE_INTEGRATION_WORKSPACES).toContain('../../packages/ide');
+    expect(src.indexOf("ensureManagedPackage('ide', true)")).toBeLessThan(
+      src.indexOf("const ideSourceWorkspaceDir = join(ROOT, '.forgeax/ide-source-workspace')"),
+    );
+    expect(src).toContain("'[1c/5] Installing IDE integration workspace dependencies'");
+    expect(src).toContain("ok('@forgeax/ide integration workspace dependencies ready')");
+  });
+  it('installs every package consumed from source by the IDE as one workspace', () => {
+    const src = prepareSource();
+    expect(src).toContain("const ideSourceWorkspaceDir = join(ROOT, '.forgeax/ide-source-workspace')");
+    expect(IDE_INTEGRATION_WORKSPACES).toEqual(expect.arrayContaining([
+      '../../packages/ide',
+      '../../packages/ide/packages/*',
+      '../../packages/cli',
+      '../../packages/interface',
+    ]));
+    expect(src).toContain('writeIdeIntegrationWorkspaceManifest(ideSourceWorkspaceDir)');
+    expect(src).toContain("'[1c/5] Installing IDE integration workspace dependencies'");
+    expect(src).toContain('prepareWindowsWorkspaceJunctions(ideSourceWorkspaceDir)');
+    expect(src).toContain('cwd: ideSourceWorkspaceDir');
+    expect(src).toContain("ok('@forgeax/ide integration workspace dependencies ready')");
+  });
+  it('installs the Editor workspace before launching the Play runtime', () => {
+    const src = prepareSource();
+    expect(src).toContain("'[1e/5] Installing @forgeax/editor workspace dependencies'");
+    expect(src).toContain('prepareWindowsWorkspaceJunctions(editorDir, process.platform, false)');
+    expect(src).toContain("ok('@forgeax/editor workspace dependencies ready')");
+    expect(src).toContain("const engineDir = join(editorDir, 'packages/engine')");
+    expect(src).toContain("healDanglingEngineSymlinks(engineDir, process.platform === 'win32')");
+    expect(src).toContain('removeWindowsWorkspaceNodeModulesBridges(editorDir, workspaceLinks)');
+    expect(src).toContain('const repairedNestedLinks = repairWindowsNestedDirectoryLinks(enginePkgDir)');
+    expect(src.indexOf('const repairedNestedLinks')).toBeGreaterThan(
+      src.lastIndexOf("run('pnpm', ['install', '--frozen-lockfile']"),
+    );
+  });
+  it('launches Play Runtime with the Editor-owned Vite CLI', () => {
+    const src = runSource();
+    expect(src).toContain("const editorDir = join(ROOT, 'packages/editor')");
+    expect(src).toContain("const engineViteCli = join(editorDir, 'node_modules/vite/bin/vite.js')");
+    expect(src).toContain("[engineViteCli, '--host', startup.engine.host");
+    expect(src).not.toContain("['x', 'vite', '--host', startup.engine.host");
+  });
+  it('passes the IDE product root to the selected server runtime', () => {
+    expect(runSource()).toContain('FORGEAX_PRODUCT_ROOT: ideDir');
+  });
+  it('consumes published shared contracts without reaching into the retired workspace', () => {
+    const src = prepareSource();
+    expect(src).not.toContain("join(ROOT, 'packages/contracts')");
+    expect(src).not.toContain("spawnSync('node', ['scripts/build-packages.mjs']");
+    expect(src).not.toContain('Building shared contracts');
+    expect(src).toContain('Building @forgeax/cli (serve entry)');
   });
   it('covers assets-runtime in prepare and start engine entry gates', () => {
     const prepare = prepareSource();
@@ -52,10 +131,159 @@ describe('scripts/prepare.ts contracts', () => {
     const prepare = prepareSource();
     const run = runSource();
     expect(prepare).toContain('ENGINE_ENTRY_OUTPUTS');
-    expect(prepare).toContain('isEngineEntryDistFresh(pdir, engineDeclarationSentinel)');
+    expect(prepare).toContain('areEnginePrepareArtifactsFresh(enginePkgDir, engineEntryPkgs, engineDeclarationSentinel)');
     expect(run).toContain('ENGINE_ENTRY_OUTPUTS');
     expect(run).toContain('isEngineEntryDistFresh(join(enginePkgDir, p), engineDeclarationSentinel)');
     expect(engineEntryFreshnessSource()).toContain("['index.mjs', 'index.d.ts']");
+  });
+  it('requires the DevKit CLI in the prepare build and cache gates', () => {
+    const prepare = prepareSource();
+    expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-devkit...');
+    expect(prepare).toContain('areEnginePrepareArtifactsFresh(enginePkgDir, engineEntryPkgs, engineDeclarationSentinel)');
+    expect(prepare).toContain("const engineDevkitCliPath = join(engineDevkitCliDir, 'dist', 'cli.mjs')");
+    expect(prepare).toContain('collectMissingEngineArtifacts');
+    expect(prepare).toContain('FORGEAX_FORCE_PREPARE=1 bun run prepare');
+  });
+
+  it('runs root prepare against a missing CLI and diagnoses an invalid CLI', { timeout: 30_000 }, () => {
+    const cliPath = join(ROOT, 'packages/editor/packages/engine/packages/devkit/dist/cli.mjs');
+    const hadOriginalCli = existsSync(cliPath);
+
+    const sandbox = mkdtempSync(join(tmpdir(), 'forgeax-prepare-engine-cli-'));
+    const binDir = join(sandbox, 'bin');
+    const pnpmScript = join(binDir, 'pnpm.js');
+    const pnpmPath = join(binDir, 'pnpm');
+    const pnpmCmdPath = join(binDir, 'pnpm.cmd');
+    const pnpmLog = join(sandbox, 'pnpm.log');
+    const backupPath = join(sandbox, 'cli.mjs.backup');
+    const enginePkgDir = join(ROOT, 'packages/editor/packages/engine/packages');
+    const engineEntryPackages = [
+      'app',
+      'runtime',
+      'ecs',
+      'net',
+      'font',
+      'assets-runtime',
+      'npc',
+      'vfx',
+      'vfx-compiler',
+      'vfx-render',
+      'vite-plugin-pack',
+      'vite-plugin-shader',
+    ];
+    const setupFixtureFiles = [
+      // Simulate a reused self-hosted runner retaining the deleted Contracts
+      // submodule. Prepare must ignore this directory and consume npm packages.
+      join(ROOT, 'packages/contracts/package.json'),
+      join(ROOT, 'packages/contracts/scripts/build-packages.mjs'),
+      join(ROOT, 'packages/cli/dist/cli/main.js'),
+      join(enginePkgDir, 'wgpu-wasm/pkg/wgpu_wasm.js'),
+      join(enginePkgDir, 'wgpu-wasm/pkg/wgpu_wasm_bg.wasm'),
+      join(enginePkgDir, 'fbx/pkg/fbx-wasm.mjs'),
+      join(enginePkgDir, 'fbx/pkg/fbx-wasm.wasm'),
+      join(enginePkgDir, 'codec/pkg/basis_transcoder.mjs'),
+      join(enginePkgDir, 'codec/pkg/basis_transcoder.wasm'),
+      join(enginePkgDir, 'codec/pkg/encode/basis_encoder.mjs'),
+      join(enginePkgDir, 'codec/pkg/encode/basis_encoder.wasm'),
+      ...engineEntryPackages.flatMap((name) => [
+        join(enginePkgDir, name, 'dist/index.mjs'),
+        join(enginePkgDir, name, 'dist/index.d.ts'),
+      ]),
+      join(enginePkgDir, 'net-websocket/dist/browser.mjs'),
+      join(enginePkgDir, 'net-websocket/dist/node.mjs'),
+    ];
+    const createdFixtureFiles: string[] = [];
+    const createdFixtureDirs: string[] = [];
+    const ensureFixtureDirectory = (path: string) => {
+      if (existsSync(path)) return;
+      const missing: string[] = [];
+      let current = path;
+      while (!existsSync(current) && current.startsWith(ROOT)) {
+        missing.push(current);
+        current = dirname(current);
+      }
+      mkdirSync(path, { recursive: true });
+      createdFixtureDirs.push(...missing);
+    };
+    const ensureFixtureFile = (path: string) => {
+      if (existsSync(path)) return;
+      ensureFixtureDirectory(dirname(path));
+      writeFileSync(path, 'prepare fixture\n');
+      createdFixtureFiles.push(path);
+    };
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(pnpmScript, [
+      "const fs = require('node:fs');",
+      "const args = process.argv.slice(2).join(' ');",
+      "if (process.env.FORGEAX_TEST_PNPM_LOG) fs.appendFileSync(process.env.FORGEAX_TEST_PNPM_LOG, `${args}\\n`);",
+      "if (process.env.FORGEAX_TEST_PNPM_WRITE_CLI === '1' && args.includes('build')) fs.writeFileSync(process.env.FORGEAX_TEST_DEVKIT_CLI, '#!/usr/bin/env node\\nconsole.log(\\\"Usage: forgeax\\\");\\n');",
+    ].join('\n'));
+    writeFileSync(pnpmPath, '#!/bin/sh\nexec node "$(dirname "$0")/pnpm.js" "$@"\n');
+    writeFileSync(pnpmCmdPath, '@node "%~dp0pnpm.js" %*\r\n');
+    chmodSync(pnpmPath, 0o755);
+
+    const prepareEnv = {
+      ...process.env,
+      PATH: `${binDir}${delimiter}${process.env.PATH ?? ''}`,
+      FORGEAX_SKIP_BOOTSTRAP: '1',
+      FORGEAX_SKIP_GAMES: '1',
+      FORGEAX_SKIP_HARNESS: '1',
+      FORGEAX_SKIP_PLUGINS: '1',
+      FORGEAX_SKIP_SUBMODULE_INIT: '1',
+      FORGEAX_SKIP_CLI_BUILD: '1',
+      FORGEAX_TEST_DEVKIT_CLI: cliPath,
+      FORGEAX_TEST_PNPM_LOG: pnpmLog,
+    };
+    const runPrepare = (writeCli: boolean, requireCompleteSetup: boolean) => spawnSync(
+      process.execPath,
+      [join(ROOT, 'scripts/prepare.ts')],
+      {
+        cwd: ROOT,
+        env: {
+          ...prepareEnv,
+          FORGEAX_REQUIRE_COMPLETE_SETUP: requireCompleteSetup ? '1' : '0',
+          FORGEAX_TEST_PNPM_WRITE_CLI: writeCli ? '1' : '0',
+        },
+        encoding: 'utf8',
+      },
+    );
+
+    try {
+      ensureFixtureDirectory(dirname(cliPath));
+      for (const path of setupFixtureFiles) ensureFixtureFile(path);
+      // Cross-device-safe backup: the sandbox lives under tmpdir() which on
+      // self-hosted CI runners is a different device from the repo checkout, so
+      // renameSync fails with EXDEV. copy + unlink works across devices.
+      if (hadOriginalCli) { copyFileSync(cliPath, backupPath); rmSync(cliPath); }
+      const rebuilt = runPrepare(true, false);
+      if (rebuilt.status !== 0) {
+        throw new Error([
+          `root prepare rebuild failed with status ${rebuilt.status}`,
+          rebuilt.stdout,
+          rebuilt.stderr,
+          `pnpm trace:\n${existsSync(pnpmLog) ? readFileSync(pnpmLog, 'utf8') : '<missing>'}`,
+        ].join('\n'));
+      }
+      expect(readFileSync(pnpmLog, 'utf8')).toContain('build');
+      expect(existsSync(cliPath)).toBe(true);
+
+      writeFileSync(cliPath, 'export const = ;\n');
+      const rejected = runPrepare(false, true);
+      expect(rejected.status).toBe(1);
+      expect(readFileSync(cliPath, 'utf8')).toContain('export const = ;');
+      expect(readFileSync(pnpmLog, 'utf8').split('\n').filter((line) => line.includes('build')).length)
+        .toBeGreaterThanOrEqual(2);
+    } finally {
+      if (existsSync(cliPath)) rmSync(cliPath);
+      if (hadOriginalCli && existsSync(backupPath)) { copyFileSync(backupPath, cliPath); rmSync(backupPath); }
+      for (const path of createdFixtureFiles) {
+        if (existsSync(path)) rmSync(path);
+      }
+      for (const path of createdFixtureDirs.reverse()) {
+        if (existsSync(path)) rmSync(path, { recursive: true, force: true });
+      }
+      rmSync(sandbox, { recursive: true, force: true });
+    }
   });
   it('records a freshness sentinel after successful incremental declaration builds', () => {
     const src = prepareSource();
@@ -75,6 +303,12 @@ describe('scripts/prepare.ts contracts', () => {
     const src = prepareSource();
     expect(src).toContain('FORGEAX_SKIP_HARNESS');
     expect(src).toMatch(/FORGEAX_SKIP_HARNESS\s*===\s*['"]1['"]/);
+  });
+  it('skips only the nested Engine harness during Studio-owned engine installs', () => {
+    const src = prepareSource();
+    expect(src).toContain("const engineInstallEnv = { ...gitEnv, FORGEAX_SKIP_HARNESS_SYNC: '1' }");
+    expect(src).toContain("run('pnpm', ['install', '--frozen-lockfile'], { cwd: engineDir, env: engineInstallEnv })");
+    expect(src).toContain("spawnSync('node', ['scripts/sync-harness.mjs'], {\n        stdio: 'inherit',\n        cwd: join(ROOT, 'packages', sub),\n        env: gitEnv,");
   });
   it('provisions toolchain via bootstrap.ts (gated) and keeps the hard gate', () => {
     const src = prepareSource();
@@ -105,28 +339,17 @@ describe('scripts/prepare.ts contracts', () => {
     expect(prepare).toContain("join(enginePkgDir, 'net-websocket', 'dist', 'browser.mjs')");
     expect(prepare).toContain("join(enginePkgDir, 'net-websocket', 'dist', 'node.mjs')");
   });
-  it('uses each standalone plugin package manager while preserving Bun retry behavior', () => {
-    const src = prepareSource();
-    expect(src).not.toMatch(/statSync\(nm\)\.mtimeMs\s*>\s*statSync\(join\(dir,\s*['"]package\.json['"]\)\)\.mtimeMs/);
-    expect(src).toContain('resolvePluginPackageManager(d, pkg, e.name)');
-    expect(src).toContain("extensionPackageManager(pkg ?? {}, fallback)");
-    expect(src).toContain('extensionPackageManagerFallback');
-    expect(src).toContain("join(dir, 'bun.lock')");
-    expect(src).toContain("run('pnpm', installArgs, { cwd: dir, env: gitEnv })");
-    expect(src).toContain('ensurePluginPlaywrightBrowsers(d, e.name)');
-    expect(src).toContain("join(dir, 'node_modules/playwright/cli.js')");
-    expect(src).toContain("['install', 'chromium', 'chromium-headless-shell']");
-    expect(src).toContain('PLAYWRIGHT_DOWNLOAD_MIRROR');
-    expect(src).toContain('PLAYWRIGHT_DOWNLOAD_HOST');
-    expect(src).toContain('configured public browser mirror');
-    expect(src).toContain('normalizePackageManagerRegistry');
-    expect(src).toContain('npm_config_registry');
-    expect(src).toContain('repairPluginDirectoryLink(d)');
-    expect(src).toContain('if (bunInstallWithRetry(dir))');
-    expect(src).toContain("run('bun', installArgs, { cwd: dir, env: gitEnv })");
-    expect(src).toContain("else fail(`${dir} dependency install failed`)");
-    expect(src).not.toContain('dependency install failed — continuing');
-    expect(src).not.toContain("['install', '--ignore-scripts']");
+  it('delegates Extension package-manager selection while preserving normalized install credentials', () => {
+    const prepare = prepareSource();
+    const builder = buildExtensionsSource();
+    expect(builder).toContain('extensionPackageManagerFallback');
+    expect(builder).toContain('extensionPreparationCommands');
+    expect(builder).toContain("join(d, 'bun.lock')");
+    expect(builder).toContain('dependency install failed');
+    expect(prepare).toContain('normalizePackageManagerRegistry');
+    expect(prepare).toContain('npm_config_registry');
+    expect(prepare).toContain('env: gitEnv');
+    expect(builder).not.toContain("['install', '--ignore-scripts']");
   });
   it('does not retry optional headless renderers when their browser cache is unavailable', () => {
     const src = runSource();
@@ -155,24 +378,29 @@ describe('scripts/prepare.ts contracts', () => {
       './packages/edit-runtime/src/viewport/preview-registrations.ts',
     );
   });
-  it('fails prepare when plugin dependencies, builds, or required runtime artefacts are incomplete', () => {
-    const src = prepareSource();
-    expect(src).toContain("join(pluginsDir, '_shared')");
-    expect(src).toContain('dependency install failed');
-    expect(src).toContain('plugin build failed');
-    expect(src).toContain('required engine artefacts missing after prepare');
-    expect(src).toContain('required CLI artefact missing after prepare');
+  it('keeps explicit extension admission strict while core prepare artefacts remain required', () => {
+    const prepare = prepareSource();
+    const builder = buildExtensionsSource();
+    expect(prepare).not.toContain("join(ROOT, 'scripts/build-extensions.ts')");
+    expect(builder).toContain('dependency install failed');
+    expect(builder).toContain('build failed');
+    expect(builder).toContain('process.exit(failOnError && failed > 0 ? 1 : 0)');
+    expect(prepare).toContain('formatMissingEngineArtifacts');
+    expect(prepare).toContain('required CLI artefact missing after prepare');
   });
   it('builds the engine package imported by the new-game NPC template', () => {
     const src = prepareSource();
     expect(src).toContain("'npc'");
     expect(PREPARE_ENGINE_BUILD_FILTERS).toContain('@forgeax/engine-npc...');
   });
-  it('installs plugins before running bounded parallel builds', () => {
-    const src = prepareSource();
-    expect(src).toContain('FORGEAX_PLUGIN_BUILD_CONCURRENCY');
-    expect(src).toContain('mapConcurrent(builds, concurrency');
-    expect(src.indexOf('installDir(d)')).toBeLessThan(src.indexOf('mapConcurrent(builds, concurrency'));
+  it('runs Extension dependency installation before any conditional frontend build', () => {
+    const src = buildExtensionsSource();
+    expect(src).toContain("join(pluginsDir, '_shared')");
+    expect(src.indexOf('const sharedPackagesDir')).toBeLessThan(
+      src.indexOf('for (const e of readdirSync(pluginsDir'),
+    );
+    expect(src.indexOf('const okInstall = run')).toBeLessThan(src.indexOf('if (!buildCommandSpec)'));
+    expect(src.indexOf('if (!buildCommandSpec)')).toBeLessThan(src.indexOf('run(buildCommand'));
   });
   it('does not bypass the asset-canvas plugin build', () => {
     const src = prepareSource();
@@ -194,6 +422,14 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src).toContain("'submodule', 'update', '--init', '--recursive', ...depth, '--', path]");
     expect(src).not.toContain("fail('git submodule update failed.')");
     expect(src).toContain('formatPrepareReport');
+  });
+  it('protects dirty managed submodule checkouts during prepare materialization', () => {
+    const src = prepareSource();
+    expect(src).toContain('stashDirtyUpdateRepos');
+    expect(src).toContain('restoreUpdateRepoStashes');
+    expect(src.indexOf('stashDirtyUpdateRepos')).toBeLessThan(src.indexOf("'submodule', 'update', '--init', '--recursive'"));
+    expect(src.lastIndexOf('restoreUpdateRepoStashes')).toBeGreaterThan(src.indexOf("'submodule', 'update', '--init', '--recursive'"));
+    expect(src).toContain('preserved local checkout before prepare submodule update');
   });
 
   it('can trust the parallel worktree bootstrap instead of repeating serial submodule init', () => {

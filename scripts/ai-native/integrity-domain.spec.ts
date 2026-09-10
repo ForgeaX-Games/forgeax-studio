@@ -24,9 +24,9 @@ function fixtureRoot(): string {
   cpSync(join(ROOT, '.github/workflows'), join(root, '.github/workflows'), { recursive: true });
   cpSync(join(ROOT, 'package.json'), join(root, 'package.json'));
   cpSync(join(ROOT, 'bun.lock'), join(root, 'bun.lock'));
-  const ownership = 'packages/harness/docs/ai-native/other-team-gap-ownership.md';
+  const ownership = '.forgeax-harness/docs/ai-native/other-team-gap-ownership.md';
   const packagesRoot = mkdtempSync(join(tmpdir(), 'forgeax-integrity-packages-'));
-  const ownershipTarget = join(packagesRoot, 'harness/docs/ai-native/other-team-gap-ownership.md');
+  const ownershipTarget = join(root, ownership);
   mkdirSync(dirname(ownershipTarget), { recursive: true });
   cpSync(join(ROOT, ownership), ownershipTarget);
   const crossPackageTarget = join(packagesRoot, 'orchestrator/src/app.ts');
@@ -52,7 +52,7 @@ describe('derived AI-native integrity domain', () => {
     expect(manifest.domain_files).toContain('scripts/ai-native/manual-pool-adjudications-v1.jsonl');
     expect(manifest.domain_files).not.toContain('scripts/ai-native/r4r5-artifacts.spec.ts');
     expect(manifest.domain_files).not.toContain('scripts/ai-native/r4r5-special-cases.json');
-    expect(manifest.domain_files).toContain('packages/harness/docs/ai-native/other-team-gap-ownership.md');
+    expect(manifest.domain_files).toContain('.forgeax-harness/docs/ai-native/other-team-gap-ownership.md');
     expect(manifest.configuration_files).not.toContain(
       'scripts/ai-native/runtime-snapshot-reports/main.formal.json',
     );

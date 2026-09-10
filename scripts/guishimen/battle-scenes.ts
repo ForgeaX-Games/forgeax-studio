@@ -9,7 +9,7 @@ import { dirname, join } from 'path'
 
 const HERE = dirname(fileURLToPath(import.meta.url))       // <repo>/scripts/guishimen
 const REPO_ROOT = join(HERE, '..', '..')                    // <repo>
-const DEMO_PATH = join(REPO_ROOT, '.forgeax/games/wuxia-combat/game-video/scenarios.json')
+const DEMO_PATH = join(REPO_ROOT, '.forgeax/games/wuxia-combat/video-game/scenarios.json')
 
 export function loadDemo001Scenario(): any {
   const db = JSON.parse(readFileSync(DEMO_PATH, 'utf-8'))

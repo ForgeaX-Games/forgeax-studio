@@ -383,8 +383,8 @@ function sourceFloatingSpec(
 export function discoverFloatingRepos(root: string): FloatingRepoSpec[] {
   const specs = [
     sourceFloatingSpec(root, '.forgeax-harness', false, ['scripts/sync-harness.mjs']),
-    sourceFloatingSpec(root, 'packages/harness', true, ['scripts/sync-package-harness.mjs', '--ensure']),
-    sourceFloatingSpec(root, 'packages/games', false, ['scripts/sync-games.mjs', '--ensure']),
+    sourceFloatingSpec(root, 'packages/harness', true, ['scripts/packages.ts', 'ensure', '--only', 'harness']),
+    sourceFloatingSpec(root, 'packages/games', false, ['scripts/packages.ts', 'ensure', '--only', 'games']),
   ].filter((spec): spec is FloatingRepoSpec => spec !== null);
 
   for (const submodule of submodulePaths(root)) {
@@ -505,7 +505,7 @@ async function cloneFloatingRepo(spec: FloatingRepoSpec, sourceRoot: string, tar
   }
 
   const syncCwd = resolve(targetRoot, spec.syncRelativeCwd);
-  await runAsync('node', [...spec.syncArgs], syncCwd, `materializing floating repo ${spec.relativePath} from its origin`);
+  await runAsync(process.execPath, [...spec.syncArgs], syncCwd, `materializing floating repo ${spec.relativePath} from its origin`);
   if (spec.required && !isGitCheckout(targetPath)) {
     throw new Error(`required floating repo ${spec.relativePath} is unavailable after sync`);
   }

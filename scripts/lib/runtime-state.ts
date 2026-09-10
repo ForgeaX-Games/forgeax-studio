@@ -268,7 +268,7 @@ function defaultRuntimeOwnerIdentity(startup: StartupEnvironment): RuntimeOwnerI
   return startup.sourceLayout === 'source'
     ? {
       server: { packageDir: join(root, 'packages/server'), entry: 'src/main.ts' },
-      interface: { dir: join(root, 'packages/studio') },
+      interface: { dir: join(root, 'packages/ide') },
     }
     : {
       server: { packageDir: join(startup.resourceRoot, 'server'), entry: 'src/main.ts' },
@@ -318,10 +318,8 @@ function runtimeOwnerIdentityBelongsToResourceRoot(
     && serverEntry !== null
     && runtimePathRelation(serverDir, serverEntry) === 'within'
     && (
-      runtimePathRelation(join(packages, 'studio'), owners.interface.dir) === 'same'
-      || runtimePathRelation(join(packages, 'interface'), owners.interface.dir) === 'same'
-      || runtimePathRelation(join(lexicalPackages, 'studio'), owners.interface.dir) === 'same'
-      || runtimePathRelation(join(lexicalPackages, 'interface'), owners.interface.dir) === 'same'
+      runtimePathRelation(join(packages, 'ide'), owners.interface.dir) === 'same'
+      || runtimePathRelation(join(lexicalPackages, 'ide'), owners.interface.dir) === 'same'
     );
 }
 
@@ -383,7 +381,7 @@ function validStartup(value: unknown, profile: string): value is StartupEnvironm
   if (!isRecord(value) || value.schemaVersion !== 1 || value.profile !== profile) return false;
   const allowed = new Set([
     'schemaVersion', 'profile', 'sourceLayout', 'resourceRoot', 'projectRoot',
-    'envFile', 'stateFile', 'logFile', 'server', 'engine', 'gatewayBridge',
+    'envFile', 'stateFile', 'logFile', 'server', 'engine', 'mcp', 'gatewayBridge',
     'interface', 'hmrClientPort', 'optional', 'assetCorsOrigins',
     'agentHostSocket', 'standaloneProxy', 'allowedHosts', 'supervision',
     'startupTimeoutMs',
@@ -394,6 +392,7 @@ function validStartup(value: unknown, profile: string): value is StartupEnvironm
     && validEndpoint(value.server)
     && validInterface(value.interface)
     && validEndpoint(value.engine)
+    && validMcp(value.mcp)
     && validBridge(value.gatewayBridge)
     && port(value.hmrClientPort)
     && validOptional(value.optional)
@@ -417,6 +416,14 @@ function validEndpoint(value: unknown): value is StartupEnvironment['server'] {
     && port(value.port)
     && typeof value.healthPath === 'string'
     && value.healthPath.startsWith('/');
+}
+
+function validMcp(value: unknown): boolean {
+  return validEndpoint(value)
+    && isRecord(value)
+    && typeof value.enabled === 'boolean'
+    && typeof value.publicPath === 'string'
+    && value.publicPath.startsWith('/');
 }
 
 function validBridge(value: unknown): boolean {
@@ -494,9 +501,18 @@ function requireCoreManagedPorts(ports: ManagedRuntimePorts, startup: StartupEnv
   // An external bridge may be configured for Studio to reach, but it is never
   // a listener owned by the Studio launcher and must not enlarge stop authority.
   if (ports.bridge !== undefined) throw new Error('managedPorts must not contain the external bridge port');
+  if (startup.mcp.enabled && ports['engine-mcp'] !== startup.mcp.port) {
+    throw new Error('managedPorts must contain the enabled Engine MCP port');
+  }
+  if (!startup.mcp.enabled && ports['engine-mcp'] !== undefined) {
+    throw new Error('managedPorts must not contain a disabled Engine MCP port');
+  }
 }
 
-function coreManagedPortsMatch(ports: ManagedRuntimePorts, startup: Pick<StartupEnvironment, 'server' | 'interface' | 'engine'>): boolean {
+function coreManagedPortsMatch(
+  ports: ManagedRuntimePorts,
+  startup: Pick<StartupEnvironment, 'server' | 'interface' | 'engine' | 'mcp'> & Partial<Pick<StartupEnvironment, 'sourceLayout'>>,
+): boolean {
   if (ports.server !== startup.server.port || ports.engine !== startup.engine.port) return false;
   // desktop-prod serves the SPA from the server listener; recording a second
   // interface key for the same port would violate the no-duplicate contract.
@@ -510,6 +526,7 @@ function coreManagedPorts(startup: StartupEnvironment): ManagedRuntimePorts {
     server: startup.server.port,
     engine: startup.engine.port,
     ...(startup.sourceLayout === 'source' ? { interface: startup.interface.port } : {}),
+    ...(startup.mcp.enabled ? { 'engine-mcp': startup.mcp.port } : {}),
   };
 }
 

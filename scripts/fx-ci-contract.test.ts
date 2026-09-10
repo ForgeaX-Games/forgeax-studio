@@ -8,29 +8,26 @@ describe('bun fx ci local gate', () => {
   test('registers and documents the local Studio CI command', () => {
     expect(source).toContain("'ci'");
     expect(source).toContain('function ci(');
-    expect(source).toContain('Run the local Studio PR CI surface');
-    expect(source).toContain('test:studio-smoke-contract');
-    expect(source).toContain('test/game-templates.test.ts');
-    expect(source).toContain('test/workbench-create-game-default.test.ts');
-    expect(source).toContain('test/workbench-link-idempotency.test.ts');
-    expect(source).toContain('sync-package-harness.mjs');
+    expect(source).toContain('integration workspace');
+    expect(source).toContain('root frozen Bun install + integration prepare');
+    expect(source).toContain('root layer gate');
+    expect(source).toContain('root integration tests');
     expect(source).toContain('required-checks ruleset audit');
     expect(source).toContain('scripts/ci/audit-required-checks-ruleset.mjs');
-    expect(source).toContain('editor engine setup');
-    expect(source).toContain('function editorCiEnvironment(');
-    expect(source).toContain("CI: '1'");
-    expect(source).toContain('FORGEAX_E2E_ENGINE_PORT');
-    expect(source).toContain('FORGEAX_E2E_BRIDGE_PORT');
-    expect(source).toContain('editor PR CI projection');
-    expect(source).not.toContain('test/template-catalog.test.ts');
-    expect(source).toContain('games floating checkout contract');
-    expect(source).toContain('sync-package-harness.mjs');
-    expect(source).toContain('source Studio harness checkout is unavailable');
+    expect(source).toContain('root cutover contract');
+    expect(source).toContain('public wrapper discovery');
+    expect(source).toContain("[script('fx.ts'), 'ide', 'ci']");
+    expect(source).toContain('FORGEAX_ROOT_INTEGRATION_ONLY');
+    expect(source).toContain('FORGEAX_SKIP_SUBMODULE_INIT');
     expect(source).toContain("CI: process.env.CI ?? 'true'");
-    expect(source).toContain('FORGEAX_E2E_PORT');
-    expect(source).toContain('FORGEAX_E2E_TEMPLATE_PORT');
-    expect(source).toContain('FORGEAX_E2E_TEMPLATE_BRIDGE_PORT');
-    expect(source).toContain('FORGEAX_SKIP_GAMES');
-    expect(source).toContain('[ci] PASS: local Studio PR CI');
+    expect(source).toContain('[ci] PASS: local Studio integration CI');
+    expect(source).not.toContain('packages/server');
+    expect(source).not.toContain('packages/editor');
+  });
+
+  test('registers the release integrity command family without external mutation', () => {
+    expect(source).toContain('release-integrity');
+    expect(source).toContain('executeReleaseIntegrityCli');
+    expect(source).toContain('schema/status/verify');
   });
 });

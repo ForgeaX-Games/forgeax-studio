@@ -36,6 +36,50 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Verify candidate-bound release-integrity evidence
+        id: release-integrity
+        if: steps.check.outputs.exists == 'false'
+        env:
+          RELEASE_INTEGRITY_CANDIDATE: ${{ runner.temp }}/release-candidate.json
+          RELEASE_INTEGRITY_EXPECTED_TAG: v${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          : "${RELEASE_INTEGRITY_CANDIDATE:?release-integrity candidate evidence is required}"
+          test -s "$RELEASE_INTEGRITY_CANDIDATE" || {
+            echo "release-integrity candidate evidence is missing; tag and release mutation are suppressed"
+            exit 3
+          }
+          node - "$RELEASE_INTEGRITY_CANDIDATE" "$RELEASE_INTEGRITY_EXPECTED_TAG" <<'NODE'
+          const fs = require("node:fs");
+          const [candidatePath, expectedTag] = process.argv.slice(2);
+          const candidate = JSON.parse(fs.readFileSync(candidatePath, "utf8"));
+          const expectedPermission = {
+            repositories: ["ForgeaX-Games/forgeax-studio"],
+            refs: ["refs/heads/main"],
+            operations: ["contents:write", "release:write"],
+          };
+          const validDigest = typeof candidate.subjectDigest === "string" && /^[0-9a-f]{64}$/.test(candidate.subjectDigest);
+          const samePermission = JSON.stringify(candidate.permissionObservation) === JSON.stringify(expectedPermission);
+          if (
+            !candidate.candidateId ||
+            candidate.tag !== expectedTag ||
+            candidate.target !== "ForgeaX-Games/forgeax-studio" ||
+            candidate.ref !== "refs/heads/main" ||
+            !validDigest ||
+            candidate.platformTrust !== "passed" ||
+            candidate.publisher !== "public-artifact-publisher" ||
+            candidate.externalOutcome !== "verified" ||
+            candidate.mutation !== "permitted" ||
+            !candidate.recoveryJournal ||
+            !samePermission
+          ) {
+            console.error("release-integrity candidate is missing verified candidate-bound evidence");
+            process.exit(3);
+          }
+          console.log(`release-integrity candidate=${candidate.candidateId} target=${candidate.target} ref=${candidate.ref} permission=observed`);
+          NODE
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
       - name: Extract changelog for this version
         if: steps.check.outputs.exists == 'false'
         id: notes
@@ -53,7 +97,7 @@ jobs:
           cat /tmp/release-notes.md
 
       - name: Create tag and release
-        if: steps.check.outputs.exists == 'false'
+        if: steps.check.outputs.exists == 'false' && steps.release-integrity.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

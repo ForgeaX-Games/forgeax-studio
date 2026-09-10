@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// src/main.ts
+import { resolve as resolve7 } from "node:path";
+
 // src/mcp/protocol.ts
 var MCP_PROTOCOL_VERSION = "2024-11-05";
 var METHOD_NOT_FOUND = -32601;
@@ -248,11 +251,12 @@ function runStdioServer(spec) {
 }
 
 // src/mcp/forgeax-server.ts
-import { readFileSync as readFileSync9 } from "node:fs";
+import { readFileSync as readFileSync8 } from "node:fs";
+import { resolve as resolve5 } from "node:path";
 
 // src/status/collect.ts
-import { readFileSync as readFileSync6 } from "node:fs";
-import { join as join8 } from "node:path";
+import { readFileSync as readFileSync4 } from "node:fs";
+import { join as join5 } from "node:path";
 
 // src/project/locate.ts
 import {
@@ -642,6 +646,7 @@ import {
 } from "node:fs";
 import { dirname as dirname3, join as join3, relative as relative2, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
+import { engineSdkRoot } from "@forgeax/game-runtime";
 
 // src/routing.ts
 var ROUTING_TEXT = `## ForgeaX game development
@@ -663,6 +668,14 @@ reasoning and game-code edits; the plugin owns ForgeaX Runtime lifecycle and fee
 - Reading runtime errors or engine logs: read the file path returned in
   \`runtime_logs.local_file\` with your own file-reading tool. Log tailing is
   deliberately not an MCP tool — the log is a file, so read it like one.
+- Generating art or 3D assets ("make a sprite", "I need a texture", "generate a
+  model of…"): call \`forgeax_generate_image\` (text-to-image, or image-to-image
+  with a local \`image\`) or \`forgeax_generate_3d\` (text-to-3D via \`prompt\`,
+  image-to-3D via \`image\`). Both save into the active game's \`assets/\` directory
+  and return the project-relative path to reference from code. Image-to-3D accepts a
+  public https URL, or a local file path when COS is configured (it is uploaded and
+  passed as a short-lived presigned URL). They need \`FORGEAX_LITELLM_API_KEY\` (and
+  \`FORGEAX_COS_*\` for local-file image-to-3D) in the environment.
 - Creating a game, switching the active game, installing or upgrading the plugin:
   these are one-time operations and are CLI subcommands, not MCP tools. Run
   \`npx -y -p @forgeax/game forgeax-game <init|use|doctor|devkit|upgrade>\`.
@@ -677,27 +690,17 @@ running, and running it.`;
 var PLUGIN_SKILL_ID = "forgeax-game";
 var ENGINE_SKILL_PREFIX = "forgeax-engine-";
 var DEVKIT_VERSION = 2;
-var HOST_SKILL_MOUNTS = {
-  codex: ".agents/skills",
-  claude: ".claude/skills",
-  cursor: ".cursor/skills",
-  trae: ".trae/skills",
-  codebuddy: ".codebuddy/skills",
-  workbuddy: ".codebuddy/skills",
-  windsurf: ".codeium/windsurf/skills",
-  vscode: ".vscode/skills",
-  opencode: ".config/opencode/skills"
-};
-var HOST_RULE_MOUNTS = {
-  codex: ".agents/rules",
-  claude: ".claude/rules",
-  cursor: ".cursor/rules",
-  trae: ".trae/rules",
-  codebuddy: ".codebuddy/rules",
-  workbuddy: ".codebuddy/rules",
-  windsurf: ".codeium/windsurf/rules",
-  vscode: ".vscode/rules",
-  opencode: ".config/opencode/rules"
+var HOST_MOUNTS = {
+  codex: { skills: ".agents/skills", rules: ".agents/rules" },
+  claude: { skills: ".claude/skills", rules: ".claude/rules" },
+  cursor: { skills: ".cursor/skills", rules: ".cursor/rules" },
+  trae: { skills: ".trae/skills", rules: ".trae/rules" },
+  codebuddy: { skills: ".codebuddy/skills", rules: ".codebuddy/rules" },
+  workbuddy: { skills: ".codebuddy/skills", rules: ".codebuddy/rules" },
+  windsurf: { skills: ".codeium/windsurf/skills", rules: ".codeium/windsurf/rules" },
+  vscode: { skills: ".vscode/skills", rules: ".vscode/rules" },
+  zcode: { skills: ".zcode/skills" },
+  opencode: { skills: ".config/opencode/skills", rules: ".config/opencode/rules" }
 };
 function skillRoots() {
   const here = dirname3(fileURLToPath(import.meta.url));
@@ -705,11 +708,9 @@ function skillRoots() {
   const anySkill = () => true;
   return [
     { path: resolve2(here, "..", "assets", "skills"), accepts: anySkill },
-    { path: resolve2(here, "..", "assets", "engine-sdk", "skills"), accepts: isEngineSkill },
     { path: resolve2(here, "..", "..", "assets", "skills"), accepts: anySkill },
-    { path: resolve2(here, "..", "..", "assets", "engine-sdk", "skills"), accepts: isEngineSkill },
-    { path: resolve2(here, "..", "..", "skills"), accepts: isPluginSkill },
-    { path: resolve2(here, "..", "..", "..", "editor", "packages", "engine", "skills"), accepts: isEngineSkill }
+    { path: resolve2(engineSdkRoot(), "skills"), accepts: isEngineSkill },
+    { path: resolve2(here, "..", "..", "skills"), accepts: isPluginSkill }
   ];
 }
 function bundledSkills() {
@@ -783,24 +784,27 @@ function writeTextIfChanged(path, content) {
   return true;
 }
 function selectedHostIds(clients) {
-  return [...new Set(clients.map((id) => id === "workbuddy" ? "codebuddy" : id))].filter((id) => HOST_SKILL_MOUNTS[id]);
+  return [...new Set(clients.map((id) => id === "workbuddy" ? "codebuddy" : id))].filter((id) => HOST_MOUNTS[id]);
 }
 function hostSkillDirs(projectRoot) {
-  return [...new Set(Object.values(HOST_SKILL_MOUNTS))].map((mount) => join3(projectRoot, mount));
+  return [...new Set(Object.values(HOST_MOUNTS).map((mount) => mount.skills))].map((mount) => join3(projectRoot, mount));
 }
 function installHostDevKit(projectRoot, clients, skills = bundledSkills()) {
   const skillPaths = [];
   const rulePaths = [];
   let changed = false;
   for (const id of selectedHostIds(clients)) {
-    const skillsDir = join3(projectRoot, HOST_SKILL_MOUNTS[id]);
+    const mount = HOST_MOUNTS[id];
+    const skillsDir = join3(projectRoot, mount.skills);
     for (const skill of skills) {
       changed = copySkill(skill.path, join3(skillsDir, skill.id)) || changed;
     }
-    const rulePath = join3(projectRoot, HOST_RULE_MOUNTS[id], `${PLUGIN_SKILL_ID}.md`);
-    changed = writeTextIfChanged(rulePath, ROUTING_TEXT) || changed;
     skillPaths.push(skillsDir);
-    rulePaths.push(rulePath);
+    if (mount.rules) {
+      const rulePath = join3(projectRoot, mount.rules, `${PLUGIN_SKILL_ID}.md`);
+      changed = writeTextIfChanged(rulePath, ROUTING_TEXT) || changed;
+      rulePaths.push(rulePath);
+    }
   }
   const skillIds = skills.map((skill) => skill.id);
   const noun = skillPaths.length === 1 ? "host" : "hosts";
@@ -889,7 +893,7 @@ function removeDevKit(projectRoot) {
   const owned = new Set(bundledSkills().map((skill) => skill.id));
   const removed = [];
   let skillCount = 0;
-  for (const mount of new Set(Object.values(HOST_SKILL_MOUNTS))) {
+  for (const mount of new Set(Object.values(HOST_MOUNTS).map((entry) => entry.skills))) {
     const dir = join3(projectRoot, mount);
     let entries;
     try {
@@ -907,7 +911,8 @@ function removeDevKit(projectRoot) {
     }
     removed.push(dir);
   }
-  for (const mount of new Set(Object.values(HOST_RULE_MOUNTS))) {
+  const ruleMounts = Object.values(HOST_MOUNTS).flatMap((entry) => entry.rules ? [entry.rules] : []);
+  for (const mount of new Set(ruleMounts)) {
     for (const suffix of [".md", ".md.bak.latest"]) {
       rmSync(join3(projectRoot, mount, `${PLUGIN_SKILL_ID}${suffix}`), { force: true });
     }
@@ -1015,418 +1020,13 @@ function runtimeLogIsLive(root) {
   return typeof state?.pid === "number" && processAlive(state.pid);
 }
 
-// src/runtime/manager.ts
-import { arch as arch3, platform as platform3 } from "node:os";
-import { join as join7 } from "node:path";
-
-// src/runtime/cache.ts
-import { createHash as createHash2 } from "node:crypto";
-import { spawnSync as spawnSync2 } from "node:child_process";
-import { closeSync, copyFileSync as copyFileSync2, existsSync as existsSync3, mkdirSync as mkdirSync5, openSync, readFileSync as readFileSync4, readSync, readdirSync as readdirSync3, renameSync as renameSync2, rmSync as rmSync2, statSync as statSync4, writeFileSync as writeFileSync4 } from "node:fs";
-import { homedir as homedir3, arch, platform } from "node:os";
-import { basename, isAbsolute as isAbsolute2, join as join5, relative as relative3, resolve as resolve3 } from "node:path";
-function runtimeCacheRoot() {
-  return process.env.FORGEAX_RUNTIME_CACHE?.trim() || join5(homedir3(), ".forgeax", "runtimes");
-}
-function safe(value) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-function runtimeInstallRoot(runtimeId, version, machine = { platform: platform(), arch: arch() }, cacheRoot = runtimeCacheRoot()) {
-  return join5(cacheRoot, safe(runtimeId), safe(version), `${safe(machine.platform)}-${safe(machine.arch)}`);
-}
-function sha256File(file) {
-  const hash = createHash2("sha256");
-  const handle = openSync(file, "r");
-  try {
-    const buffer = Buffer.allocUnsafe(1 << 20);
-    for (;; ) {
-      const read = readSync(handle, buffer, 0, buffer.length, null);
-      if (read <= 0)
-        break;
-      hash.update(buffer.subarray(0, read));
-    }
-  } finally {
-    closeSync(handle);
-  }
-  return hash.digest("hex");
-}
-function markerPath(root) {
-  return join5(root, ".ready.json");
-}
-function readMarker(root) {
-  const marker = markerPath(root);
-  if (!existsSync3(marker))
-    return;
-  try {
-    const value = JSON.parse(readFileSync4(marker, "utf8"));
-    if (value.schemaVersion !== 2 || !value.runtimeId || !value.version || !value.sha256 || !value.command)
-      return;
-    if (value.format !== "archive" && value.format !== "file")
-      return;
-    if (value.format === "file" && !value.artifactPath)
-      return;
-    return value;
-  } catch {
-    return;
-  }
-}
-function readInstalledRuntime(runtimeId, version, machine = { platform: platform(), arch: arch() }, cacheRoot = runtimeCacheRoot()) {
-  const root = runtimeInstallRoot(runtimeId, version, machine, cacheRoot);
-  const marker = readMarker(root);
-  if (!marker || marker.runtimeId !== runtimeId || marker.version !== version || marker.platform !== machine.platform || marker.arch !== machine.arch)
-    return;
-  const contained = (candidate) => {
-    const relativePath = relative3(root, candidate);
-    return !relativePath.startsWith("..") && !isAbsolute2(relativePath) && existsSync3(candidate);
-  };
-  let artifactPath;
-  if (marker.format === "file") {
-    artifactPath = resolve3(root, marker.artifactPath);
-    if (!contained(artifactPath))
-      return;
-    try {
-      if (sha256File(artifactPath) !== marker.sha256.toLowerCase())
-        return;
-    } catch {
-      return;
-    }
-  } else {
-    if (!contained(resolve3(root, marker.command)))
-      return;
-  }
-  return { runtimeId, version, root, ...artifactPath ? { artifactPath } : {}, command: marker.command, args: marker.args, sha256: marker.sha256, platform: marker.platform, arch: marker.arch };
-}
-function listInstalledRuntimes(runtimeId, cacheRoot = runtimeCacheRoot()) {
-  const root = join5(cacheRoot, safe(runtimeId));
-  if (!existsSync3(root))
-    return [];
-  const result = [];
-  for (const version of requireDirectoryNames(root)) {
-    const runtime = readInstalledRuntime(runtimeId, version, { platform: platform(), arch: arch() }, cacheRoot);
-    if (runtime)
-      result.push(runtime);
-  }
-  return result.sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }));
-}
-function requireDirectoryNames(root) {
-  return readdirSync3(root, { withFileTypes: true }).filter((item) => item.isDirectory()).map((item) => item.name);
-}
-var LOCK_FILE = ".install.lock";
-function acquireRuntimeLock(root, staleAfterMs = 10 * 60000) {
-  mkdirSync5(root, { recursive: true });
-  const file = join5(root, LOCK_FILE);
-  let fd;
-  try {
-    fd = openSync(file, "wx");
-    writeFileSync4(fd, `${process.pid}
-`, "utf8");
-  } catch {
-    try {
-      if (Date.now() - statSync4(file).mtimeMs > staleAfterMs) {
-        rmSync2(file, { force: true });
-        fd = openSync(file, "wx");
-        writeFileSync4(fd, `${process.pid}
-`, "utf8");
-      }
-    } catch {
-      fd = undefined;
-    }
-  }
-  return {
-    acquired: fd !== undefined,
-    release: () => {
-      if (fd === undefined)
-        return;
-      try {
-        closeSync(fd);
-      } catch {}
-      try {
-        rmSync2(file, { force: true });
-      } catch {}
-      fd = undefined;
-    }
-  };
-}
-async function materializeSource(source, destination, sourceRoot) {
-  if (/^http:\/\//i.test(source)) {
-    throw new Error("runtime artifact URL must use HTTPS");
-  }
-  if (/^https:\/\//i.test(source)) {
-    const response = await fetch(source);
-    if (!response.ok)
-      throw new Error(`runtime artifact download failed (${response.status})`);
-    writeFileSync4(destination, Buffer.from(await response.arrayBuffer()));
-    return;
-  }
-  copyFileSync2(resolve3(sourceRoot ?? process.cwd(), source), destination);
-}
-function validateArchive(archive) {
-  const result = spawnSync2("tar", ["-tzf", archive], {
-    encoding: "utf8",
-    maxBuffer: 512 * 1024 * 1024
-  });
-  if (result.status !== 0) {
-    throw new Error(`runtime archive listing failed: ${result.stderr?.trim() || "tar exited unsuccessfully"}`);
-  }
-  for (const entry of result.stdout.split(/\r?\n/).filter(Boolean)) {
-    const normalized = entry.replaceAll("\\", "/");
-    if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
-      throw new Error(`runtime archive contains an unsafe path: ${entry}`);
-    }
-  }
-}
-function extractArchive(archive, destination) {
-  validateArchive(archive);
-  const keep = new Set([basename(archive), LOCK_FILE]);
-  for (const entry of readdirSync3(destination, { withFileTypes: true })) {
-    if (keep.has(entry.name))
-      continue;
-    rmSync2(join5(destination, entry.name), { recursive: true, force: true });
-  }
-  const result = spawnSync2("tar", ["-xzf", archive, "-C", destination, "--no-same-owner"], {
-    encoding: "utf8"
-  });
-  if (result.status !== 0) {
-    throw new Error(`runtime archive extraction failed: ${result.stderr?.trim() || "tar exited unsuccessfully"}`);
-  }
-}
-async function installRuntime(artifact, options = {}) {
-  const runtimeId = options.runtimeId ?? artifact.runtimeId ?? "forgeax-game-runtime";
-  const machine = options.machine ?? { platform: platform(), arch: arch() };
-  const root = join5(options.cacheRoot ?? runtimeCacheRoot(), safe(runtimeId), safe(artifact.version), `${safe(machine.platform)}-${safe(machine.arch)}`);
-  const cacheRoot = options.cacheRoot ?? runtimeCacheRoot();
-  const existing = readInstalledRuntime(runtimeId, artifact.version, machine, cacheRoot);
-  if (existing && existing.sha256 === artifact.sha256.toLowerCase())
-    return existing;
-  const lock = acquireRuntimeLock(root);
-  if (!lock.acquired) {
-    const waited = readInstalledRuntime(runtimeId, artifact.version, machine, cacheRoot);
-    if (waited)
-      return waited;
-    throw new Error(`runtime ${runtimeId}@${artifact.version} is being installed by another process`);
-  }
-  try {
-    const filename = basename(new URL(artifact.source, "file:///runtime-artifact").pathname) || "runtime-artifact";
-    const artifactPath = join5(root, filename.replace(/[^a-zA-Z0-9._-]/g, "_"));
-    const temporary = `${artifactPath}.part-${process.pid}`;
-    await materializeSource(artifact.source, temporary, options.sourceRoot);
-    const digest = sha256File(temporary);
-    if (digest !== artifact.sha256.toLowerCase()) {
-      rmSync2(temporary, { force: true });
-      throw new Error(`runtime artifact checksum mismatch: expected ${artifact.sha256}, got ${digest}`);
-    }
-    renameSync2(temporary, artifactPath);
-    const isArchive = artifact.format === "archive";
-    if (isArchive) {
-      extractArchive(artifactPath, root);
-      rmSync2(artifactPath, { force: true });
-    }
-    const marker = {
-      schemaVersion: 2,
-      runtimeId,
-      version: artifact.version,
-      format: isArchive ? "archive" : "file",
-      ...isArchive ? {} : { artifactPath: filename },
-      command: artifact.command ?? filename,
-      args: artifact.args ?? [],
-      sha256: digest,
-      platform: machine.platform,
-      arch: machine.arch
-    };
-    const markerTmp = `${markerPath(root)}.tmp-${process.pid}`;
-    writeFileSync4(markerTmp, `${JSON.stringify(marker, null, 2)}
-`, "utf8");
-    renameSync2(markerTmp, markerPath(root));
-    return readInstalledRuntime(runtimeId, artifact.version, machine, cacheRoot);
-  } finally {
-    lock.release();
-  }
-}
-
-// src/runtime/manifest.ts
-import { existsSync as existsSync4, readFileSync as readFileSync5 } from "node:fs";
-import { arch as arch2, homedir as homedir4, platform as platform2 } from "node:os";
-import { dirname as dirname4, join as join6, resolve as resolve4 } from "node:path";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
-
-// src/runtime/types.ts
-var RUNTIME_MANIFEST_VERSION = 1;
-var DEFAULT_RUNTIME_ID = "forgeax-game-runtime";
-
-// src/runtime/manifest.ts
-function isRecord(value) {
-  return typeof value === "object" && value !== null;
-}
-function artifact(value) {
-  if (!isRecord(value) || typeof value.version !== "string" || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(value.sha256))
-    return;
-  const source = typeof value.source === "string" ? value.source : typeof value.url === "string" ? value.url : undefined;
-  if (!source)
-    return;
-  return {
-    runtimeId: typeof value.runtimeId === "string" ? value.runtimeId : undefined,
-    version: value.version,
-    platform: typeof value.platform === "string" ? value.platform : undefined,
-    arch: typeof value.arch === "string" ? value.arch : undefined,
-    source,
-    sha256: value.sha256.toLowerCase(),
-    format: value.format === "archive" ? "archive" : "file",
-    command: typeof value.command === "string" ? value.command : undefined,
-    args: Array.isArray(value.args) && value.args.every((item) => typeof item === "string") ? value.args : undefined
-  };
-}
-function parseRuntimeManifest(value) {
-  if (!isRecord(value) || value.schemaVersion !== RUNTIME_MANIFEST_VERSION) {
-    throw new Error(`unsupported runtime manifest schema (expected ${RUNTIME_MANIFEST_VERSION})`);
-  }
-  const runtimeId = typeof value.runtimeId === "string" && value.runtimeId.length > 0 ? value.runtimeId : DEFAULT_RUNTIME_ID;
-  if (!Array.isArray(value.artifacts))
-    throw new Error("runtime manifest artifacts must be an array");
-  const artifacts = value.artifacts.map(artifact).filter((item) => item !== undefined);
-  if (artifacts.length !== value.artifacts.length)
-    throw new Error("runtime manifest contains an invalid artifact");
-  return { schemaVersion: RUNTIME_MANIFEST_VERSION, runtimeId, artifacts };
-}
-function readRuntimeManifest(file) {
-  return parseRuntimeManifest(JSON.parse(readFileSync5(file, "utf8")));
-}
-function bundledPluginRoot() {
-  const here = dirname4(fileURLToPath2(import.meta.url));
-  return here.endsWith("/runtime") || here.endsWith("\\runtime") ? resolve4(here, "../..") : resolve4(here, "..");
-}
-function runtimeManifestCandidates(pluginRoot = bundledPluginRoot()) {
-  return [
-    process.env.FORGEAX_RUNTIME_MANIFEST,
-    join6(pluginRoot, "assets", "runtime-manifest.json"),
-    join6(homedir4(), ".forgeax", "runtime-manifest.json")
-  ].filter((item) => Boolean(item));
-}
-function runtimeManifestRoot(pluginRoot = bundledPluginRoot()) {
-  return resolve4(pluginRoot);
-}
-function loadRuntimeManifest(pluginRoot) {
-  for (const candidate of runtimeManifestCandidates(pluginRoot)) {
-    if (!existsSync4(candidate))
-      continue;
-    try {
-      return readRuntimeManifest(candidate);
-    } catch (error) {
-      throw new Error(`invalid ForgeaX runtime manifest at ${candidate}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  return;
-}
-function versionSort(a, b) {
-  const parse = (value) => value.replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const left = parse(a.version);
-  const right = parse(b.version);
-  for (let i = 0;i < Math.max(left.length, right.length); i += 1) {
-    if ((right[i] ?? 0) !== (left[i] ?? 0))
-      return (right[i] ?? 0) - (left[i] ?? 0);
-  }
-  return 0;
-}
-function resolveRuntimeArtifact(manifest, version, machine = { platform: platform2(), arch: arch2() }) {
-  return manifest.artifacts.filter((item) => item.runtimeId === undefined || item.runtimeId === manifest.runtimeId).filter((item) => version === undefined || item.version === version).filter((item) => item.platform === undefined || item.platform === "any" || item.platform === machine.platform).filter((item) => item.arch === undefined || item.arch === "any" || item.arch === machine.arch).sort((a, b) => {
-    const platformScore = (b.platform === machine.platform ? 2 : b.platform === undefined || b.platform === "any" ? 1 : 0) - (a.platform === machine.platform ? 2 : a.platform === undefined || a.platform === "any" ? 1 : 0);
-    if (platformScore)
-      return platformScore;
-    return versionSort(a, b);
-  })[0];
-}
-
-// src/runtime/env.ts
-var RUNTIME_ENV_ALLOWLIST = [
-  "HOME",
-  "PATH",
-  "TMPDIR",
-  "TMP",
-  "TEMP",
-  "NODE_ENV",
-  "FORGEAX_SERVER_PORT",
-  "FORGEAX_ENGINE_PORT",
-  "FORGEAX_INTERFACE_PORT",
-  "FORGEAX_INTERFACE_HTTPS",
-  "FORGEAX_RUNTIME_CACHE",
-  "FORGEAX_RUNTIME_VERSION",
-  "FORGEAX_PROJECT_ROOT",
-  "FORGEAX_RESOURCE_ROOT",
-  "FORGEAX_STARTUP_PROFILE"
-];
-function runtimeEnvironment(overrides = {}, source = process.env) {
-  const env = {};
-  for (const name of RUNTIME_ENV_ALLOWLIST) {
-    const value = source[name];
-    if (value !== undefined)
-      env[name] = value;
-  }
-  for (const [name, value] of Object.entries(overrides)) {
-    if (!RUNTIME_ENV_ALLOWLIST.includes(name))
-      continue;
-    if (value === undefined)
-      delete env[name];
-    else
-      env[name] = value;
-  }
-  return env;
-}
-
-// src/runtime/manager.ts
-function resolveInstalledRuntime(options = {}) {
-  const runtimeId = options.runtimeId ?? "forgeax-game-runtime";
-  if (options.version)
-    return readInstalledRuntime(runtimeId, options.version, { platform: platform3(), arch: arch3() }, options.cacheRoot ?? runtimeCacheRoot());
-  const installed = listInstalledRuntimes(runtimeId, options.cacheRoot ?? runtimeCacheRoot());
-  return installed[0];
-}
-async function ensureRuntime(options = {}) {
-  const pluginRoot = runtimeManifestRoot(options.pluginRoot);
-  const manifest = loadRuntimeManifest(pluginRoot);
-  if (!manifest) {
-    const installed2 = resolveInstalledRuntime(options);
-    if (installed2)
-      return installed2;
-    throw new Error("no ForgeaX runtime manifest is installed; install a runtime artifact first");
-  }
-  const runtimeId = options.runtimeId ?? manifest.runtimeId;
-  const artifact2 = resolveRuntimeArtifact(manifest, options.version);
-  if (!artifact2)
-    throw new Error(`no runtime artifact matches ${runtimeId}${options.version ? `@${options.version}` : ""} for ${platform3()}/${arch3()}`);
-  const installed = resolveInstalledRuntime({
-    ...options,
-    runtimeId,
-    version: artifact2.version
-  });
-  if (installed)
-    return installed;
-  return installRuntime(artifact2, {
-    runtimeId,
-    cacheRoot: options.cacheRoot,
-    sourceRoot: join7(pluginRoot, "assets")
-  });
-}
-function launcherForRuntime(runtime, overrides = {}) {
-  const command = runtime.command.includes("/") || runtime.command.includes("\\") ? runtime.command : join7(runtime.root, runtime.command);
-  return {
-    runtime,
-    command,
-    args: runtime.args,
-    cwd: runtime.root,
-    env: runtimeEnvironment({
-      ...overrides,
-      FORGEAX_RUNTIME_VERSION: runtime.version,
-      FORGEAX_RESOURCE_ROOT: runtime.root,
-      FORGEAX_STARTUP_PROFILE: overrides.FORGEAX_STARTUP_PROFILE ?? "desktop-prod"
-    })
-  };
-}
-
 // src/status/collect.ts
+import { resolveInstalledRuntime } from "@forgeax/game-runtime";
 var AGENTS_DOC_CANDIDATES = ["AGENTS.md", "CLAUDE.md"];
 function readAgentsDoc(root) {
   for (const name of AGENTS_DOC_CANDIDATES) {
     try {
-      return readFileSync6(join8(root, name), "utf8");
+      return readFileSync4(join5(root, name), "utf8");
     } catch {}
   }
   return;
@@ -1448,7 +1048,7 @@ function deriveNextAction(s) {
     return `Engine authoring skills are incomplete (${s.devKit.engineSkills} of ${s.devKit.bundledEngineSkills} installed). Run \`forgeax-game devkit install\`, then start a new session so the host discovers them; without them the model has no authority for how this Engine is meant to be used.`;
   }
   if (!s.engineSdk.installed) {
-    return "Bundled Engine SDK is not installed. Run `forgeax-game init` or `forgeax-game upgrade` to materialize the version-matched Engine types and examples.";
+    return "Bundled Engine SDK is not installed. Run `forgeax-game init` or `forgeax-game upgrade` to materialize the version-matched Engine types, templates, skills, and source.";
   }
   if (s.agentsBlock.status === "missing_file" || s.agentsBlock.status === "missing_block") {
     return "Project routing rules are not installed in AGENTS.md. Run `forgeax-game agents update`, then start a new session so the client re-reads the file.";
@@ -1457,10 +1057,13 @@ function deriveNextAction(s) {
     return "Project routing rules in AGENTS.md are stale. Run `forgeax-game agents update`, then start a new session so the client re-reads the file.";
   }
   if (!s.runtime.installed) {
-    return "Managed ForgeaX Runtime is not installed. Call `forgeax_run_current_game`; it will verify, cache, and start the bundled Runtime from the plugin manifest.";
+    return "Managed ForgeaX Runtime is not installed. Call `forgeax_run_current_game`; it will verify, cache, and build the selected npm Runtime package preview.";
+  }
+  if (s.runtimeLogs?.live && s.runtimeLogs.state?.previewUrl) {
+    return `Static preview is live for \`.forgeax/games/${s.activeGame}\`. Edit the game and call \`forgeax_run_current_game\` to rebuild it.`;
   }
   if (s.capabilities.tier !== "runtime") {
-    return `Ready to edit \`.forgeax/games/${s.activeGame}/\`. To run or preview the game, call \`forgeax_run_current_game\` — it will start the services that are down.`;
+    return `Ready to edit \`.forgeax/games/${s.activeGame}/\`. To run or preview the game, call \`forgeax_run_current_game\` — it will build and serve a static preview.`;
   }
   return `Everything is up. Edit \`.forgeax/games/${s.activeGame}/\` and call \`forgeax_run_current_game\` to reload and preview.`;
 }
@@ -1471,7 +1074,7 @@ async function collectStatus(explicitDir) {
   const runtime = installedRuntime ? { installed: true, version: installedRuntime.version, root: installedRuntime.root } : { installed: false };
   const engineSdk = project.root ? (() => {
     try {
-      const value = JSON.parse(readFileSync6(join8(project.root, ".forgeax", "engine-sdk.json"), "utf8"));
+      const value = JSON.parse(readFileSync4(join5(project.root, ".forgeax", "engine-sdk.json"), "utf8"));
       return {
         installed: true,
         ...typeof value.engineCommit === "string" ? { commit: value.engineCommit } : {},
@@ -1576,7 +1179,7 @@ function renderStatus(s) {
     if (s.runtime.root)
       lines.push(`- root: ${s.runtime.root}`);
   } else {
-    lines.push("- status: not installed (first run verifies and extracts the bundled Runtime automatically)");
+    lines.push("- status: not installed (first run verifies and extracts the selected Runtime package automatically)");
   }
   lines.push("");
   lines.push("## Engine SDK");
@@ -1623,31 +1226,17 @@ function renderStatus(s) {
 }
 
 // src/run/run-game.ts
-import { closeSync as closeSync2, existsSync as existsSync6, mkdirSync as mkdirSync6, openSync as openSync2, readFileSync as readFileSync8 } from "node:fs";
-import { join as join10 } from "node:path";
+import { closeSync as closeSync2, existsSync as existsSync3, mkdirSync as mkdirSync6, openSync as openSync2, readFileSync as readFileSync5 } from "node:fs";
+import { join as join6 } from "node:path";
 
 // src/services/launch.ts
 import { spawn } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync7 } from "node:fs";
-import { dirname as dirname5, join as join9, resolve as resolve5 } from "node:path";
-var STUDIO_PACKAGE_NAME = "forgeax-studio";
-function findStudioCheckout(start) {
-  let dir = resolve5(start);
-  for (;; ) {
-    const pkg = join9(dir, "package.json");
-    if (existsSync5(pkg)) {
-      try {
-        const name = JSON.parse(readFileSync7(pkg, "utf8")).name;
-        if (name === STUDIO_PACKAGE_NAME)
-          return dir;
-      } catch {}
-    }
-    const parent = dirname5(dir);
-    if (parent === dir)
-      return;
-    dir = parent;
-  }
-}
+import {
+  ensureRuntime,
+  launcherForRuntime,
+  resolveInstalledRuntime as resolveInstalledRuntime2,
+  runtimeEnvironment
+} from "@forgeax/game-runtime";
 function resolveLauncher(projectRoot, overrides = {}) {
   const explicit = process.env.FORGEAX_START_COMMAND?.trim();
   if (explicit) {
@@ -1663,7 +1252,7 @@ function resolveLauncher(projectRoot, overrides = {}) {
       };
     }
   }
-  const installed = resolveInstalledRuntime();
+  const installed = resolveInstalledRuntime2();
   if (installed) {
     const launcher = launcherForRuntime(installed, overrides);
     return {
@@ -1673,17 +1262,6 @@ function resolveLauncher(projectRoot, overrides = {}) {
       cwd: launcher.cwd,
       env: launcher.env,
       description: `installed ForgeaX runtime ${installed.version} (${installed.root})`
-    };
-  }
-  const checkout = process.env.FORGEAX_RUNTIME_DEV_FALLBACK === "1" ? findStudioCheckout(projectRoot) : undefined;
-  if (checkout) {
-    return {
-      kind: "development-fallback",
-      command: "bun",
-      args: ["scripts/fx.ts", "start"],
-      cwd: checkout,
-      env: runtimeEnvironment(overrides),
-      description: `development fallback: Studio checkout at ${checkout}`
     };
   }
   return;
@@ -1703,15 +1281,10 @@ function launchGuidance() {
     "Cannot start the ForgeaX stack: no verified ForgeaX runtime is installed,",
     "and FORGEAX_START_COMMAND is not set.",
     "",
-    "The published plugin must include assets/runtime-manifest.json and the bundled",
-    "Runtime archive (or set FORGEAX_RUNTIME_MANIFEST for a private deployment).",
-    "Install a release that includes those assets, then call this tool again.",
+    "Install a supported @forgeax/game-runtime package, then call this tool again.",
     "",
     "Advanced override (not recommended for normal installs):",
-    '  export FORGEAX_START_COMMAND="<command that brings up server :18900 and engine :15173>"',
-    "",
-    "Contributor-only fallback:",
-    "  export FORGEAX_RUNTIME_DEV_FALLBACK=1"
+    '  export FORGEAX_START_COMMAND="<command that brings up server :18900 and engine :15173>"'
   ].join(`
 `);
 }
@@ -1726,34 +1299,148 @@ function startStack(launcher, logFd) {
   return { pid: child.pid };
 }
 
-// src/runtime/ports.ts
-import { createServer } from "node:net";
-async function allocatePort(preferred) {
-  const server = createServer();
-  await new Promise((resolve6, reject) => {
-    server.once("error", reject);
-    server.listen(preferred ?? 0, "127.0.0.1", () => resolve6());
-  });
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : undefined;
-  await new Promise((resolve6) => server.close(() => resolve6()));
-  if (!port)
-    throw new Error("runtime port allocator did not receive a port");
-  return port;
+// src/run/run-game.ts
+import { allocateRuntimePorts, resolveInstalledRuntime as resolveInstalledRuntime3 } from "@forgeax/game-runtime";
+
+// src/run/static-preview.ts
+import { spawn as spawn2, spawnSync as spawnSync2 } from "node:child_process";
+import { closeSync, mkdirSync as mkdirSync5, openSync } from "node:fs";
+import { isAbsolute as isAbsolute2, resolve as resolve3 } from "node:path";
+import {
+  allocatePort,
+  ensureRuntime as ensureRuntime2,
+  installEngineSdk,
+  parsePreviewBuildManifest,
+  parsePreviewHealthIdentity,
+  runtimeEnvironment as runtimeEnvironment2
+} from "@forgeax/game-runtime";
+function runtimeCommand(runtime) {
+  return isAbsolute2(runtime.command) ? runtime.command : resolve3(runtime.root, runtime.command);
 }
-async function allocateRuntimePorts(preferred = {}) {
-  const used = new Set;
-  const next = async (requested) => {
-    let value = await allocatePort(requested);
-    while (used.has(value))
-      value = await allocatePort();
-    used.add(value);
-    return value;
+function lastJsonLine(output) {
+  const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let index = lines.length - 1;index >= 0; index -= 1) {
+    try {
+      return JSON.parse(lines[index]);
+    } catch {}
+  }
+  throw new Error(`Runtime returned no JSON result:
+${output}`);
+}
+function buildPreview(runtime, projectRoot, gameRoot, gameId) {
+  const result = spawnSync2(runtimeCommand(runtime), [
+    resolve3(runtime.root, runtime.capabilities.build.script),
+    "--project-root",
+    projectRoot,
+    "--game-root",
+    gameRoot,
+    "--game-id",
+    gameId,
+    "--runtime-version",
+    runtime.version,
+    "--engine-commit",
+    runtime.engineCommit
+  ], {
+    cwd: runtime.root,
+    encoding: "utf8",
+    env: runtimeEnvironment2({ FORGEAX_PROJECT_ROOT: projectRoot }),
+    maxBuffer: 64 * 1024 * 1024
+  });
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || `preview build exited ${result.status}`).trim());
+  }
+  const parsed = lastJsonLine(result.stdout);
+  return {
+    manifest: parsePreviewBuildManifest(parsed.manifest),
+    reused: parsed.reused === true
   };
-  const server = await next(preferred.server);
-  const engine = await next(preferred.engine);
-  const interfacePort = await next(preferred.interface);
-  return { server, engine, interface: interfacePort };
+}
+async function waitForHealth(url, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = "not ready";
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok)
+        return parsePreviewHealthIdentity(await response.json());
+      lastError = `HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 150));
+  }
+  throw new Error(`preview did not become ready: ${lastError}`);
+}
+async function buildAndStartStaticPreview(projectRoot, gameRoot, gameId) {
+  const runtime = await ensureRuntime2();
+  const sdk = installEngineSdk(projectRoot);
+  if (sdk.engineCommit && sdk.engineCommit !== runtime.engineCommit) {
+    throw new Error(`Engine SDK ${sdk.engineCommit} does not match Runtime ${runtime.engineCommit}; reinstall matching packages`);
+  }
+  const build = buildPreview(runtime, projectRoot, gameRoot, gameId);
+  const existing = readWatcherState(projectRoot);
+  if (existing?.pid && existing.outputRoot === build.manifest.outputRoot && existing.previewUrl) {
+    try {
+      process.kill(existing.pid, 0);
+      const healthUrl2 = new URL("__forgeax_health", existing.previewUrl).toString();
+      const health2 = await waitForHealth(healthUrl2, 2000);
+      return {
+        previewUrl: existing.previewUrl,
+        health: health2,
+        runtime,
+        reused: true,
+        pid: existing.pid
+      };
+    } catch {}
+  }
+  if (existing?.pid) {
+    try {
+      process.kill(existing.pid, "SIGTERM");
+    } catch {}
+  }
+  const port = await allocatePort();
+  const previewUrl2 = `http://127.0.0.1:${port}/preview/`;
+  const healthUrl = `${previewUrl2}__forgeax_health`;
+  const paths = runtimeLogPaths(projectRoot);
+  mkdirSync5(paths.dir, { recursive: true });
+  const logFd = openSync(paths.logFile, "a");
+  let child;
+  try {
+    child = spawn2(runtimeCommand(runtime), [
+      resolve3(runtime.root, runtime.capabilities.serve.script),
+      "--output-root",
+      build.manifest.outputRoot,
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port)
+    ], {
+      cwd: runtime.root,
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+      env: runtimeEnvironment2({ FORGEAX_PROJECT_ROOT: projectRoot })
+    });
+    child.unref();
+  } finally {
+    closeSync(logFd);
+  }
+  if (!child.pid)
+    throw new Error("preview server did not return a process id");
+  updateWatcherState(projectRoot, {
+    game: gameId,
+    pid: child.pid,
+    startedAt: new Date().toISOString(),
+    stoppedAt: undefined,
+    stopReason: undefined,
+    previewUrl: previewUrl2,
+    outputRoot: build.manifest.outputRoot,
+    buildHash: build.manifest.buildHash,
+    runtimeVersion: runtime.version,
+    engineCommit: runtime.engineCommit
+  });
+  const health = await waitForHealth(healthUrl);
+  updateWatcherState(projectRoot, { lastSuccessAt: new Date().toISOString() });
+  return { previewUrl: previewUrl2, health, runtime, reused: build.reused, pid: child.pid };
 }
 
 // src/run/run-game.ts
@@ -1779,12 +1466,12 @@ var RUN_TOOL_SCHEMA = {
 function engineIdentity(root) {
   let sdkCommit;
   try {
-    sdkCommit = JSON.parse(readFileSync8(join10(root, ".forgeax", "engine-sdk.json"), "utf8")).engineCommit;
+    sdkCommit = JSON.parse(readFileSync5(join6(root, ".forgeax", "engine-sdk.json"), "utf8")).engineCommit;
   } catch {}
-  return { sdkCommit, runtimeVersion: resolveInstalledRuntime()?.version };
+  return { sdkCommit, runtimeVersion: resolveInstalledRuntime3()?.version };
 }
 var START_TIMEOUT_MS = 90000;
-async function runCurrentGame(rawArgs, cwd) {
+async function runCurrentGame(rawArgs, cwd, options = {}) {
   const args = rawArgs;
   const dir = typeof args.target_dir === "string" ? args.target_dir : cwd;
   const startServices = args.start_services !== false;
@@ -1800,6 +1487,9 @@ async function runCurrentGame(rawArgs, cwd) {
   const slug = resolveSlug(root, typeof args.game === "string" ? args.game : undefined);
   if ("error" in slug)
     return slug.error;
+  if (!process.env.FORGEAX_START_COMMAND?.trim() && !options.existingServicesOnly) {
+    return runPackagedPreview(root, slug, startServices);
+  }
   const lines = [];
   let caps = await probeServices();
   if (tierAtLeast(caps.tier, "backend")) {
@@ -1812,6 +1502,13 @@ async function runCurrentGame(rawArgs, cwd) {
     }
   }
   if (!tierAtLeast(caps.tier, "runtime")) {
+    if (options.existingServicesOnly) {
+      return [
+        `not running: the supervisor-owned Studio stack is at tier "${caps.tier}".`,
+        ...caps.services.filter((service) => !service.reachable).map((service) => `- ${service.name} ${service.url}: down (${service.reason ?? "unreachable"})`)
+      ].join(`
+`);
+    }
     if (!startServices) {
       return [
         `not running: stack is at tier "${caps.tier}" and start_services was false.`,
@@ -1897,10 +1594,10 @@ async function runCurrentGame(rawArgs, cwd) {
     lines.push(`stack did not reach runtime tier within ${Math.round(START_TIMEOUT_MS / 1000)}s. Check the log below for the reason.`);
   }
   lines.push("");
-  if (runtimeLogIsLive(root) && existsSync6(paths.logFile)) {
+  if (runtimeLogIsLive(root) && existsSync3(paths.logFile)) {
     lines.push(`runtime_logs.local_file: ${paths.logFile}`);
     lines.push("Read that file with your own file tool to see vite transform errors, build failures and server logs.");
-  } else if (existsSync6(paths.logFile)) {
+  } else if (existsSync3(paths.logFile)) {
     lines.push(`runtime_logs.local_file: ${paths.logFile} (existing startup log; it may be stale)`);
     lines.push("The currently running stack was not launched by this live plugin process, so new output is not guaranteed.");
   } else {
@@ -1910,6 +1607,48 @@ async function runCurrentGame(rawArgs, cwd) {
   lines.push("It captures stack process output only. Errors thrown inside the running game reach the browser console, not this file.");
   return lines.join(`
 `);
+}
+async function runPackagedPreview(root, slug, startServices) {
+  const paths = runtimeLogPaths(root);
+  if (!startServices) {
+    const state = readWatcherState(root);
+    return state?.previewUrl && runtimeLogIsLive(root) ? `game: ${slug.slug}
+tier: runtime
+preview_url: ${state.previewUrl}` : "not running: static preview is down and start_services was false.";
+  }
+  const lock = acquireStartLock(root);
+  if (!lock.acquired) {
+    return "another plugin request is already building this game preview; call forgeax_run_current_game again shortly.";
+  }
+  try {
+    const result = await buildAndStartStaticPreview(root, slug.dir, slug.slug);
+    return [
+      `game: ${slug.slug}`,
+      `source: ${slug.dir}`,
+      "tier: runtime",
+      `preview_url: ${result.previewUrl}`,
+      `runtime.version: ${result.runtime.version}`,
+      `engine_sdk.commit: ${result.runtime.engineCommit}`,
+      `preview.instance_root: ${result.health.projectRoot}`,
+      `preview.runtime_version: ${result.health.runtimeVersion}`,
+      `preview.engine_version: ${result.health.engineCommit}`,
+      `preview.build_hash: ${result.health.buildHash}`,
+      `engine.identity: runtime=${result.runtime.version} sdk=${result.runtime.engineCommit} project=${root}`,
+      `build.reused: ${result.reused}`,
+      "",
+      `runtime_logs.local_file: ${paths.logFile}`,
+      "Open that URL to see the prebuilt game preview. Call this tool again after edits to rebuild it."
+    ].join(`
+`);
+  } catch (error) {
+    return [
+      `error: ${error instanceof Error ? error.message : String(error)}`,
+      `runtime_logs.local_file: ${paths.logFile}`
+    ].join(`
+`);
+  } finally {
+    lock.release();
+  }
 }
 function resolveSlug(root, requested) {
   if (requested !== undefined && !SLUG_RE.test(requested)) {
@@ -1932,11 +1671,696 @@ function resolveSlug(root, requested) {
   return { slug, dir };
 }
 
+// src/gen/generate.ts
+import { existsSync as existsSync4, mkdirSync as mkdirSync7, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
+import { basename, extname, join as join7, relative as relative3 } from "node:path";
+
+// src/gen/config.ts
+var DEFAULT_LITELLM_BASE_URL = "http://21.214.33.175:4000";
+var DEFAULT_MODELS = {
+  textToImage: "gemini-3-pro-image",
+  textTo3d: "tripo-3d-text",
+  imageTo3d: "tripo-3d-image"
+};
+function env(name) {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+function resolveLiteLlmConfig() {
+  const baseUrl = (env("FORGEAX_LITELLM_BASE_URL") ?? DEFAULT_LITELLM_BASE_URL).replace(/\/+$/, "");
+  const apiKey = env("FORGEAX_LITELLM_API_KEY");
+  if (!apiKey) {
+    throw new Error("FORGEAX_LITELLM_API_KEY is not set. Export the LiteLLM key so the asset tools can reach the gateway, e.g. `export FORGEAX_LITELLM_API_KEY=sk-...`.");
+  }
+  return {
+    baseUrl,
+    apiKey,
+    models: {
+      textToImage: env("FORGEAX_GEN_IMAGE_MODEL") ?? DEFAULT_MODELS.textToImage,
+      textTo3d: env("FORGEAX_GEN_3D_TEXT_MODEL") ?? DEFAULT_MODELS.textTo3d,
+      imageTo3d: env("FORGEAX_GEN_3D_IMAGE_MODEL") ?? DEFAULT_MODELS.imageTo3d
+    }
+  };
+}
+
+// src/gen/cos.ts
+import { createHash as createHash2, createHmac } from "node:crypto";
+var DEFAULT_EXPIRES_SEC = 3600;
+var SKEW_SEC = 60;
+function env2(name) {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+function resolveCosConfig() {
+  const bucket = env2("FORGEAX_COS_BUCKET");
+  const region = env2("FORGEAX_COS_REGION");
+  const secretId = env2("FORGEAX_COS_SECRET_ID");
+  const secretKey = env2("FORGEAX_COS_SECRET_KEY");
+  if (!bucket || !region || !secretId || !secretKey)
+    return;
+  return { bucket, region, secretId, secretKey };
+}
+function cosHost(cfg) {
+  return `${cfg.bucket}.cos.${cfg.region}.myqcloud.com`;
+}
+function rfc3986(value) {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+function formatKv(map) {
+  const lowered = {};
+  for (const [k, v] of Object.entries(map))
+    lowered[k.toLowerCase()] = v;
+  const keys = Object.keys(lowered).sort();
+  return {
+    serialized: keys.map((k) => `${rfc3986(k)}=${rfc3986(lowered[k])}`).join("&"),
+    keyList: keys.map((k) => rfc3986(k)).join(";")
+  };
+}
+function buildAuthorization(cfg, opts) {
+  const start = opts.nowSec - SKEW_SEC;
+  const end = opts.nowSec + (opts.expiresSec ?? DEFAULT_EXPIRES_SEC);
+  const signTime = `${start};${end}`;
+  const signKey = createHmac("sha1", cfg.secretKey).update(signTime).digest("hex");
+  const { serialized: paramStr, keyList: paramList } = formatKv(opts.params ?? {});
+  const { serialized: headerStr, keyList: headerList } = formatKv(opts.headers ?? {});
+  const httpString = `${opts.method.toLowerCase()}
+${opts.pathname}
+${paramStr}
+${headerStr}
+`;
+  const httpStringSha1 = createHash2("sha1").update(httpString).digest("hex");
+  const stringToSign = `sha1
+${signTime}
+${httpStringSha1}
+`;
+  const signature = createHmac("sha1", signKey).update(stringToSign).digest("hex");
+  return [
+    "q-sign-algorithm=sha1",
+    `q-ak=${cfg.secretId}`,
+    `q-sign-time=${signTime}`,
+    `q-key-time=${signTime}`,
+    `q-header-list=${headerList}`,
+    `q-url-param-list=${paramList}`,
+    `q-signature=${signature}`
+  ].join("&");
+}
+function presignGetUrl(cfg, key, expiresSec = DEFAULT_EXPIRES_SEC, nowSec = Math.floor(Date.now() / 1000)) {
+  const pathname = key.startsWith("/") ? key : `/${key}`;
+  const auth = buildAuthorization(cfg, { method: "get", pathname, nowSec, expiresSec });
+  return `https://${cosHost(cfg)}${pathname}?${auth}`;
+}
+async function uploadObject(cfg, key, bytes, contentType) {
+  const host = cosHost(cfg);
+  const pathname = key.startsWith("/") ? key : `/${key}`;
+  const auth = buildAuthorization(cfg, {
+    method: "put",
+    pathname,
+    headers: { host },
+    nowSec: Math.floor(Date.now() / 1000),
+    expiresSec: 600
+  });
+  const ctrl = new AbortController;
+  const timer = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const res = await fetch(`https://${host}${pathname}`, {
+      method: "PUT",
+      headers: { authorization: auth, "content-type": contentType },
+      body: bytes,
+      signal: ctrl.signal
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`COS upload of ${key} failed: ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 400)}` : ""}`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function uploadAndPresign(cfg, key, bytes, contentType, expiresSec = DEFAULT_EXPIRES_SEC) {
+  await uploadObject(cfg, key, bytes, contentType);
+  return presignGetUrl(cfg, key, expiresSec);
+}
+
+// src/gen/litellm.ts
+var TASK_TIMEOUT_MS = 420000;
+var POLL_INTERVAL_MS = 3000;
+var REQUEST_TIMEOUT_MS = 60000;
+function authHeaders(cfg) {
+  return { authorization: `Bearer ${cfg.apiKey}` };
+}
+async function request(url, init, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const ctrl = new AbortController;
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`LiteLLM ${init.method ?? "GET"} ${url} failed: ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 600)}` : ""}`);
+    }
+    return res;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`LiteLLM request timed out after ${timeoutMs}ms: ${url}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function decodeImagePayload(item) {
+  if (!item)
+    return {};
+  const b64 = typeof item.b64_json === "string" ? item.b64_json : undefined;
+  const url = typeof item.url === "string" ? item.url : undefined;
+  return { b64, url };
+}
+function sniffImageExt(bytes) {
+  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255)
+    return "jpg";
+  return "png";
+}
+async function materializeImage(payload) {
+  if (payload.b64) {
+    const bytes = new Uint8Array(Buffer.from(payload.b64, "base64"));
+    return { bytes, ext: sniffImageExt(bytes) };
+  }
+  if (payload.url) {
+    const res = await request(payload.url, { method: "GET" });
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return { bytes, ext: sniffImageExt(bytes) };
+  }
+  throw new Error("LiteLLM image response contained neither b64_json nor url.");
+}
+async function generateImage(cfg, opts) {
+  const res = await request(`${cfg.baseUrl}/v1/images/generations`, {
+    method: "POST",
+    headers: { ...authHeaders(cfg), "content-type": "application/json" },
+    body: JSON.stringify({ model: opts.model, prompt: opts.prompt, n: 1, ...opts.size ? { size: opts.size } : {} })
+  });
+  const json = await res.json();
+  return materializeImage(decodeImagePayload(json.data?.[0]));
+}
+async function editImage(cfg, opts) {
+  const form = new FormData;
+  form.set("model", opts.model);
+  form.set("prompt", opts.prompt);
+  form.set("n", "1");
+  form.set("image", new Blob([opts.image]), opts.filename);
+  const res = await request(`${cfg.baseUrl}/v1/images/edits`, {
+    method: "POST",
+    headers: authHeaders(cfg),
+    body: form
+  });
+  const json = await res.json();
+  return materializeImage(decodeImagePayload(json.data?.[0]));
+}
+async function submit3dTask(cfg, body) {
+  const res = await request(`${cfg.baseUrl}/v1/3d/generations`, {
+    method: "POST",
+    headers: { ...authHeaders(cfg), "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const json = await res.json();
+  if (!json.id)
+    throw new Error(`LiteLLM 3D submit returned no task id: ${JSON.stringify(json).slice(0, 400)}`);
+  return json.id;
+}
+async function poll3dTask(cfg, id, onProgress) {
+  const deadline = Date.now() + TASK_TIMEOUT_MS;
+  for (;; ) {
+    const res = await request(`${cfg.baseUrl}/v1/3d/tasks/${encodeURIComponent(id)}`, {
+      method: "GET",
+      headers: authHeaders(cfg)
+    });
+    const state = await res.json();
+    if (typeof state.progress === "number")
+      onProgress?.(state.progress);
+    const status = state.status?.toLowerCase();
+    if (status === "succeeded" || status === "success" || status === "completed")
+      return state;
+    if (status === "failed" || status === "error" || status === "cancelled") {
+      throw new Error(`LiteLLM 3D task ${id} ${state.status}${state.error ? `: ${JSON.stringify(state.error).slice(0, 300)}` : ""}`);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`LiteLLM 3D task ${id} did not finish within ${TASK_TIMEOUT_MS / 1000}s (last status: ${state.status}).`);
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+}
+async function downloadMesh(state) {
+  const assets = (state.data ?? []).map((d) => ({
+    url: typeof d.url === "string" ? d.url : undefined,
+    type: typeof d.type === "string" ? d.type : "",
+    format: typeof d.format === "string" ? d.format : ""
+  }));
+  const mesh = assets.find((a) => a.url && (a.type === "mesh" || /\.(glb|gltf|obj|fbx|usdz)/i.test(a.url ?? ""))) ?? assets.find((a) => a.url);
+  if (!mesh?.url)
+    throw new Error(`LiteLLM 3D task ${state.id} completed with no downloadable mesh asset.`);
+  const res = await request(mesh.url, { method: "GET" });
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const ext = mesh.format || (mesh.url.match(/\.([a-z0-9]+)(?:\?|$)/i)?.[1] ?? "glb").toLowerCase();
+  return { bytes, ext, assetType: mesh.type || "mesh" };
+}
+async function generate3dFromText(cfg, opts) {
+  const id = await submit3dTask(cfg, { model: opts.model, prompt: opts.prompt });
+  return downloadMesh(await poll3dTask(cfg, id, opts.onProgress));
+}
+async function generate3dFromImageUrl(cfg, opts) {
+  const id = await submit3dTask(cfg, { model: opts.model, image_url: opts.imageUrl, ...opts.prompt ? { prompt: opts.prompt } : {} });
+  return downloadMesh(await poll3dTask(cfg, id, opts.onProgress));
+}
+
+// src/gen/generate.ts
+function assetsDirFor(cwd, explicitGame) {
+  const binding = resolveProject(cwd);
+  if (!binding.root) {
+    throw new Error(`No ForgeaX project found from ${binding.searchedFrom}. Run \`forgeax-game init --game <slug>\` in the workspace first, or pass \`game\`/\`target_dir\`.`);
+  }
+  const slug = explicitGame?.trim() || activeGame(binding.root);
+  if (!slug) {
+    const games = listGames(binding.root);
+    throw new Error(`No active game to save the asset into.${games.length ? ` Pass one of: ${games.join(", ")}` : " Create one with `forgeax-game init --game <slug>`."}`);
+  }
+  const dir = gameDir(binding.root, slug);
+  if (!dir)
+    throw new Error(`Game ${JSON.stringify(slug)} not found in this project.`);
+  const assets = join7(dir, "assets");
+  mkdirSync7(assets, { recursive: true });
+  return { dir: assets, root: binding.root, slug };
+}
+function safeStem(preferred, fallback) {
+  const source = (preferred ?? fallback).toLowerCase();
+  const stem = source.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  return stem || "asset";
+}
+function uniquePath(dir, stem, ext) {
+  let candidate = join7(dir, `${stem}.${ext}`);
+  for (let i = 1;existsSync4(candidate); i += 1)
+    candidate = join7(dir, `${stem}-${i}.${ext}`);
+  return candidate;
+}
+function logProgress(label) {
+  let last = -1;
+  return (pct) => {
+    const step = Math.floor(pct / 10);
+    if (step !== last) {
+      last = step;
+      process.stderr.write(`[forgeax] ${label}: ${pct}%
+`);
+    }
+  };
+}
+var GAME_PROPERTY = {
+  game: {
+    type: "string",
+    description: "Game slug to save the asset into. Defaults to the active game."
+  },
+  target_dir: {
+    type: "string",
+    description: "Directory to resolve the ForgeaX project from. Defaults to the server working directory."
+  },
+  name: {
+    type: "string",
+    description: "Base file name for the saved asset (without extension). Defaults to a slug of the prompt."
+  }
+};
+var GENERATE_IMAGE_SCHEMA = {
+  type: "object",
+  properties: {
+    prompt: { type: "string", description: "What to draw. Required for both text-to-image and editing an input image." },
+    image: {
+      type: "string",
+      description: "Optional local image path to edit (image-to-image). When set, the prompt describes the desired change."
+    },
+    model: { type: "string", description: "Override the image model. Defaults to the configured text-to-image model." },
+    ...GAME_PROPERTY
+  },
+  required: ["prompt"],
+  additionalProperties: false
+};
+var GENERATE_3D_SCHEMA = {
+  type: "object",
+  properties: {
+    prompt: { type: "string", description: "Text description for text-to-3D. Provide this or `image`." },
+    image: {
+      type: "string",
+      description: "Image for image-to-3D: a public https URL, or a local file path when COS is configured (FORGEAX_COS_*) — local files are uploaded to COS and passed as a short-lived presigned URL. Without COS, only a public URL works."
+    },
+    model: { type: "string", description: "Override the 3D model. Defaults to the configured text/image-to-3D model." },
+    ...GAME_PROPERTY
+  },
+  additionalProperties: false
+};
+var HTTP_URL_RE = /^https?:\/\//i;
+async function generateImageTool(args, cwd) {
+  const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+  if (!prompt)
+    throw new Error("`prompt` is required.");
+  const cfg = resolveLiteLlmConfig();
+  const targetDir = typeof args.target_dir === "string" ? args.target_dir : cwd;
+  const { dir, root, slug } = assetsDirFor(targetDir, typeof args.game === "string" ? args.game : undefined);
+  const model = typeof args.model === "string" && args.model.trim() ? args.model.trim() : cfg.models.textToImage;
+  let result;
+  let mode;
+  const inputImage = typeof args.image === "string" ? args.image.trim() : "";
+  if (inputImage) {
+    if (HTTP_URL_RE.test(inputImage)) {
+      throw new Error("Image-to-image expects a LOCAL image path, not a URL. Download it first, then pass the path.");
+    }
+    if (!existsSync4(inputImage))
+      throw new Error(`Input image not found: ${inputImage}`);
+    const bytes = new Uint8Array(readFileSync6(inputImage));
+    result = await editImage(cfg, { model, prompt, image: bytes, filename: basename(inputImage) });
+    mode = "image-to-image";
+  } else {
+    result = await generateImage(cfg, { model, prompt });
+    mode = "text-to-image";
+  }
+  const stem = safeStem(typeof args.name === "string" ? args.name : undefined, prompt);
+  const outPath = uniquePath(dir, stem, result.ext);
+  writeFileSync4(outPath, result.bytes);
+  const rel = relative3(root, outPath);
+  return `Saved ${mode} asset to \`${rel}\` (game: ${slug}, model: ${model}, ${result.bytes.length} bytes). Reference it from game code by this path.`;
+}
+function imageContentType(path) {
+  const ext = extname(path).toLowerCase();
+  if (ext === ".jpg" || ext === ".jpeg")
+    return "image/jpeg";
+  if (ext === ".webp")
+    return "image/webp";
+  return "image/png";
+}
+async function resolveImageUrlFor3d(image, slug) {
+  if (HTTP_URL_RE.test(image))
+    return image;
+  if (!existsSync4(image))
+    throw new Error(`Input image not found: ${image}`);
+  const cos = resolveCosConfig();
+  if (!cos) {
+    throw new Error("Image-to-3D from a local file needs COS configured (FORGEAX_COS_BUCKET/REGION/SECRET_ID/SECRET_KEY) so the image can be hosted for the backend to fetch. Alternatively pass a public https URL.");
+  }
+  const bytes = new Uint8Array(readFileSync6(image));
+  const stem = safeStem(basename(image, extname(image)), "input");
+  const ext = (extname(image).replace(".", "") || "png").toLowerCase();
+  const key = `forgeax/${slug}/${stem}-${Date.now()}.${ext}`;
+  return uploadAndPresign(cos, key, bytes, imageContentType(image));
+}
+async function generate3dTool(args, cwd) {
+  const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+  const image = typeof args.image === "string" ? args.image.trim() : "";
+  if (!prompt && !image)
+    throw new Error("Provide `prompt` (text-to-3D) or `image` (image-to-3D).");
+  const cfg = resolveLiteLlmConfig();
+  const targetDir = typeof args.target_dir === "string" ? args.target_dir : cwd;
+  const { dir, root, slug } = assetsDirFor(targetDir, typeof args.game === "string" ? args.game : undefined);
+  let result;
+  let mode;
+  if (image) {
+    const imageUrl = await resolveImageUrlFor3d(image, slug);
+    const model = typeof args.model === "string" && args.model.trim() ? args.model.trim() : cfg.models.imageTo3d;
+    result = await generate3dFromImageUrl(cfg, { model, imageUrl, prompt: prompt || undefined, onProgress: logProgress("image-to-3D") });
+    mode = "image-to-3D";
+  } else {
+    const model = typeof args.model === "string" && args.model.trim() ? args.model.trim() : cfg.models.textTo3d;
+    result = await generate3dFromText(cfg, { model, prompt, onProgress: logProgress("text-to-3D") });
+    mode = "text-to-3D";
+  }
+  const stem = safeStem(typeof args.name === "string" ? args.name : undefined, prompt || "model");
+  const outPath = uniquePath(dir, stem, result.ext);
+  writeFileSync4(outPath, result.bytes);
+  const rel = relative3(root, outPath);
+  return `Saved ${mode} ${result.assetType} to \`${rel}\` (game: ${slug}, ${result.bytes.length} bytes). Reference it from game code by this path.`;
+}
+
+// src/mcp/game-files.ts
+import { createHash as createHash3, randomUUID } from "node:crypto";
+import {
+  existsSync as existsSync5,
+  lstatSync as lstatSync2,
+  mkdirSync as mkdirSync8,
+  readFileSync as readFileSync7,
+  readdirSync as readdirSync3,
+  renameSync as renameSync2,
+  rmSync as rmSync2,
+  statSync as statSync4,
+  writeFileSync as writeFileSync5
+} from "node:fs";
+import { dirname as dirname4, extname as extname2, join as join8, relative as relative4, resolve as resolve4, sep as sep2 } from "node:path";
+var MAX_TEXT_BYTES = 1024 * 1024;
+var MAX_LISTED_FILES = 500;
+var MAX_LOG_BYTES = 256 * 1024;
+var BLOCKED_SEGMENTS = new Set(["node_modules", ".git", ".env", ".ssh", ".npmrc"]);
+var TEXT_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".css",
+  ".html",
+  ".txt",
+  ".glsl",
+  ".wgsl",
+  ".vert",
+  ".frag",
+  ".toml",
+  ".yaml",
+  ".yml"
+]);
+function sha256(content) {
+  return createHash3("sha256").update(content).digest("hex");
+}
+function selectedGame(cwd, raw) {
+  const project = resolveProject(cwd);
+  if (!project.root)
+    throw new Error(`no ForgeaX project found from ${cwd}`);
+  const slug = typeof raw === "string" && raw !== "" ? raw : activeGame(project.root);
+  if (!slug || !SLUG_RE.test(slug))
+    throw new Error("game must name an existing game slug, or an active game must be selected");
+  const dir = gameDir(project.root, slug);
+  if (!dir)
+    throw new Error(`game ${JSON.stringify(slug)} was not found`);
+  return { root: project.root, slug, dir };
+}
+function safeSegments(raw) {
+  if (typeof raw !== "string" || raw.trim() === "")
+    throw new Error("path must be a non-empty relative path");
+  if (raw.includes("\\") || raw.includes("\x00") || raw.startsWith("/")) {
+    throw new Error("path must use relative POSIX segments");
+  }
+  const segments = raw.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error("path contains an unsafe segment");
+  }
+  if (segments.some((segment) => segment.startsWith(".") || BLOCKED_SEGMENTS.has(segment))) {
+    throw new Error("path targets a hidden or dependency-owned location");
+  }
+  if (!TEXT_EXTENSIONS.has(extname2(segments.at(-1)).toLowerCase())) {
+    throw new Error("path must name a supported UTF-8 text file");
+  }
+  return segments;
+}
+function confinedPath(gameRoot, raw, allowMissing) {
+  const segments = safeSegments(raw);
+  const root = resolve4(gameRoot);
+  const path = resolve4(root, ...segments);
+  const rel = relative4(root, path);
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep2}`))
+    throw new Error("path escapes the game root");
+  let cursor = root;
+  for (const segment of segments) {
+    cursor = join8(cursor, segment);
+    if (!existsSync5(cursor)) {
+      if (!allowMissing)
+        throw new Error(`file does not exist: ${segments.join("/")}`);
+      continue;
+    }
+    if (lstatSync2(cursor).isSymbolicLink())
+      throw new Error("path traverses a symbolic link");
+  }
+  return { path, relativePath: segments.join("/") };
+}
+function listTextFiles(gameRoot) {
+  const rows = [];
+  const visit = (dir) => {
+    for (const entry of readdirSync3(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (rows.length >= MAX_LISTED_FILES)
+        return;
+      if (entry.name.startsWith(".") || BLOCKED_SEGMENTS.has(entry.name) || entry.isSymbolicLink())
+        continue;
+      const path = join8(dir, entry.name);
+      if (entry.isDirectory())
+        visit(path);
+      else if (entry.isFile() && TEXT_EXTENSIONS.has(extname2(entry.name).toLowerCase())) {
+        rows.push({ path: relative4(gameRoot, path).split(sep2).join("/"), bytes: statSync4(path).size });
+      }
+    }
+  };
+  visit(gameRoot);
+  return rows;
+}
+function readGameFile(gameRoot, rawPath) {
+  const file = confinedPath(gameRoot, rawPath, false);
+  if (!statSync4(file.path).isFile())
+    throw new Error(`path is not a file: ${file.relativePath}`);
+  const content = readFileSync7(file.path);
+  if (content.length > MAX_TEXT_BYTES)
+    throw new Error(`file exceeds ${MAX_TEXT_BYTES} bytes`);
+  if (content.includes(0))
+    throw new Error("binary files are not readable through the text authoring tool");
+  return { path: file.relativePath, bytes: content.length, sha256: sha256(content), content: content.toString("utf8") };
+}
+function readRuntimeLogs(cwd, rawLines) {
+  const project = resolveProject(cwd);
+  if (!project.root)
+    throw new Error(`no ForgeaX project found from ${cwd}`);
+  const lines = rawLines === undefined ? 200 : Number(rawLines);
+  if (!Number.isSafeInteger(lines) || lines < 1 || lines > 400)
+    throw new Error("lines must be an integer from 1 to 400");
+  const candidates = [
+    join8(project.root, ".forgeax", "runtime", "stack.log"),
+    join8(project.root, ".forgeax", "logs", "runtime", "runtime.log")
+  ];
+  const path = candidates.find((candidate) => existsSync5(candidate) && statSync4(candidate).isFile());
+  if (!path)
+    return { available: false, searched: candidates.map((candidate) => relative4(project.root, candidate)) };
+  const size = statSync4(path).size;
+  const content = readFileSync7(path);
+  const tail = content.subarray(Math.max(0, content.length - MAX_LOG_BYTES)).toString("utf8");
+  const rows = tail.split(/\r?\n/);
+  if (rows.at(-1) === "")
+    rows.pop();
+  return {
+    available: true,
+    path: relative4(project.root, path).split(sep2).join("/"),
+    bytes: size,
+    truncatedBytes: content.length > MAX_LOG_BYTES,
+    content: rows.slice(-lines).join(`
+`)
+  };
+}
+function writeGameFile(gameRoot, args) {
+  const file = confinedPath(gameRoot, args.path, true);
+  if (typeof args.content !== "string")
+    throw new Error("content must be a string");
+  const bytes = Buffer.byteLength(args.content);
+  if (bytes > MAX_TEXT_BYTES)
+    throw new Error(`content exceeds ${MAX_TEXT_BYTES} bytes`);
+  const exists = existsSync5(file.path);
+  if (exists) {
+    if (!statSync4(file.path).isFile())
+      throw new Error(`path is not a file: ${file.relativePath}`);
+    if (typeof args.expected_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(args.expected_sha256)) {
+      throw new Error("expected_sha256 is required when replacing an existing file");
+    }
+    const current = sha256(readFileSync7(file.path));
+    if (current !== args.expected_sha256) {
+      throw new Error(`file changed since it was read: expected ${args.expected_sha256}, current ${current}`);
+    }
+  } else if (args.expected_sha256 !== undefined) {
+    throw new Error("expected_sha256 must be omitted when creating a new file");
+  }
+  mkdirSync8(dirname4(file.path), { recursive: true });
+  const temporary = `${file.path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync5(temporary, args.content, { encoding: "utf8", flag: "wx" });
+    renameSync2(temporary, file.path);
+  } finally {
+    rmSync2(temporary, { force: true });
+  }
+  return { path: file.relativePath, bytes, sha256: sha256(args.content), created: !exists };
+}
+var GAME_PROPERTY2 = {
+  game: {
+    type: "string",
+    description: "Game slug. Defaults to the active game.",
+    pattern: "^[a-z0-9][a-z0-9-]{0,40}$"
+  }
+};
+function gameFileTools() {
+  return [
+    {
+      name: "forgeax_game_list_files",
+      description: "List editable files under one game. Hidden paths, dependencies, and symbolic links are excluded.",
+      inputSchema: { type: "object", properties: { ...GAME_PROPERTY2 }, additionalProperties: false },
+      run: (args, ctx) => {
+        const game = selectedGame(ctx.cwd, args.game);
+        const files = listTextFiles(game.dir);
+        return { game: game.slug, files, truncated: files.length >= MAX_LISTED_FILES };
+      }
+    },
+    {
+      name: "forgeax_game_read_file",
+      description: "Read one UTF-8 game file and return its SHA-256. Read before replacing a file.",
+      inputSchema: {
+        type: "object",
+        properties: { ...GAME_PROPERTY2, path: { type: "string" } },
+        required: ["path"],
+        additionalProperties: false
+      },
+      run: (args, ctx) => {
+        const game = selectedGame(ctx.cwd, args.game);
+        return { game: game.slug, ...readGameFile(game.dir, args.path) };
+      }
+    },
+    {
+      name: "forgeax_game_read_logs",
+      description: "Read the bounded tail of the supervisor or packaged Runtime log for the bound project.",
+      inputSchema: {
+        type: "object",
+        properties: { lines: { type: "integer", minimum: 1, maximum: 400, default: 200 } },
+        additionalProperties: false
+      },
+      run: (args, ctx) => readRuntimeLogs(ctx.cwd, args.lines)
+    },
+    {
+      name: "forgeax_game_write_file",
+      description: "Create or atomically replace one UTF-8 game file. Replacing requires the SHA-256 returned by forgeax_game_read_file.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...GAME_PROPERTY2,
+          path: { type: "string" },
+          content: { type: "string" },
+          expected_sha256: { type: "string", pattern: "^[a-f0-9]{64}$" }
+        },
+        required: ["path", "content"],
+        additionalProperties: false
+      },
+      run: (args, ctx) => {
+        const game = selectedGame(ctx.cwd, args.game);
+        return { game: game.slug, ...writeGameFile(game.dir, args) };
+      }
+    }
+  ];
+}
+
 // src/mcp/forgeax-server.ts
-function packageVersion() {
-  for (const relative4 of ["../package.json", "../../package.json"]) {
+function publicPreviewResult(result, publicOrigin) {
+  if (!publicOrigin)
+    return result;
+  let origin;
+  try {
+    origin = new URL(publicOrigin);
+  } catch {
+    return result;
+  }
+  if (origin.protocol !== "http:" && origin.protocol !== "https:")
+    return result;
+  return result.replace(/^preview_url:\s+(\S+)$/m, (line, rawUrl) => {
     try {
-      const version = JSON.parse(readFileSync9(new URL(relative4, import.meta.url), "utf8")).version;
+      const local = new URL(rawUrl);
+      return `preview_url: ${new URL(`${local.pathname}${local.search}${local.hash}`, origin).toString()}`;
+    } catch {
+      return line;
+    }
+  });
+}
+function packageVersion() {
+  for (const relative5 of ["../package.json", "../../package.json"]) {
+    try {
+      const version = JSON.parse(readFileSync8(new URL(relative5, import.meta.url), "utf8")).version;
       if (version)
         return version;
     } catch {}
@@ -1949,11 +2373,15 @@ var TARGET_DIR_PROPERTY = {
     description: "Directory to resolve the ForgeaX project from. Defaults to the server working directory. Pass the user current working directory when it differs."
   }
 };
-function createForgeaxMcpServer() {
+function createForgeaxMcpServer(options = {}) {
+  const allowTargetDir = options.allowTargetDir ?? options.root === undefined;
+  const cwd = options.root ? resolve5(options.root) : undefined;
+  const { target_dir: _targetDir, ...fixedRunProperties } = RUN_TOOL_SCHEMA.properties;
+  const runInputSchema = allowTargetDir ? RUN_TOOL_SCHEMA : { ...RUN_TOOL_SCHEMA, properties: fixedRunProperties };
   return {
     serverInfo: { name: "forgeax", version: packageVersion() },
     instructions: ROUTING_TEXT,
-    buildContext: () => ({ cwd: process.cwd() }),
+    buildContext: () => ({ cwd: cwd ?? process.cwd() }),
     resources: [
       {
         uri: "forgeax://status",
@@ -1967,37 +2395,201 @@ function createForgeaxMcpServer() {
       {
         name: "forgeax_status_lite",
         description: "Compatibility fallback for clients that cannot read MCP resources; prefer the `forgeax://status` resource when available. Reports project binding, capability tier, service health, game development kit and routing-rule freshness, and the next action. Read-only — never writes to the workspace.",
-        inputSchema: { type: "object", properties: { ...TARGET_DIR_PROPERTY }, additionalProperties: false },
+        inputSchema: {
+          type: "object",
+          properties: allowTargetDir ? { ...TARGET_DIR_PROPERTY } : {},
+          additionalProperties: false
+        },
         run: async (args, ctx) => {
-          const dir = typeof args.target_dir === "string" ? args.target_dir : ctx.cwd;
+          const dir = allowTargetDir && typeof args.target_dir === "string" ? args.target_dir : ctx.cwd;
           return renderStatus(await collectStatus(dir));
         }
       },
       {
         name: "forgeax_run_current_game",
-        description: 'Run, preview, reload, or verify the active game. One call covers what the user means by "run it", "let me see it", "reload", or "does it work": it starts whatever services are down, returns a preview URL to open, and reports whether this plugin owns a runtime log file. Read an available `runtime_logs.local_file` with your own file tool — log tailing is intentionally not a tool. A stack that was already running cannot have its process output captured retroactively. Starting services from cold takes a few seconds, so do not call this for ordinary code edits the user has not asked to see.',
-        inputSchema: RUN_TOOL_SCHEMA,
-        run: async (args, ctx) => runCurrentGame(args, ctx.cwd)
-      }
+        description: 'Build, preview, reload, or verify the active game. One call covers what the user means by "run it", "let me see it", "reload", or "does it work": it installs the selected Runtime when needed, builds or reuses a static preview, returns a preview URL to open, and reports the Runtime log file. Read an available `runtime_logs.local_file` with your own file tool — log tailing is intentionally not a tool. Call this after a requested game change, not for ordinary edits the user has not asked to see.',
+        inputSchema: runInputSchema,
+        run: async (args, ctx) => publicPreviewResult(await runCurrentGame(allowTargetDir ? args : { ...args, target_dir: ctx.cwd }, ctx.cwd, { existingServicesOnly: options.existingServicesOnly }), options.publicOrigin)
+      },
+      {
+        name: "forgeax_generate_image",
+        description: "Generate a game image asset from a text prompt (text-to-image), or edit a local image when `image` is set (image-to-image). Saves the PNG/JPG into the active game's `assets/` directory and returns its project-relative path to reference from game code. Backed by the ForgeaX LiteLLM gateway; requires FORGEAX_LITELLM_API_KEY. Use when the user asks for a sprite, texture, icon, background, or concept art.",
+        inputSchema: GENERATE_IMAGE_SCHEMA,
+        run: async (args, ctx) => generateImageTool(args, ctx.cwd)
+      },
+      {
+        name: "forgeax_generate_3d",
+        description: "Generate a 3D model (.glb) for the game. Provide `prompt` for text-to-3D, or `image` for image-to-3D — a public https URL, or a local file path when COS is configured (the file is uploaded and passed as a short-lived presigned URL). Runs the async generation to completion (~1–2 min) and saves the mesh into the active game's `assets/` directory, returning its project-relative path. Backed by the ForgeaX LiteLLM gateway; requires FORGEAX_LITELLM_API_KEY (and FORGEAX_COS_* for local-file image-to-3D).",
+        inputSchema: GENERATE_3D_SCHEMA,
+        run: async (args, ctx) => generate3dTool(args, ctx.cwd)
+      },
+      ...options.authoringTools ? gameFileTools() : []
     ]
   };
 }
 
+// src/mcp/http.ts
+import { timingSafeEqual } from "node:crypto";
+import { createServer } from "node:http";
+var DEFAULT_BODY_LIMIT = 1024 * 1024;
+function loopbackHost(host) {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+function json(response, status, payload) {
+  const body = `${JSON.stringify(payload)}
+`;
+  response.writeHead(status, {
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+    "mcp-protocol-version": MCP_PROTOCOL_VERSION
+  });
+  response.end(body);
+}
+function unauthorized(response) {
+  response.setHeader("www-authenticate", "Bearer");
+  json(response, 401, { error: "unauthorized" });
+}
+function authorized(request2, token) {
+  if (!token)
+    return true;
+  const header = request2.headers.authorization;
+  if (!header?.startsWith("Bearer "))
+    return false;
+  const supplied = Buffer.from(header.slice("Bearer ".length));
+  const expected = Buffer.from(token);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+function originAllowed(request2, allowed) {
+  const origin = request2.headers.origin;
+  if (!origin)
+    return true;
+  return allowed.has(origin);
+}
+async function readMessage(request2, limit) {
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of request2) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > limit)
+      throw new Error(`request body exceeds ${limit} bytes`);
+    chunks.push(buffer);
+  }
+  if (chunks.length === 0)
+    throw new Error("request body is empty");
+  const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("request body must be one JSON-RPC object");
+  }
+  return value;
+}
+async function startHttpMcpServer(spec, options) {
+  const endpointPath = options.path ?? "/mcp";
+  const token = options.authToken?.trim() || undefined;
+  if ((options.requireAuth || !loopbackHost(options.host)) && !token) {
+    throw new Error("HTTP MCP authentication token is required for this listener");
+  }
+  const allowedOrigins = new Set(options.allowedOrigins ?? []);
+  const bodyLimit = options.bodyLimit ?? DEFAULT_BODY_LIMIT;
+  const server = createServer((request2, response) => {
+    (async () => {
+      const requestPath = new URL(request2.url ?? "/", "http://mcp.invalid").pathname;
+      if (requestPath === "/healthz") {
+        json(response, 200, { status: "ok", name: spec.serverInfo.name, transport: "streamable-http" });
+        return;
+      }
+      if (requestPath !== endpointPath) {
+        json(response, 404, { error: "not_found" });
+        return;
+      }
+      if (!originAllowed(request2, allowedOrigins)) {
+        json(response, 403, { error: "origin_not_allowed" });
+        return;
+      }
+      if (!authorized(request2, token)) {
+        unauthorized(response);
+        return;
+      }
+      if (request2.method !== "POST") {
+        response.setHeader("allow", "POST");
+        json(response, 405, { error: "method_not_allowed" });
+        return;
+      }
+      if (!(request2.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        json(response, 415, { error: "content_type_must_be_application_json" });
+        return;
+      }
+      let message;
+      try {
+        message = await readMessage(request2, bodyLimit);
+      } catch (error) {
+        json(response, 400, {
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32700, message: errorMessage(error) }
+        });
+        return;
+      }
+      try {
+        const result = await dispatch(spec, message);
+        if (result === null) {
+          response.writeHead(202, { "cache-control": "no-store", "mcp-protocol-version": MCP_PROTOCOL_VERSION });
+          response.end();
+          return;
+        }
+        json(response, 200, result);
+      } catch (error) {
+        json(response, 500, {
+          jsonrpc: "2.0",
+          id: message.id ?? null,
+          error: { code: -32603, message: errorMessage(error) }
+        });
+      }
+    })().catch((error) => {
+      if (!response.headersSent) {
+        json(response, 500, { error: "internal_error", message: errorMessage(error) });
+      } else {
+        response.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  });
+  await new Promise((resolve6, reject) => {
+    server.once("error", reject);
+    server.listen(options.port, options.host, () => {
+      server.off("error", reject);
+      resolve6();
+    });
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : options.port;
+  const displayHost = options.host === "::1" ? "[::1]" : options.host;
+  const origin = `http://${displayHost}:${port}`;
+  return {
+    server,
+    origin,
+    url: `${origin}${endpointPath}`,
+    close: () => new Promise((resolve6, reject) => {
+      server.close((error) => error ? reject(error) : resolve6());
+    })
+  };
+}
+
 // src/cli/dispatch.ts
-import { existsSync as existsSync9, readFileSync as readFileSync12, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
-import { basename as basename2, join as join13 } from "node:path";
+import { existsSync as existsSync7, readFileSync as readFileSync10, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
+import { basename as basename2, join as join10 } from "node:path";
 
 // src/install/clients.ts
-import { homedir as homedir5 } from "node:os";
-import { join as join11, resolve as resolve6 } from "node:path";
-var HOME = homedir5();
+import { homedir as homedir3 } from "node:os";
+import { join as join9, resolve as resolve6 } from "node:path";
+var HOME = homedir3();
 var CLIENTS = [
   {
     id: "codex",
     label: "Codex CLI",
     format: "toml",
     scope: "user",
-    path: () => join11(HOME, ".codex", "config.toml"),
+    path: () => join9(HOME, ".codex", "config.toml"),
     commandShape: "split",
     postInstallNote: "Restart Codex, then run /mcp to confirm the server is connected."
   },
@@ -2006,7 +2598,7 @@ var CLIENTS = [
     label: "the reference agent CLI",
     format: "json",
     scope: "user",
-    path: () => join11(HOME, ".claude.json"),
+    path: () => join9(HOME, ".claude.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Restart the reference agent CLI, then run /mcp to confirm the server is connected."
@@ -2016,7 +2608,7 @@ var CLIENTS = [
     label: "Cursor",
     format: "json",
     scope: "user",
-    path: () => join11(HOME, ".cursor", "mcp.json"),
+    path: () => join9(HOME, ".cursor", "mcp.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Reload Cursor, then check Settings > MCP."
@@ -2026,7 +2618,7 @@ var CLIENTS = [
     label: "Trae (project)",
     format: "json",
     scope: "project",
-    path: (projectRoot) => join11(projectRoot, ".trae", "mcp.json"),
+    path: (projectRoot) => join9(projectRoot, ".trae", "mcp.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Reload Trae, then check the project MCP server list."
@@ -2037,7 +2629,7 @@ var CLIENTS = [
     label: "a peer agent CLI / WorkBuddy",
     format: "json",
     scope: "user",
-    path: () => join11(HOME, ".codebuddy", ".mcp.json"),
+    path: () => join9(HOME, ".codebuddy", ".mcp.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Restart a peer agent CLI or WorkBuddy, then run /mcp to confirm the server is connected."
@@ -2047,7 +2639,7 @@ var CLIENTS = [
     label: "Windsurf",
     format: "json",
     scope: "user",
-    path: () => join11(HOME, ".codeium", "windsurf", "mcp_config.json"),
+    path: () => join9(HOME, ".codeium", "windsurf", "mcp_config.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Reload Windsurf to pick up the new server."
@@ -2057,17 +2649,27 @@ var CLIENTS = [
     label: "VS Code (workspace)",
     format: "json",
     scope: "project",
-    path: (projectRoot) => join11(projectRoot, ".vscode", "mcp.json"),
+    path: (projectRoot) => join9(projectRoot, ".vscode", "mcp.json"),
     serverMapKey: ["servers"],
     commandShape: "split",
     postInstallNote: 'Open .vscode/mcp.json and click Start, or run "MCP: List Servers".'
+  },
+  {
+    id: "zcode",
+    label: "ZCode",
+    format: "json",
+    scope: "user",
+    path: () => join9(HOME, ".zcode", "cli", "config.json"),
+    serverMapKey: ["mcp", "servers"],
+    commandShape: "split",
+    postInstallNote: "Start a new ZCode session, then run /mcp status to confirm the server is connected."
   },
   {
     id: "opencode",
     label: "OpenCode",
     format: "json",
     scope: "user",
-    path: () => join11(HOME, ".config", "opencode", "opencode.json"),
+    path: () => join9(HOME, ".config", "opencode", "opencode.json"),
     serverMapKey: ["mcp"],
     commandShape: "argv",
     extraEntryFields: { type: "local", enabled: true },
@@ -2091,8 +2693,8 @@ function launchSpec(mode) {
 }
 
 // src/install/write-config.ts
-import { copyFileSync as copyFileSync3, existsSync as existsSync7, mkdirSync as mkdirSync7, readFileSync as readFileSync10, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname6 } from "node:path";
+import { copyFileSync as copyFileSync2, existsSync as existsSync6, mkdirSync as mkdirSync9, readFileSync as readFileSync9, writeFileSync as writeFileSync6 } from "node:fs";
+import { dirname as dirname5 } from "node:path";
 
 // src/install/toml-section.ts
 var HEADER_RE = /^[ \t]*\[([^[\]\r\n]+)\][ \t]*(?:#[^\r\n]*)?\r?$/gm;
@@ -2301,11 +2903,11 @@ function mergeTomlConfig(existing, entry) {
 }
 function inspectConfig(spec, projectRoot, launch) {
   const path = spec.path(projectRoot);
-  if (!existsSync7(path))
+  if (!existsSync6(path))
     return { path, state: "missing" };
   let existing;
   try {
-    existing = readFileSync10(path, "utf8");
+    existing = readFileSync9(path, "utf8");
     if (spec.format === "toml") {
       const header = `mcp_servers.${SERVER_KEY}`;
       if (!hasTomlTable(existing, header)) {
@@ -2350,25 +2952,25 @@ function inspectConfig(spec, projectRoot, launch) {
 }
 function applyConfig(spec, projectRoot, launch) {
   const path = spec.path(projectRoot);
-  const existing = existsSync7(path) ? readFileSync10(path, "utf8") : undefined;
+  const existing = existsSync6(path) ? readFileSync9(path, "utf8") : undefined;
   const entry = buildEntry(spec, launch);
   const merged = spec.format === "toml" ? mergeTomlConfig(existing, entry) : mergeJsonConfig(existing, spec, entry);
   if (!merged.changed)
     return { path, changed: false };
-  mkdirSync7(dirname6(path), { recursive: true });
+  mkdirSync9(dirname5(path), { recursive: true });
   let backup;
   if (existing !== undefined) {
     backup = `${path}.bak.latest`;
-    copyFileSync3(path, backup);
+    copyFileSync2(path, backup);
   }
-  writeFileSync5(path, merged.content);
+  writeFileSync6(path, merged.content);
   return { path, changed: true, ...backup ? { backup } : {} };
 }
 function removeConfig(spec, projectRoot) {
   const path = spec.path(projectRoot);
-  if (!existsSync7(path))
+  if (!existsSync6(path))
     return { path, changed: false };
-  const existing = readFileSync10(path, "utf8");
+  const existing = readFileSync9(path, "utf8");
   let content;
   if (spec.format === "toml") {
     content = removeTomlTable(existing, `mcp_servers.${SERVER_KEY}`);
@@ -2395,13 +2997,13 @@ function removeConfig(spec, projectRoot) {
   if (content === existing)
     return { path, changed: false };
   const backup = `${path}.bak.latest`;
-  copyFileSync3(path, backup);
-  writeFileSync5(path, content);
+  copyFileSync2(path, backup);
+  writeFileSync6(path, content);
   return { path, changed: true, backup };
 }
 
 // src/install/verify.ts
-import { spawn as spawn2 } from "node:child_process";
+import { spawn as spawn3 } from "node:child_process";
 var REQUIRED_TOOLS = ["forgeax_status_lite", "forgeax_run_current_game"];
 var REQUIRED_RESOURCES = ["forgeax://status"];
 function commandText(launch) {
@@ -2432,7 +3034,7 @@ function namesFrom(result, key) {
   });
 }
 async function verifyLaunch(launch, timeoutMs = 30000) {
-  const child = spawn2(launch.command, [...launch.args], {
+  const child = spawn3(launch.command, [...launch.args], {
     stdio: ["pipe", "pipe", "pipe"],
     env: process.env
   });
@@ -2537,67 +3139,17 @@ async function verifyLaunch(launch, timeoutMs = 30000) {
   }
 }
 
-// src/project/engine-sdk.ts
-import { cpSync as cpSync2, existsSync as existsSync8, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync11, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join12, sep as sep2 } from "node:path";
-function bundledSdkRoot() {
-  return join12(runtimeManifestRoot(), "assets", "engine-sdk");
-}
-function installEngineSdk(projectRoot) {
-  const source = bundledSdkRoot();
-  const destination = join12(projectRoot, ".forgeax", "engine-sdk");
-  if (!existsSync8(source)) {
-    return { changed: false, sdkRoot: destination };
-  }
-  mkdirSync8(join12(projectRoot, ".forgeax"), { recursive: true });
-  cpSync2(source, destination, {
-    recursive: true,
-    dereference: true,
-    force: true,
-    filter: (entry) => {
-      if (entry === source)
-        return true;
-      const top = entry.slice(source.length + 1).split(sep2)[0];
-      return top !== "skills" && top !== "source";
-    }
-  });
-  let engineCommit;
-  try {
-    engineCommit = JSON.parse(readFileSync11(join12(destination, "engine-version.json"), "utf8")).engineCommit;
-  } catch {}
-  const bundledSource = join12(source, "source");
-  const sourceRoot = existsSync8(bundledSource) ? bundledSource : undefined;
-  writeFileSync6(join12(projectRoot, ".forgeax", "engine-sdk.json"), `${JSON.stringify({
-    version: 2,
-    engineCommit: engineCommit ?? "unknown",
-    sdkRoot: destination,
-    ...sourceRoot ? { sourceRoot } : {}
-  }, null, 2)}
-`, "utf8");
-  const gamesRoot = join12(projectRoot, ".forgeax", "games");
-  if (existsSync8(gamesRoot)) {
-    for (const entry of readdirSync4(gamesRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory())
-        continue;
-      const gameRoot = join12(gamesRoot, entry.name);
-      const tsconfig = join12(gameRoot, "tsconfig.json");
-      if (!existsSync8(tsconfig)) {
-        writeFileSync6(tsconfig, `${JSON.stringify({
-          extends: "../../engine-sdk/tsconfig.json",
-          include: ["**/*.ts"]
-        }, null, 2)}
-`, "utf8");
-      }
-    }
-  }
-  return { changed: true, sdkRoot: destination, engineCommit, ...sourceRoot ? { sourceRoot } : {} };
-}
-
 // src/cli/dispatch.ts
+import {
+  installEngineSdk as installEngineSdk2,
+  loadRuntimeManifest,
+  resolveInstalledRuntime as resolveInstalledRuntime4,
+  runtimeCacheRoot
+} from "@forgeax/game-runtime";
 var HELP = `ForgeaX game development plugin
 
 Usage:
-  forgeax-game install [--ide codex,claude,cursor,trae,opencode,workbuddy] [--local]
+  forgeax-game install [--ide ${CLIENT_CHOICES.join(",")}] [--local]
   forgeax-game uninstall [--ide ...] [--purge]
   forgeax-game init [--game <slug>] [--ide ...]
   forgeax-game use <slug>
@@ -2650,8 +3202,8 @@ function requireProject() {
   return project.root;
 }
 function updateAgentsFile(root) {
-  const path = join13(root, "AGENTS.md");
-  const existing = existsSync9(path) ? readFileSync12(path, "utf8") : undefined;
+  const path = join10(root, "AGENTS.md");
+  const existing = existsSync7(path) ? readFileSync10(path, "utf8") : undefined;
   const content = upsertBlock(existing, ROUTING_TEXT);
   if (content === existing)
     return { path, changed: false };
@@ -2659,22 +3211,22 @@ function updateAgentsFile(root) {
   return { path, changed: true };
 }
 function removeAgentsBlock(root) {
-  const path = join13(root, "AGENTS.md");
-  if (!existsSync9(path))
+  const path = join10(root, "AGENTS.md");
+  if (!existsSync7(path))
     return { path, changed: false };
-  const existing = readFileSync12(path, "utf8");
+  const existing = readFileSync10(path, "utf8");
   const content = removeBlock(existing);
   if (content === existing)
     return { path, changed: false };
   writeFileSync7(path, content);
   return { path, changed: true };
 }
-async function apiPost(path, body) {
+async function apiWrite(method, path, body) {
   const controller = new AbortController;
   const timer = setTimeout(() => controller.abort(), 1e4);
   try {
     const response = await fetch(`${serverBaseUrl()}${path}`, {
-      method: "POST",
+      method,
       headers: body ? { "content-type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal
@@ -2701,6 +3253,8 @@ async function apiPost(path, body) {
     clearTimeout(timer);
   }
 }
+var apiPost = (path, body) => apiWrite("POST", path, body);
+var apiPut = (path, body) => apiWrite("PUT", path, body);
 async function installCommand(args) {
   const parsed = parseInstallArgs(args);
   const launch = launchSpec(parsed.mode);
@@ -2794,7 +3348,7 @@ async function initCommand(args) {
       await assertServerProjectRoot(root);
     if (!binding.root)
       ensureLocalProject(root);
-    const response = await apiPost("/api/workbench/games", { slug, name: slug, brief: "" });
+    const response = await apiPost("/api/projects", { slug, name: slug, brief: "" });
     if (!gameDir(root, slug)) {
       throw new Error(`server created ${JSON.stringify(response.gameDir ?? slug)}, but it is not under ${root}/.forgeax/games; run the CLI against the same instance root as the server`);
     }
@@ -2803,7 +3357,7 @@ async function initCommand(args) {
     process.stdout.write(`Created a local ForgeaX project and game ${slug} at ${local.gameRoot} (no matching server; online scaffold will be used for later games).
 `);
   }
-  const sdk = installEngineSdk(root);
+  const sdk = installEngineSdk2(root);
   process.stdout.write(`${sdk.changed ? "UPDATED" : "CURRENT"} bundled Engine SDK: ${sdk.sdkRoot}${sdk.engineCommit ? ` (${sdk.engineCommit})` : ""}
 `);
   if (sdk.sourceRoot)
@@ -2840,7 +3394,7 @@ async function useCommand(args) {
     throw new Error(`game ${JSON.stringify(slug)} not found. Available: ${listGames(root).join(", ") || "(none)"}`);
   }
   await assertServerProjectRoot(root);
-  await apiPost(`/api/workbench/games/${encodeURIComponent(slug)}/activate`);
+  await apiPut("/api/projects/active", { slug });
   process.stdout.write(`Active game: ${slug}
 `);
   return 0;
@@ -2901,7 +3455,7 @@ async function uninstallCommand(args) {
     const agents = removeAgentsBlock(root);
     process.stdout.write(`${agents.changed ? "REMOVED" : "ABSENT "} routing block: ${agents.path}
 `);
-    process.stdout.write(`KEPT    your games and project metadata: ${join13(root, ".forgeax")}
+    process.stdout.write(`KEPT    your games and project metadata: ${join10(root, ".forgeax")}
 `);
   } else {
     process.stdout.write(`INFO  no ForgeaX project bound; only client configuration was touched.
@@ -3022,7 +3576,7 @@ async function doctorCommand(args) {
     process.stdout.write(`WARN no ForgeaX project found from ${project.searchedFrom}
 `);
   }
-  const runtime = resolveInstalledRuntime();
+  const runtime = resolveInstalledRuntime4();
   if (runtime) {
     process.stdout.write(`OK managed ForgeaX Runtime ${runtime.version} (${runtime.platform}/${runtime.arch})
 `);
@@ -3111,7 +3665,7 @@ async function updateCommand(args) {
 `);
   }
   if (project.root) {
-    const sdk = installEngineSdk(project.root);
+    const sdk = installEngineSdk2(project.root);
     const devkit = installDevKit(project.root, configured.map((client) => client.id));
     const agents = updateAgentsFile(project.root);
     process.stdout.write(`${sdk.changed ? "UPDATED" : "CURRENT"} bundled Engine SDK: ${sdk.sdkRoot}
@@ -3162,14 +3716,108 @@ ${HELP}`);
 
 // src/main.ts
 var argv = process.argv.slice(2);
+function valueAfter(args, index, option) {
+  const value = args[index + 1];
+  if (!value)
+    throw new Error(`${option} requires a value`);
+  return value;
+}
+function parsePort(raw) {
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0 || value > 65535) {
+    throw new Error(`MCP HTTP port must be an integer from 0 to 65535, got ${raw}`);
+  }
+  return value;
+}
+function parseMcpArgs(args) {
+  let transport = "stdio";
+  let host = process.env.FORGEAX_MCP_HOST?.trim() || "127.0.0.1";
+  let port = parsePort(process.env.FORGEAX_MCP_PORT?.trim() || "18940");
+  let root = process.env.FORGEAX_MCP_ROOT?.trim() || process.cwd();
+  let requireAuth = process.env.FORGEAX_MCP_REQUIRE_AUTH === "1";
+  let allowedOrigins = (process.env.FORGEAX_MCP_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean);
+  for (let i = 0;i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--transport") {
+      const value = valueAfter(args, i, arg);
+      if (value !== "stdio" && value !== "http")
+        throw new Error("--transport must be stdio or http");
+      transport = value;
+      i++;
+    } else if (arg.startsWith("--transport=")) {
+      const value = arg.slice("--transport=".length);
+      if (value !== "stdio" && value !== "http")
+        throw new Error("--transport must be stdio or http");
+      transport = value;
+    } else if (arg === "--host") {
+      host = valueAfter(args, i, arg);
+      i++;
+    } else if (arg.startsWith("--host="))
+      host = arg.slice("--host=".length);
+    else if (arg === "--port") {
+      port = parsePort(valueAfter(args, i, arg));
+      i++;
+    } else if (arg.startsWith("--port="))
+      port = parsePort(arg.slice("--port=".length));
+    else if (arg === "--root") {
+      root = valueAfter(args, i, arg);
+      i++;
+    } else if (arg.startsWith("--root="))
+      root = arg.slice("--root=".length);
+    else if (arg === "--require-auth")
+      requireAuth = true;
+    else if (arg === "--allowed-origin") {
+      allowedOrigins = [...allowedOrigins, valueAfter(args, i, arg)];
+      i++;
+    } else if (arg.startsWith("--allowed-origin=")) {
+      allowedOrigins = [...allowedOrigins, arg.slice("--allowed-origin=".length)];
+    } else
+      throw new Error(`unknown MCP option: ${arg}`);
+  }
+  return { transport, host, port, root: resolve7(root), requireAuth, allowedOrigins };
+}
+async function runMcp(args) {
+  const options = parseMcpArgs(args);
+  if (options.transport === "stdio") {
+    if (args.length > 0) {
+      const unsupported = args.filter((arg) => arg !== "--transport" && arg !== "stdio" && arg !== "--transport=stdio");
+      if (unsupported.length > 0)
+        throw new Error("stdio MCP does not accept HTTP listener options");
+    }
+    runStdioServer(createForgeaxMcpServer());
+    return;
+  }
+  const running = await startHttpMcpServer(createForgeaxMcpServer({
+    root: options.root,
+    authoringTools: true,
+    allowTargetDir: false,
+    existingServicesOnly: process.env.FORGEAX_MCP_EXISTING_SERVICES === "1",
+    publicOrigin: process.env.FORGEAX_PUBLIC_ORIGIN
+  }), {
+    host: options.host,
+    port: options.port,
+    authToken: process.env.FORGEAX_REMOTE_MCP_TOKEN,
+    requireAuth: options.requireAuth,
+    allowedOrigins: options.allowedOrigins
+  });
+  process.stderr.write(`forgeax-game MCP listening at ${running.url} (root=${options.root})
+`);
+  const close = () => {
+    running.close().finally(() => process.exit(0));
+  };
+  process.once("SIGINT", close);
+  process.once("SIGTERM", close);
+}
 if (argv.length === 0 || argv[0] === "mcp") {
-  runStdioServer(createForgeaxMcpServer());
+  runMcp(argv.length === 0 ? [] : argv.slice(1)).catch((error) => {
+    process.stderr.write(`forgeax-game: ${error instanceof Error ? error.message : String(error)}
+`);
+    process.exit(1);
+  });
 } else {
-  runCli(argv).then((code) => process.exit(code), (e) => {
-    process.stderr.write(`forgeax-game: ${e instanceof Error ? e.message : String(e)}
+  runCli(argv).then((code) => process.exit(code), (error) => {
+    process.stderr.write(`forgeax-game: ${error instanceof Error ? error.message : String(error)}
 `);
     process.exit(1);
   });
 }
-
-//# debugId=79A7B44191D7FDBA64756E2164756E21

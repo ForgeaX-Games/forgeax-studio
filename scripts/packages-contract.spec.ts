@@ -35,7 +35,10 @@ const extensionRepositories = [
 
 describe('Studio .packages ownership contract', () => {
   test('declares floating dependency checkouts in one manifest', () => {
-    const entries = JSON.parse(read('.packages')) as Array<Record<string, unknown>>;
+    const selected = JSON.parse(read('.packages')) as Array<Record<string, unknown>>;
+    for (const entry of selected) expect(entry.branch).toMatch(/^(?:main|[a-f0-9]{40})$/);
+    // Immutable integration pins do not change floating checkout ownership.
+    const entries = selected.map(entry => ({ ...entry, branch: 'main' }));
     expect(entries.slice(0, 7)).toEqual([
       {
         path: 'packages/harness',
@@ -117,7 +120,10 @@ describe('Studio .packages ownership contract', () => {
     expect(read('.gitmodules')).not.toContain('packages/extension-platform');
     expect(read('.gitmodules')).not.toContain('packages/app-shell');
     expect(read('.gitmodules')).not.toContain('packages/kino-video-provider');
-    const entries = JSON.parse(read('.packages')) as Array<Record<string, unknown>>;
+    const selected = JSON.parse(read('.packages')) as Array<Record<string, unknown>>;
+    for (const entry of selected) expect(entry.branch).toMatch(/^(?:main|[a-f0-9]{40})$/);
+    // Immutable integration pins do not change floating checkout ownership.
+    const entries = selected.map(entry => ({ ...entry, branch: 'main' }));
     expect(entries).toContainEqual({
       path: 'packages/extension-platform',
       url: 'https://github.com/ForgeaX-Games/forgeax-extension-platform.git',
@@ -137,8 +143,10 @@ describe('Studio .packages ownership contract', () => {
     expect(pkg.workspaces).not.toContain('packages/kino-video-provider');
   });
 
-  test('ships the floating package manifest in the active public mirror assembler', () => {
-    expect(read('scripts/mirror/publish-multi.sh')).toMatch(/for f in [^\n]*\.packages/);
+  test('generates the public floating package manifest from the mirror source map', () => {
+    const publisher = read('scripts/mirror/publish-multi.sh');
+    expect(publisher).toContain('source["studioMode"] != "floating"');
+    expect(publisher).not.toMatch(/for f in [^\n]*\.packages/);
   });
 
 });

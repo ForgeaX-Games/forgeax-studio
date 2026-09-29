@@ -14,6 +14,7 @@ import {
   runtimeStateMatchesStartup,
   sourceRuntimePorts,
   sourceRuntimeStatusPorts,
+  stopSourceRuntime,
 } from './source-runtime-launcher.ts';
 import { resolveStartupEnvironment } from './startup-environment.ts';
 import { resolveRuntimeInstance, runtimeInstanceProcessEnv, writeRuntimeInstanceConfig } from './runtime-instance.ts';
@@ -22,6 +23,7 @@ import {
   RuntimeStateStore,
   type RuntimeState,
 } from './runtime-state.ts';
+import { StartLock } from './startlock.ts';
 import { runtimeProcessBelongsToInstance } from './runtime-process-owner.ts';
 
 const fixtureRoots: string[] = [];
@@ -113,6 +115,21 @@ function ownedLauncher(instance: ReturnType<typeof resolveRuntimeInstance>) {
 }
 
 describe('source runtime launcher contract', () => {
+  test('desktop restart recovery removes a dead hook runtime lock before the next start', async () => {
+    const root = fixtureRoot();
+    materializeRuntimePackages(root);
+    writeRuntimeInstanceConfig({ root, slot: 4 });
+    const lock = new StartLock(root);
+    mkdirSync(lock.lockDir, { recursive: true });
+    writeFileSync(join(lock.lockDir, 'owner.json'), JSON.stringify({
+      schemaVersion: 1, pid: 2147483647, token: 'dead-desktop-hook-owner',
+    }));
+    expect(() => lock.acquireOrThrow()).toThrow();
+    await stopSourceRuntime(root, resolveSourceRuntimeEnvironment(root, 'desktop-dev').childEnv);
+    expect(() => lock.acquireOrThrow()).not.toThrow();
+    lock.release();
+  });
+
   test('creates the derived runtime directory before opening the startup log', () => {
     const root = fixtureRoot();
     const logFile = join(root, '.forgeax', 'runtime', 'stack.log');

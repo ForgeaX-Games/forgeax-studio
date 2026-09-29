@@ -3,6 +3,11 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const ENGINE_ENTRY_OUTPUTS = ['index.mjs', 'index.d.ts'] as const;
+export const ENGINE_UMBRELLA_OUTPUTS = [
+  ...ENGINE_ENTRY_OUTPUTS,
+  'facades/scene.mjs',
+  'facades/pack/guid.mjs',
+] as const;
 export type EngineEntryOutputValidator = (path: string) => boolean;
 
 function isNonEmptyFile(path: string): boolean {
@@ -12,6 +17,15 @@ function isNonEmptyFile(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function engineUmbrellaArtifactPaths(enginePackagesDir: string): string[] {
+  return ENGINE_UMBRELLA_OUTPUTS.map((output) =>
+    join(enginePackagesDir, 'engine', 'dist', output));
+}
+
+export function areEngineUmbrellaArtifactsPresent(enginePackagesDir: string): boolean {
+  return engineUmbrellaArtifactPaths(enginePackagesDir).every(isNonEmptyFile);
 }
 
 /** Checks the DevKit's Node entry without executing its CLI behavior. */

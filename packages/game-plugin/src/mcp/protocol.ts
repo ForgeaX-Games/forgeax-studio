@@ -45,6 +45,8 @@ export interface McpServerSpec<Ctx> {
   readonly resources: readonly McpResource<Ctx>[];
   /** Rebuilt per request so long-lived servers never serve stale project state. */
   buildContext(): Promise<Ctx> | Ctx;
+  /** Called after stdin closes and all in-flight requests finish. */
+  shutdown?(): Promise<void> | void;
 }
 
 export interface JsonRpcMessage {

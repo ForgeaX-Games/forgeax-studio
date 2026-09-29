@@ -101,12 +101,29 @@ test('logging errors never replace the installer result, and launch failure fail
   expect(messages.join('\n')).not.toContain('SECRET');
 });
 
-test('disabled diagnostics retain the synchronous installer and emit nothing', async () => {
+test('disabled diagnostics preserve the installer result and emit nothing', async () => {
   const { root, cwd } = fixture();
   let emitted = false;
   expect((await runIdeWorkspaceInstall({ root, cwd, env: {}, executable: process.execPath, args: ['-e', 'process.exit(6)'] }, { emit() { emitted = true; } })).status).toBe(6);
   expect(emitted).toBe(false);
 });
+
+for (const enabled of ['0', '1']) {
+  test(`bounds a stalled installer even when diagnostics=${enabled}`, async () => {
+    const { root, cwd } = fixture();
+    const messages: string[] = [];
+    const beforeSignals = process.listenerCount('SIGTERM');
+    const result = await runIdeWorkspaceInstall({ root, cwd, executable: process.execPath,
+      args: ['-e', 'process.on("SIGTERM", () => {}); setTimeout(() => process.exit(0), 1500)'],
+      env: { ...process.env, FORGEAX_IDE_INSTALL_DIAGNOSTICS: enabled },
+      timeoutMs: 200, killGraceMs: 50,
+    }, { emit: line => messages.push(line) });
+    expect(result.status).toBe(124);
+    expect(result.signal).toBe('SIGKILL');
+    expect(messages.join('\n')).toContain('timeout');
+    expect(process.listenerCount('SIGTERM')).toBe(beforeSignals);
+  });
+}
 
 test('bounds oversized lock inputs and reports truncation of member lists', () => {
   const { root, cwd } = fixture();

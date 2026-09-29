@@ -140,31 +140,91 @@ renderer was skipped.
 ## Desktop — one command (recommended)
 
 ```bash
-bun fx start desktop          # dev app: native window + live source (HMR). First run auto-installs;
-                     # auto-starts the web stack; auto-stops it when you close the window.
-bun fx build desktop    # package a distributable .app / .dmg
-bun scripts/desktop.ts open     # open the last-built .app
-bun fx stop     # stop the dev web stack
+bun fx packages ensure --only ide  # materialize the independent forgeax-ide mount when needed
+bun fx start desktop               # native Tauri window + live source (HMR)
+bun fx build desktop               # package a distributable .app / .dmg
+open "packages/ide/src-tauri/target/release/bundle/macos/ForgeaX Studio.app"  # macOS
+bun fx stop                        # stop the dev web stack
 ```
 
-`bun fx start desktop` is the supported desktop-dev entry. It resolves and
-verifies the `desktop-dev` profile, then injects that profile's `devUrl` into
-Tauri; direct `tauri dev` intentionally has no authoritative startup
-environment.
+`bun fx start desktop` is the supported desktop-dev entry. It resolves the
+`desktop-dev` profile and its `devUrl`, then runs the mounted IDE's
+`dev:desktop` script. That script starts Tauri with `src-tauri/tauri.dev.conf.json`;
+Tauri's `beforeDevCommand` runs `bun ../../scripts/tauri-dev-services.ts`, which
+starts the source runtime and waits for readiness for the window lifetime. Direct
+`tauri dev` skips the Studio wrapper and does not provide the complete startup environment.
 
 ## Desktop — build the `.app` / `.dmg`
 
 ```bash
-bun fx build desktop          # assemble Resources + compile and bundle Tauri
-# → packages/interface/src-tauri/target/release/bundle/macos/ForgeaX Studio.app
-#   (and …/bundle/dmg/…dmg)
+bun fx build desktop  # assemble resources, compile the Tauri shell, and bundle
+# local default target:
+# → packages/ide/src-tauri/target/release/bundle/macos/ForgeaX Studio.app
+# → packages/ide/src-tauri/target/release/bundle/dmg/*.dmg
+# an explicit target uses packages/ide/src-tauri/target/<target-triple>/release/bundle/
 ```
+
+> [!IMPORTANT]
+> Use the Bun version declared in `.bun-version` and install Node, Rust/Cargo,
+> and Xcode Command Line Tools. Private source inputs require normal Git access
+> to the selected repositories. Do not replace release pins with main heads or
+> borrow another checkout's compiled output to make installation pass.
+
+The local packaging entry currently supports macOS arm64/x64; Windows and Linux
+are not covered by this entry. It builds CLI, Orchestrator and the private Server
+from the selected source, assembles and validates resources, bundles Tauri, then
+finalizes and verifies the App and DMG. It does not publish or launch the App.
+
+Each invocation prints an independent output directory under
+`.forgeax/local-packages/local-<timestamp>-<pid>/`. The directory contains stage
+logs and `steps.json`; the artifacts are under
+`target/<rust-target>/release/bundle/macos/ForgeaX Studio.app` and `bundle/dmg/`.
+A failed stage stops the build; inspect its log before retrying.
+
+For an existing release checkout, `bun fx update` fast-forwards its configured
+upstream and prepares the selected inputs. A branch without an upstream is an
+error, not permission to rebase onto main. `bun install --frozen-lockfile` is
+still required after source updates. `bun fx start desktop` is development mode,
+not package verification.
 
 The `.app` is self-contained. Tauri starts one bundled `local-runtime` process;
 that launcher prepares `~/ForgeaxProjects`, starts and supervises server +
-engine on 18810/15273, writes the same runtime-state contract, and marks ready
-only after all HTTP probes pass. Tauri then loads the single-origin SPA. Launch
-it with `open "…/ForgeaX Studio.app"`.
+engine on 18810/15273, writes its desktop runtime state, and reports ready only
+after all HTTP probes pass. Tauri then loads the single-origin SPA. Launch
+it with the macOS `open` command shown above. Windows and Linux installers are
+under `packages/ide/src-tauri/target/release/bundle/` by default, or under
+`packages/ide/src-tauri/target/<target-triple>/release/bundle/` when a target is specified.
+
+## Desktop smoke checks and their boundary
+
+The IDE owns two browser-based smoke checks. They are useful public reproductions
+from the Studio root after `packages/ide` is mounted, but they do not launch a
+native Tauri window or claim to validate the platform WebView.
+
+`desktop-dev` runs source code through Vite and does not consume the final
+bundle, bundled resources, or sidecar process. Use the assembled-runtime smoke
+or a packaged-app test when the suspected failure involves those production-only
+inputs, their filesystem permissions, or their startup lifecycle.
+
+| Check | Command | Covers | Does not cover |
+|:--|:--|:--|:--|
+| Static production bundle | `bun run --cwd packages/ide build:web`<br>`bun run --cwd packages/ide smoke:production-bundle` | Serves `packages/ide/dist` from a loopback HTTP server, opens it in Chromium, and checks that the SPA root mounts without page errors. | Tauri, bundled resources, `local-runtime`, server/engine processes, and native WebView behavior. |
+| Assembled desktop runtime | `bun run --cwd packages/ide prepare:desktop`<br>`bun run --cwd packages/ide smoke:desktop-runtime` | Starts the assembled Bun runtime/guardian from `packages/ide/src-tauri/resources`, checks runtime state/readiness, binds a fixture project, probes its asset catalog, and drives the preview in Chromium. | Rust/Tauri compilation, installer metadata, and native WebView behavior. |
+
+Both smokes need a Chromium-compatible browser: macOS uses the standard Chrome
+path unless `IDE_BROWSER_EXECUTABLE` is set, Linux CI provisions Playwright
+Chromium, and Windows uses the installed Edge channel unless that variable is
+set.
+
+`prepare:desktop` also checks the Studio revision recorded by
+`packages/ide/product/integration-inputs.json`; run it from a Studio checkout
+matching that revision when the IDE mount is pinned to a different integration
+commit.
+
+`bun fx build desktop` runs the IDE's `build:desktop` script; its Tauri
+`beforeBuildCommand` invokes `prepare:desktop`. Run the two smoke commands
+separately when you need to distinguish static frontend failures from bundled
+runtime failures.
 
 ## Build to a runnable monorepo snapshot (optional)
 
@@ -199,7 +259,8 @@ exist.
 
 | Symptom | Cause / fix |
 |---|---|
-| `cp: …/node_modules/*: No such file or directory` during desktop assembly | The desktop assemble needs a **hoisted** root `node_modules`; bun's default isolated linker leaves it empty. `scripts/build-desktop.ts` now self-heals with `bun install --linker hoisted` (step 0). If you hit this on an old script, run `bun install --linker hoisted` at the repo root first. |
+| Desktop resources are missing during a smoke or build | Run `bun run --cwd packages/ide prepare:desktop`; `bun fx build desktop` runs the same preparation through Tauri's `beforeBuildCommand`. |
+| Missing workspace dependencies during desktop assembly | Run the selected checkout's `bun install --frozen-lockfile` and inspect preparation errors. Do not use another checkout's dependencies or switch linker modes to hide a lock mismatch. |
 | `bundle_dmg.sh` fails / no `.dmg` (but the `.app` exists) | The DMG styling step uses Finder/AppleScript and fails in a headless session. **The `.app` itself is fine** — use it directly, or produce the dmg from a GUI session (or via `hdiutil`). |
 | Engine preview is blank / `Failed to resolve @forgeax/engine-*` | The engine isn't built. Run `bun install` (prepare does `pnpm install` + builds the engine packages incl. the wasm module). |
 | `engine dist STALE` on start (after an engine bump) | `bun fx start` blocks with the fix: `bun run prepare` then `bun fx start`. For unattended/agent starts, `FORGEAX_AUTO_DEPLOY=1 bun fx start` rebuilds automatically instead of blocking. |

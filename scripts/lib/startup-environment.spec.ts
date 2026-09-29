@@ -8,12 +8,11 @@ import {
 import { requestedStartupProfile } from '../local-runtime.ts';
 
 const root = '/tmp/forgeax-startup-contract/repo';
-const homeDir = '/tmp/forgeax-startup-contract/home';
 
 describe('startup environment', () => {
   test('derives the source profiles from one contract', () => {
     for (const profile of ['web-dev', 'desktop-dev', 'anydev-web'] as const) {
-      const startup = resolveStartupEnvironment({ root, homeDir, profile, env: {} });
+      const startup = resolveStartupEnvironment({ root, profile, env: {} });
 
       expect(startup).toMatchObject({
         schemaVersion: 1,
@@ -34,39 +33,14 @@ describe('startup environment', () => {
       });
       expect(startup.stateFile).toBe(join(root, '.forgeax/runtime', `${profile}.json`));
       expect(startup.logFile).toBe(join(root, '.forgeax/runtime/stack.log'));
+      expect(startup.gatewayBridge.enabled).toBe(false);
     }
   });
 
-  test('keeps desktop production isolated while serving its SPA from the server origin', () => {
-    const startup = resolveStartupEnvironment({
-      root,
-      homeDir,
-      profile: 'desktop-prod',
-      env: { FORGEAX_PUBLIC_ORIGIN: 'https://untrusted.example.test' },
-    });
-
-    expect(startup).toMatchObject({
-      profile: 'desktop-prod',
-      sourceLayout: 'bundled',
-      resourceRoot: root,
-      projectRoot: join(homeDir, 'ForgeaxProjects'),
-      server: { host: '127.0.0.1', port: 18810 },
-      interface: {
-        runtime: 'server-spa',
-        port: 18810,
-        localOrigin: 'http://127.0.0.1:18810',
-        publicOrigin: 'http://127.0.0.1:18810',
-      },
-      engine: { host: '127.0.0.1', port: 15273 },
-      supervision: { restartPolicy: 'bounded', maxRestarts: 5 },
-      startupTimeoutMs: 60_000,
-    });
-  });
 
   test('honours AnyDev gateway inputs without changing lifecycle semantics', () => {
     const startup = resolveStartupEnvironment({
       root,
-      homeDir,
       profile: 'anydev-web',
       env: {
         FORGEAX_INTERFACE_PORT: '80',
@@ -87,7 +61,6 @@ describe('startup environment', () => {
   test('enables the loopback Engine MCP endpoint only when explicitly requested', () => {
     const startup = resolveStartupEnvironment({
       root,
-      homeDir,
       profile: 'anydev-web',
       env: { FORGEAX_MCP_HTTP: '1', FORGEAX_MCP_PORT: '28940' },
     });
@@ -101,39 +74,38 @@ describe('startup environment', () => {
       publicPath: '/engine/mcp',
     });
     expect(env.FORGEAX_MCP_URL).toBe('http://127.0.0.1:28940');
-    expect(resolveStartupEnvironment({ root, homeDir, profile: 'web-dev', env: {} }).mcp.enabled).toBe(false);
+    expect(resolveStartupEnvironment({ root, profile: 'web-dev', env: {} }).mcp.enabled).toBe(false);
   });
 
   test('projects the resolved contract into child process environment', () => {
-    const startup = resolveStartupEnvironment({ root, homeDir, profile: 'desktop-prod', env: {} });
+    const startup = resolveStartupEnvironment({ root, profile: 'desktop-dev', env: {} });
     const env = startupProcessEnv(startup, { KEEP_ME: 'yes' });
 
     expect(env).toMatchObject({
       KEEP_ME: 'yes',
-      FORGEAX_STARTUP_PROFILE: 'desktop-prod',
-      FORGEAX_SERVER_PORT: '18810',
-      FORGEAX_SERVER_URL: 'http://127.0.0.1:18810',
-      FORGEAX_INTERFACE_PORT: '18810',
-      FORGEAX_ENGINE_PORT: '15273',
-      FORGEAX_ENGINE_URL: 'http://127.0.0.1:15273',
-      FORGEAX_SERVE_SPA: '1',
+      FORGEAX_STARTUP_PROFILE: 'desktop-dev',
+      FORGEAX_SERVER_PORT: '18900',
+      FORGEAX_SERVER_URL: 'http://127.0.0.1:18900',
+      FORGEAX_INTERFACE_PORT: '18920',
+      FORGEAX_ENGINE_PORT: '15173',
+      FORGEAX_ENGINE_URL: 'http://127.0.0.1:15173',
+      FORGEAX_SERVE_SPA: '0',
       FORGEAX_RUNTIME_STATE_FILE: startup.stateFile,
     });
+    expect(env.FORGEAX_BRIDGE).toBe('0');
+    expect(env.FORGEAX_EDITOR_RELAY_URL).toBeUndefined();
   });
 
   test('keeps optional project MCP prewarm off the source readiness path unless explicitly enabled', () => {
-    const source = resolveStartupEnvironment({ root, homeDir, profile: 'web-dev', env: {} });
-    const bundled = resolveStartupEnvironment({ root, homeDir, profile: 'desktop-prod', env: {} });
+    const source = resolveStartupEnvironment({ root, profile: 'web-dev', env: {} });
 
     expect(startupProcessEnv(source, {}).FORGEAX_PROJECT_MCP_PREWARM).toBe('0');
     expect(startupProcessEnv(source, { FORGEAX_PROJECT_MCP_PREWARM: '1' }).FORGEAX_PROJECT_MCP_PREWARM).toBe('1');
-    expect(startupProcessEnv(bundled, {}).FORGEAX_PROJECT_MCP_PREWARM).toBeUndefined();
   });
 
   test('projects an isolated source instance including optional services and the actual UI CORS origin', () => {
     const startup = resolveStartupEnvironment({
       root,
-      homeDir,
       profile: 'web-dev',
       env: {
         FORGEAX_SERVER_PORT: '28900',
@@ -176,18 +148,35 @@ describe('startup environment', () => {
     });
   });
 
-  test('does not project a retired bridge port when bridge use is explicitly disabled', () => {
+  test('projects the DEV editor relay only when it is explicitly enabled', () => {
+    const enabled = resolveStartupEnvironment({
+      root,
+      profile: 'web-dev',
+      env: { FORGEAX_BRIDGE: '1', FORGEAX_BRIDGE_PORT: '25295' },
+    });
+    const enabledEnv = startupProcessEnv(enabled, {});
+
+    expect(enabled.gatewayBridge.enabled).toBe(true);
+    expect(enabledEnv.FORGEAX_BRIDGE).toBe('1');
+    expect(enabledEnv.FORGEAX_BRIDGE_PORT).toBe('25295');
+    expect(enabledEnv.FORGEAX_EDITOR_RELAY_URL).toBe('http://127.0.0.1:25295');
+
     const startup = resolveStartupEnvironment({
       root,
-      homeDir,
       profile: 'web-dev',
-      env: { FORGEAX_BRIDGE: '0', FORGEAX_BRIDGE_PORT: '25295' },
+      env: { FORGEAX_BRIDGE_PORT: '25295' },
     });
-    const env = startupProcessEnv(startup, { FORGEAX_BRIDGE_PORT: '25295' });
+    const env = startupProcessEnv(startup, {
+      FORGEAX_BRIDGE_PORT: '25295',
+      FORGEAX_BRIDGE_URL: 'http://127.0.0.1:25295',
+      FORGEAX_EDITOR_RELAY_URL: 'http://127.0.0.1:25295',
+    });
 
     expect(startup.gatewayBridge.enabled).toBe(false);
     expect(env.FORGEAX_BRIDGE).toBe('0');
     expect(env.FORGEAX_BRIDGE_PORT).toBeUndefined();
+    expect(env.FORGEAX_BRIDGE_URL).toBeUndefined();
+    expect(env.FORGEAX_EDITOR_RELAY_URL).toBeUndefined();
   });
 
   test('rejects unknown profiles, invalid ports, and core port collisions', () => {
@@ -207,7 +196,7 @@ describe('startup environment', () => {
     expect(() => resolveStartupEnvironment({
       root,
       profile: 'web-dev',
-      env: { FORGEAX_BRIDGE_PORT: '18900' },
+      env: { FORGEAX_BRIDGE: '1', FORGEAX_BRIDGE_PORT: '18900' },
     })).toThrow(/gateway bridge :18900 onto a core service port/);
     expect(() => resolveStartupEnvironment({
       root,
@@ -219,46 +208,9 @@ describe('startup environment', () => {
       profile: 'web-dev',
       env: { FACE_MASK_PORT: '25274', FORGEAX_RHI_REVIEWER_PORT: '25274' },
     })).toThrow(/colliding managed ports.*face-mask=25274.*rhi-reviewer=25274/);
-    expect(() => resolveStartupEnvironment({
-      root,
-      profile: 'desktop-prod',
-      env: {
-        NARRATIVE_PORT: 'not-a-port',
-        FACE_MASK_PORT: '0',
-        FORGEAX_RHI_REVIEWER_PORT: '70000',
-        FORGEAX_REEL_URL: 'not a url',
-        FORGEAX_PLUGIN_PORT_OFFSET: '-1',
-      },
-    })).not.toThrow();
+
   });
 
-  test('lets a bundled launcher override ports through the generic variables', () => {
-    const startup = resolveStartupEnvironment({
-      root,
-      homeDir,
-      profile: 'desktop-prod',
-      env: { FORGEAX_SERVER_PORT: '28810', FORGEAX_ENGINE_PORT: '25273' },
-    });
-
-    expect(startup.server.port).toBe(28810);
-    expect(startup.engine.port).toBe(25273);
-
-    // The desktop-specific variable still wins when both are present.
-    expect(resolveStartupEnvironment({
-      root,
-      homeDir,
-      profile: 'desktop-prod',
-      env: { FORGEAX_DESKTOP_SERVER_PORT: '28811', FORGEAX_SERVER_PORT: '28810' },
-    }).server.port).toBe(28811);
-
-    // A malformed value is blamed on the variable that carried it, not the preferred one.
-    expect(() => resolveStartupEnvironment({
-      root,
-      homeDir,
-      profile: 'desktop-prod',
-      env: { FORGEAX_SERVER_PORT: 'abc' },
-    })).toThrow(/FORGEAX_SERVER_PORT must be a positive integer/);
-  });
 
   test('selects the launcher profile explicitly before consulting the environment', () => {
     expect(requestedStartupProfile([], {})).toBe('web-dev');
@@ -266,7 +218,8 @@ describe('startup environment', () => {
     expect(requestedStartupProfile(['--profile', 'desktop-dev'], {
       FORGEAX_STARTUP_PROFILE: 'web-dev',
     })).toBe('desktop-dev');
-    expect(requestedStartupProfile(['--profile=desktop-prod'], {})).toBe('desktop-prod');
+    expect(() => requestedStartupProfile(['--profile=desktop-prod'], {})).toThrow(/invalid startup profile/);
+    expect(() => resolveStartupEnvironment({ root, profile: 'desktop-prod', env: {} })).toThrow(/invalid FORGEAX_STARTUP_PROFILE/);
     expect(() => requestedStartupProfile(['--profile=cloud'], {})).toThrow(/invalid startup profile/);
   });
 

@@ -16,7 +16,7 @@ export const IDE_RELEASE_PLATFORMS = ['macos-arm64', 'macos-x64', 'windows-x64']
 const IDE_PLATFORM_TRANSPORT = {
   'macos-arm64': { targetTriple: 'aarch64-apple-darwin', artifactLogicalIds: ['macos-arm64-dmg'] },
   'macos-x64': { targetTriple: 'x86_64-apple-darwin', artifactLogicalIds: ['macos-x64-dmg'] },
-  'windows-x64': { targetTriple: 'x86_64-pc-windows-msvc', artifactLogicalIds: ['windows-x64-msi', 'windows-x64-nsis'] },
+  'windows-x64': { targetTriple: 'x86_64-pc-windows-msvc', artifactLogicalIds: ['windows-x64-nsis'] },
 } as const;
 
 export type ReleaseIntentName = 'dry-run' | 'publish';
@@ -28,7 +28,6 @@ export type ReleaseIntent = {
   integrationRevision: string;
   sidecarCandidateManifestUrl: string;
   sidecarCandidateManifestSha256: string;
-  mirror: boolean;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -57,13 +56,6 @@ function requireString(record: UnknownRecord, key: string): string {
   return value;
 }
 
-function requireBoolean(record: UnknownRecord, key: string, fallback = false): boolean {
-  const value = record[key];
-  if (value === undefined || value === '') return fallback;
-  if (value === true || value === 'true') return true;
-  if (value === false || value === 'false') return false;
-  throw new Error(`invalid boolean ${key}`);
-}
 
 function assertKeys(record: UnknownRecord, name: string, expected: readonly string[]): void {
   if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify([...expected].sort())) {
@@ -124,7 +116,6 @@ export function resolveReleaseIntent(options: {
       sidecar_candidate_manifest_url: options.scheduledSidecarManifestUrl,
       sidecar_candidate_manifest_sha256: options.scheduledSidecarManifestSha256,
       intent: 'dry-run',
-      mirror: false,
     };
   } else {
     throw new Error(`unsupported release event: ${options.eventName}`);
@@ -143,7 +134,6 @@ export function resolveReleaseIntent(options: {
   assertRevision('integration_revision', options.integrationRevision);
   assertImmutableHttpsUrl('sidecar_candidate_manifest_url', sidecarCandidateManifestUrl);
   assertDigest('sidecar_candidate_manifest_sha256', sidecarCandidateManifestSha256);
-  const mirror = intentValue === 'publish' && requireBoolean(source, 'mirror');
   return {
     version,
     intent: intentValue,
@@ -152,14 +142,11 @@ export function resolveReleaseIntent(options: {
     integrationRevision: options.integrationRevision,
     sidecarCandidateManifestUrl,
     sidecarCandidateManifestSha256,
-    mirror,
   };
 }
 
-export function missingReleaseSecrets(intent: ReleaseIntentName, mirror: boolean, env: NodeJS.ProcessEnv): string[] {
-  const required = ['INTERNAL_TOKEN'];
-  if (intent === 'publish' && mirror) required.push('MIRROR_TOKEN');
-  return required.filter((name) => !env[name]);
+export function missingReleaseSecrets(env: NodeJS.ProcessEnv): string[] {
+  return ['INTERNAL_TOKEN'].filter((name) => !env[name]);
 }
 
 function sha256File(path: string): string {
@@ -377,7 +364,7 @@ if (import.meta.main) {
         scheduledSidecarManifestUrl: process.env.SCHEDULED_SIDECAR_MANIFEST_URL,
         scheduledSidecarManifestSha256: process.env.SCHEDULED_SIDECAR_MANIFEST_SHA256,
       });
-      const missing = missingReleaseSecrets(intent.intent, intent.mirror, process.env);
+      const missing = missingReleaseSecrets(process.env);
       if (missing.length > 0) throw new Error(`missing required release secrets: ${missing.join(', ')}`);
       output({
         version: intent.version,
@@ -387,7 +374,6 @@ if (import.meta.main) {
         integration_revision: intent.integrationRevision,
         sidecar_candidate_manifest_url: intent.sidecarCandidateManifestUrl,
         sidecar_candidate_manifest_sha256: intent.sidecarCandidateManifestSha256,
-        mirror: intent.mirror,
       });
     } else if (command === 'verify-candidate') {
       const required = (name: string): string => option(name) ?? (() => { throw new Error(`--${name} is required`); })();
@@ -398,7 +384,6 @@ if (import.meta.main) {
         integrationRevision: required('integration-revision'),
         sidecarCandidateManifestUrl: required('sidecar-candidate-manifest-url'),
         sidecarCandidateManifestSha256: required('sidecar-candidate-manifest-sha256'),
-        mirror: false,
         orchestrationId: required('orchestration-id'),
         tag: required('tag'),
         publisherRunId: required('publisher-run-id'),

@@ -1,94 +1,98 @@
 ---
 name: forgeax-game
-description: Build, run, and verify ForgeaX games through the bounded @forgeax/game MCP surface. Use when an agent must inspect a ForgeaX project, edit the active game, recover a broken local stack, launch the current game, or validate a game change in the real Studio and Play surfaces.
+description: Build, preview, inspect, and repair a released ForgeaX Engine game through the @forgeax/game MCP connector.
 ---
 
-# ForgeaX Game
+# ForgeaX game development
 
-Treat the project files as the source of truth and `@forgeax/game` as the ForgeaX
-control surface around them. The current host Agent (Codex, the reference agent CLI, Cursor, or
-another supported client) writes the game code. Use MCP for project/runtime state and
-launching; use normal file, shell, and browser tools for implementation and
-verification. The plugin obtains the matching ForgeaX Runtime automatically; do not
-ask the user to clone ForgeaX Studio or start `bun fx`.
+Use this Skill for gameplay implementation and the edit-build-Preview-repair loop in
+a standalone game created or bound by `forgeax-game init`. The host agent edits game code;
+the connector owns Engine CLI execution and Preview lifecycle.
 
-## Enter the loop
+## Start with identity
 
-1. If the current directory is not a ForgeaX project, run `forgeax-game init --game
-   <slug>` once. This creates the minimal project and prepares the managed Runtime.
-2. Read `forgeax://status`. If the host cannot read MCP resources, call
-   `forgeax_status_lite`.
-3. Confirm the returned project root, active game, Runtime version, and Engine SDK
-   commit before editing anything. The SDK and Runtime identities must match.
-4. Read [references/engine-project.md](references/engine-project.md) before changing
-   game code or assets.
-5. Climb the Engine knowledge ladder in order, stopping as soon as the question is
-   answered. Never invent an Engine symbol from memory — every rung is already on disk.
-   1. **`forgeax-engine-*` skills** — how this Engine is meant to be used: schedules,
-      lifecycles, and the invariants a type signature cannot state. Start here for any
-      "how do I ..." question; `forgeax-engine-ecs` governs components and systems.
-      Read [references/engine-skills.md](references/engine-skills.md), derived from the
-      Runtime package during the Game build, before choosing one. Ids do not track
-      package names — importing `@forgeax/engine-render` does not mean a
-      `forgeax-engine-render` skill exists. A guessed id fails the lookup silently.
-   2. **`.forgeax/engine-sdk/`** — the exact API surface: `packages/*/dist/*.d.ts` for
-      signatures, `templates/game-default/` or `templates/game-empty/` for projects
-      that already work.
-      Read [references/engine-authoring-traps.md](references/engine-authoring-traps.md)
-      first: it lists the failures that render or run without error while still being
-      wrong (fov units, dead keyboard, function-valued readpoints).
-   3. **Engine source** — the implementation. Read it when a skill plus the
-      declarations still leave a real choice open, or when observed behavior
-      contradicts them and you must trace an Engine-side bug. `forgeax://status`
-      reports its path, also recorded as `sourceRoot` in `.forgeax/engine-sdk.json`.
-6. Make the smallest coherent change in the active game's directory.
-7. Call `forgeax_run_current_game`. It builds or reuses the static preview through the
-   verified selected Runtime and reports the Runtime/Engine identity used by preview.
-8. Open the returned Play URL and verify the requested behavior. Follow
-   [references/validation.md](references/validation.md).
+1. Read the MCP resource `forgeax://status`. If the client cannot read resources,
+   call `forgeax_status_lite` with the game's current directory as `target_dir`.
+2. Confirm the status reports one consistent installed Engine version/commit and an
+   exact matching DevKit/carrier. Never hardcode a historical release identity.
+3. Read the game's `forge.json`, source, package declarations, and task-relevant
+   Engine-owned `skills/` installed with that game. Engine declarations are in its installed
+   `node_modules/@forgeax/engine*` packages; never substitute Studio or Editor source.
 
-## Choose the right surface
+Status describes runtime readiness, not a requirement to launch the template first.
+When gameplay depends on a library asset, follow the installed asset-library Skill
+to establish availability and compatible candidates before game implementation or
+a baseline Preview. Other tasks may still need a baseline to reproduce a bug.
 
-| Need | Surface |
-|:--|:--|
-| Project, game, service, or next-action status | `forgeax://status` |
-| Status when resources are unavailable | `forgeax_status_lite` |
-| Build/reuse the selected Runtime's static preview and obtain preview/log locations | `forgeax_run_current_game` |
-| Learn how the Engine is meant to be used | Installed `forgeax-engine-*` skills — ids in [references/engine-skills.md](references/engine-skills.md) |
-| Inspect Engine declarations, metadata, and examples | `.forgeax/engine-sdk/` |
-| Trace Engine behavior a skill and the declarations cannot settle | Engine source (`sourceRoot`) |
-| Diagnose a game that runs but renders or steers wrong | [references/engine-authoring-traps.md](references/engine-authoring-traps.md) |
-| Read or edit game source and assets | Host file tools |
-| Run focused tests or inspect runtime logs | Host shell tools |
-| Prove Studio, viewport, or Play behavior | Host browser tools |
-| Create a game or change the active game | `forgeax-game init` / `forgeax-game use` |
+> [!IMPORTANT]
+> In an empty directory, `forgeax-game init` creates the Engine-owned standalone game
+> through the exact installed carrier. In an existing exact game it refreshes the
+> binding idempotently. Follow `forge.json` and the installed Engine's authoring
+> layout: Engine 0.3.3 uses `assets/` Pack sources and `forge.json#roots`, not a
+> `plugins[]` list. Preserve the Engine-owned project instead of moving files to a
+> prescribed directory. Do not create Studio's
+> hosted `.forgeax/games/<slug>` layout inside a standalone game.
 
-Do not turn one-time setup or arbitrary shell execution into MCP calls. The bounded
-surface exists so the model sees only high-frequency game-loop operations.
+## Edit and verify
 
-## Recover deliberately
+1. Make the smallest coherent game-source change using normal file tools. Mount browser
+   UI through the Engine Host `uiRoot` or `#game-ui`. The released standalone Host
+   provides `#game-ui`; do not mutate `document.body` directly. Resolve Host access
+   and lifecycle from the installed Engine declarations/examples, not a guessed
+   injection name. Check that requested UI is actually mounted; optional chaining
+   that silently skips required UI is not proof it works.
+2. When turning the Empty template into a requested game, also replace the template
+   identity in `forge.json`, `package.json`, and README; document controls and keep
+   tests aligned. Export at least one named game-specific state transition or rule and
+   exercise it in a behavior test. Renaming the Empty test suite is not completion.
+   The run tool rejects changed gameplay with stale or superficial evidence.
+3. Call `forgeax_run_current_game` with the canonical game `target_dir`.
+4. Treat success only as the returned exact Engine/build/Preview identity. Open only
+   its returned loopback `preview_url`.
+5. When build or Preview fails, read `preview.stderr_log` and
+   `preview.stdout_log`, repair the game, and call the tool again.
+6. After a code change, do not reuse an old visual observation as evidence; the new
+   build digest and Preview instance must be observed.
 
-- **No project:** run `forgeax-game init --game <slug>`; do not ask the user to prepare
-  a ForgeaX checkout.
-- **No active game:** list `.forgeax/games/`, then run `forgeax-game use <slug>`.
-- **Runtime down:** call `forgeax_run_current_game`; it installs the platform-selected
-  Runtime package, builds the active game, and serves the static preview. Do not
-  silently fall back to a source checkout.
-- **Engine SDK missing:** run `forgeax-game upgrade` (or re-run `init`) before writing
-  imports. Do not guess an API that is absent from the installed snapshot.
-- **Engine authoring skills missing or incomplete:** `forgeax://status` reports how many
-  of the bundled `forgeax-engine-*` skills are installed. If any are missing, run
-  `forgeax-game devkit install` and start a new session; writing game code without them
-  means guessing at Engine conventions the skills already state.
-- **Wrong instance root:** stop and align the CLI working directory with the running
-  ForgeaX server. Never write into a different checkout to make the check pass.
-- **Launch failure:** read the runtime log path returned by the tool. Browser-only
-  exceptions still require the browser console.
-- **Viewport or Play defect:** reproduce through the real Studio UI. A direct curl to
-  the Play server does not prove the embedded editor path.
+Preview `ready` proves startup and ownership, not gameplay or visible UI. For a
+playable-game request, use an available browser tool to check the requested core
+interaction and feedback. Choose checks to fit the game, not a fixed checklist or
+browser brand. If browser access is unavailable, deliver the verified Preview URL
+with gameplay explicitly unverified and short manual checks; do not block useful
+implementation or claim interactions were tested. An Engine-upgrade-only request
+does not require a new gameplay quality review.
 
-## Finish with evidence
+## Reuse 3D assets
 
-Report the changed game and files, the MCP status/launch result, the exact browser
-surface exercised, and any remaining unverified boundary. A passing unit test is not
-evidence that the game rendered or behaved correctly.
+Read the installed `art-3d-asset-library` Skill and use its pinned CLI to search
+candidates and import a selected asset. If not enabled, ask the user to enable it.
+No separate Asset3D MCP tool is required. Do not substitute procedural geometry or
+generation for a requested library asset without user approval.
+
+> [!CAUTION]
+> Any `forgeax_run_current_game` error means the current game is **not previewed**.
+> Stop and report or repair that error. Never probe, reuse, open, or report an existing
+> localhost port after a failed call; HTTP 200 is not Preview ownership evidence. Only
+> a successful result containing `preview.status: ready`, `preview_url`, `preview.root`,
+> `preview.build_digest`, and `preview.instance_id` authorizes a Preview claim.
+
+The connector runs the exact installed Engine CLI with `project build --json`, then
+starts or reuses `project preview --json`. It binds Preview to the canonical root,
+exact release, build digest, and Preview instance ID; PID alone is not ownership.
+
+## Stop
+
+For explicit teardown use:
+
+```bash
+forgeax-game preview stop --target-dir <game-root>
+```
+
+The connector signals only a verified owned child. A live unverifiable PID is
+left untouched and reported as `preview_ownership_unverified`.
+
+## Scope
+
+Image and 3D generation helpers may still be exposed, but this G0 Skill does not
+claim Asset3D provider installation/import, Studio/Editor integration, visible Play,
+or real EA/provider end-to-end acceptance.

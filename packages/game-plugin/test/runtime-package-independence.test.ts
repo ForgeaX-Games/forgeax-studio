@@ -27,58 +27,52 @@ function sourceText(): string {
     .join('\n');
 }
 
-describe('@forgeax/game Runtime package independence', () => {
-  test('is a platform-neutral exact consumer of Universal', () => {
-    expect(manifest.version).toBe('0.2.4');
-    expect(manifest.dependencies).toEqual({ '@forgeax/game-runtime': '0.3.33' });
+describe('@forgeax/game Engine package independence', () => {
+  test('is a platform-neutral exact consumer of the Engine SDK carrier', () => {
+    expect(manifest.version).toBe('0.3.10');
+    expect(manifest.dependencies).toEqual({ '@forgeax/engine-sdk': '0.3.3', pnpm: '11.7.0' });
     expect(manifest.optionalDependencies).toBeUndefined();
     expect(manifest.os).toBeUndefined();
     expect(manifest.cpu).toBeUndefined();
-    expect(manifest.files).toEqual(['dist', 'assets/skills', 'README.md']);
+    expect(manifest.files).toEqual([
+      'dist', 'assets', 'docs/asset3d.md', 'docs/plugin-integration-standard.md', 'docs/engine-0.2.1-to-0.3.3-migration.md', 'README.md',
+    ]);
   });
 
-  test('owns no Runtime or Engine SDK implementation and has no Studio fallback', () => {
+  test('owns no Runtime implementation, Engine payload, or Studio fallback', () => {
     for (const path of [
       'src/runtime',
-      'src/project/engine-sdk.ts',
+      'src/services/launch.ts',
+      'src/services/probe.ts',
+      'src/run/static-preview.ts',
       'scripts/build-runtime-artifact.ts',
-      'scripts/build-runtime-manifest.ts',
       'scripts/build-engine-sdk.ts',
-    ]) {
-      expect(existsSync(join(root, path)), `Game still owns ${path}`).toBeFalse();
-    }
+    ]) expect(existsSync(join(root, path)), `Game still owns ${path}`).toBeFalse();
     const source = sourceText();
-    expect(source).not.toMatch(/(?:\.\.\/)+runtime\//);
+    expect(source).not.toContain('@forgeax/game-runtime');
     expect(source).not.toContain('FORGEAX_STUDIO_ROOT');
     expect(source).not.toContain('FORGEAX_RUNTIME_DEV_FALLBACK');
-    expect(source).not.toContain('forgeax-studio');
-    expect(source).toContain("from '@forgeax/game-runtime'");
+    expect(source).toContain('@forgeax/engine-sdk');
   });
 
-  test('externalizes Universal and never assembles Runtime payload in the Game build', () => {
+  test('builds one connector bundle without assembling Engine or Runtime payloads', () => {
     const build = readFileSync(join(root, 'build.mjs'), 'utf8');
-    expect(build).toContain("external: ['@forgeax/game-runtime']");
+    expect(build).not.toContain('@forgeax/game-runtime');
     expect(build).not.toContain('FORGEAX_RUNTIME_ARTIFACT');
     expect(build).not.toContain('FORGEAX_RUNTIME_MANIFEST');
     expect(build).not.toContain('FORGEAX_ENGINE_SDK');
     expect(build).not.toMatch(/resolve\(assets,\s*['"](?:runtime|engine-sdk)['"]\)/);
   });
 
-  test('delegates publishing to the shared reusable workflow instead of inlining it', () => {
+  test('delegates publishing to the shared reusable workflow', () => {
     const workflow = readFileSync(join(root, '.github', 'workflows', 'publish.yml'), 'utf8');
     expect(() => Bun.YAML.parse(workflow)).not.toThrow();
     expect(workflow).toContain("tags: ['v*']");
-    expect(workflow).not.toContain('ForgeaX-Games/forgeax-studio');
-    expect(workflow).not.toContain('FORGEAX_STUDIO_ROOT');
-    // The pipeline (build/scan/publish + every release-security gate) lives in the
-    // org-shared workflow; this repo delegates to it, pinned to a version tag. The
-    // pipeline's internal structure is contract-tested in forgeax-ci itself.
-    expect(workflow).toMatch(/uses:\s+ForgeaX-Games\/forgeax-ci\/\.github\/workflows\/npm-publish\.yml@v\d+/u);
+    const parsed = Bun.YAML.parse(workflow) as { jobs: { publish: { uses: string; with: Record<string, unknown> } } };
+    expect(parsed.jobs.publish.uses).toMatch(/^ForgeaX-Games\/forgeax-ci\/\.github\/workflows\/npm-publish\.yml@[a-f0-9]{40}$/u);
+    expect(parsed.jobs.publish.with['package-profile']).toBe('bin');
     expect(workflow).toMatch(/secrets:\s*\n\s+NPM_TOKEN:\s+\$\{\{ secrets\.NPM_TOKEN \}\}/u);
-    // Security-sensitive steps must not be re-inlined here where they would drift
-    // from the shared source.
     expect(workflow).not.toContain('npm publish');
-    expect(workflow).not.toContain('verify-release-artifact');
-    expect(workflow).not.toContain('--provenance');
+    expect(workflow).not.toContain('FORGEAX_STUDIO_ROOT');
   });
 });

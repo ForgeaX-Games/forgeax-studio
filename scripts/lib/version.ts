@@ -1,8 +1,8 @@
 // scripts/lib/version.ts — forgeax-studio version helper (library + CLI).
 //
 // Version scheme: v0.M.D.N — 0 pre-1.0 epoch · M.D = latest commit month.day ·
-// N = cumulative main commit count (monotone). Replaces version.sh; run.ts and
-// build-desktop.ts import the functions, `bun scripts/version.ts <cmd>` is the CLI.
+// N = cumulative main commit count (monotone). Replaces version.sh.
+// Run `bun scripts/lib/version.ts <cmd>` for the CLI.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

@@ -280,27 +280,29 @@ export function probeLiveRulesetsSync(options: {
 
 export function compareLiveRulesets(observation: LiveRulesetObservation, expected: CiGovernanceExpectation): LiveRulesetResult {
   const applicable = observation.rulesets.filter((ruleset) => ruleset.appliesToRef);
-  const contexts = applicable.flatMap((ruleset) => ruleset.contexts);
+  const governanceApplicable = applicable.filter((ruleset) => ruleset.enforcement === 'active');
+  const contexts = governanceApplicable.flatMap((ruleset) => ruleset.contexts);
   const sources = new Map<string, string[]>();
-  for (const ruleset of applicable) {
+  for (const ruleset of governanceApplicable) {
     for (const context of ruleset.contexts) sources.set(context, [...(sources.get(context) ?? []), ruleset.contextSource]);
   }
   const missing = CI_REQUIRED_CONTEXTS.filter((context) => !sources.has(context));
   const extra = contexts.filter((context) => !CI_REQUIRED_CONTEXTS.includes(context as (typeof CI_REQUIRED_CONTEXTS)[number]));
   const duplicate = [...sources.entries()].filter(([, contextSources]) => contextSources.length !== 1).map(([context, contextSources]) => ({ context, sources: contextSources }));
   const enforcement = applicable.map((ruleset) => ({ id: ruleset.id, source: ruleset.source, enforcement: ruleset.enforcement }));
-  const bypass = applicable.flatMap((ruleset) => ruleset.bypassActors.map((actor) => ({ ruleset: ruleset.id, actor })));
-  const bypassCapability = applicable.map((ruleset) => ({ id: ruleset.id, value: ruleset.currentUserCanBypass }));
-  const strictRequiredStatusChecks = applicable
+  const bypass = governanceApplicable.flatMap((ruleset) => ruleset.bypassActors.map((actor) => ({ ruleset: ruleset.id, actor })));
+  const bypassCapability = governanceApplicable.map((ruleset) => ({ id: ruleset.id, value: ruleset.currentUserCanBypass }));
+  const strictRequiredStatusChecks = governanceApplicable
     .map((ruleset) => ruleset.strictRequiredStatusChecks)
     .filter((value): value is boolean => value !== undefined);
   const aligned = observation.repository === expected.repository
     && observation.ref === expected.ref
     && applicable.length > 0
+    && governanceApplicable.length > 0
     && missing.length === 0
     && extra.length === 0
     && duplicate.length === 0
-    && enforcement.every((item) => item.enforcement === expected.enforcement)
+    && governanceApplicable.every((item) => item.enforcement === expected.enforcement)
     && strictRequiredStatusChecks.length > 0
     && strictRequiredStatusChecks.every((value) => value === expected.strictRequiredStatusChecks)
     && bypass.length === 0

@@ -71,6 +71,9 @@ probe_stack() {
   probe_endpoint server "${endpoint_urls[0]}"
   probe_endpoint interface "${endpoint_urls[1]}"
   probe_endpoint engine "${endpoint_urls[2]}"
+  if [[ "${FORGEAX_LIFECYCLE_BROWSER_SMOKE:-}" == 1 ]]; then
+    bun scripts/ci/studio-browser-smoke.ts
+  fi
 }
 
 echo "[lifecycle-smoke] start"
@@ -83,4 +86,10 @@ probe_stack
 
 echo "[lifecycle-smoke] stop"
 bun fx stop
+for url in "${endpoint_urls[@]}"; do
+  if curl --silent --max-time 2 --output /dev/null "$url"; then
+    echo "::error title=Lifecycle smoke stop failed::endpoint still responds after stop: $url"
+    exit 1
+  fi
+done
 trap - EXIT INT TERM

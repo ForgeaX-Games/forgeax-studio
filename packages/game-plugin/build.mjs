@@ -1,8 +1,6 @@
 #!/usr/bin/env bun
-import { chmod, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { chmod, copyFile, cp, mkdir, rm, readdir, readFile, writeFile, access } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { engineSdkRoot } from '@forgeax/game-runtime';
 
 const root = import.meta.dir;
 const dist = resolve(root, 'dist');
@@ -14,36 +12,26 @@ await mkdir(resolve(assets, 'skills'), { recursive: true });
 await cp(resolve(root, 'skills', 'forgeax-game'), resolve(assets, 'skills', 'forgeax-game'), {
   recursive: true,
 });
-
-const skillsRoot = resolve(engineSdkRoot(), 'skills');
-if (existsSync(skillsRoot)) {
-  const ids = (await readdir(skillsRoot, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && existsSync(resolve(skillsRoot, entry.name, 'SKILL.md')))
-    .map((entry) => entry.name)
-    .sort();
-  const rows = await Promise.all(ids.map(async (id) => {
-    const text = await readFile(resolve(skillsRoot, id, 'SKILL.md'), 'utf8');
-    const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? '';
-    const raw = /description:\s*(>-?|\|-?)?\r?\n?([\s\S]*?)(?=\r?\n[a-zA-Z_-]+:|$)/.exec(block)?.[2] ?? '';
-    const summary = raw.replace(/\s+/g, ' ').trim();
-    const firstSentence = /^(.*?[.。])\s/.exec(summary)?.[1] ?? summary;
-    return `| \`${id}\` | ${firstSentence.slice(0, 180) || '(no description)'} |`;
-  }));
-  const pluginPackage = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
-  const runtimeVersion = pluginPackage.dependencies?.['@forgeax/game-runtime'] ?? 'unknown';
-  const reference = `# Engine skills available in Runtime ${runtimeVersion}
-
-Derived from the Engine skills carried by the installed Runtime package. Invoke only
-ids listed here; Engine package names and skill ids are not interchangeable.
-
-| Skill id | Covers |
-|:--|:--|
-${rows.join('\n')}
-`;
-  const references = resolve(assets, 'skills', 'forgeax-game', 'references');
-  await mkdir(references, { recursive: true });
-  await writeFile(resolve(references, 'engine-skills.md'), reference, 'utf8');
+for (const id of await readdir(resolve(root, 'extensions'))) {
+  const source = resolve(root, 'extensions', id);
+  const manifest = JSON.parse(await readFile(resolve(source, 'extension.json'), 'utf8'));
+  if (manifest.id !== id || manifest.schemaVersion !== 1 || !/^cli\.mjs$/.test(manifest.cli)) throw new Error('invalid extension: ' + id);
+  const target = resolve(assets, 'extensions', id);
+  await mkdir(target, { recursive: true });
+  await copyFile(resolve(source, 'extension.json'), resolve(target, 'extension.json'));
+  for (const skill of manifest.skills) {
+    if (!/^skills\/[a-z][a-z0-9-]*$/.test(skill)) throw new Error('invalid skill path');
+    await mkdir(resolve(target, skill), { recursive: true });
+    await copyFile(resolve(source, skill, 'SKILL.md'), resolve(target, skill, 'SKILL.md'));
+  }
+  let entry = resolve(source, manifest.cli);
+  try { await access(entry); } catch { entry = entry.replace(/\.mjs$/, '.ts'); }
+  const compiled = await Bun.build({ entrypoints: [entry], outdir: target, naming: 'cli.mjs', target: 'node', format: 'esm' });
+  if (!compiled.success) throw new Error(compiled.logs.join('\n'));
 }
+
+await mkdir(resolve(assets, 'licenses'), { recursive: true });
+await copyFile(resolve(root, 'node_modules/fflate/LICENSE'), resolve(assets, 'licenses/fflate.txt'));
 
 const result = await Bun.build({
   entrypoints: [resolve(root, 'src/main.ts')],
@@ -51,7 +39,6 @@ const result = await Bun.build({
   naming: 'main.js',
   target: 'node',
   format: 'esm',
-  external: ['@forgeax/game-runtime'],
   minify: false,
 });
 

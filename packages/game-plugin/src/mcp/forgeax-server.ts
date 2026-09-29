@@ -13,14 +13,20 @@ import { collectStatus } from '../status/collect';
 import { renderStatus } from '../status/render';
 import { ROUTING_TEXT } from '../routing';
 import { runCurrentGame, RUN_TOOL_SCHEMA } from '../run/run-game';
+import { stopTrackedEnginePreviews } from '../run/engine-preview';
 import {
   generate3dTool,
   generateImageTool,
   GENERATE_3D_SCHEMA,
   GENERATE_IMAGE_SCHEMA,
 } from '../gen/generate';
-import { gameFileTools } from './game-files';
 import type { McpServerSpec } from './protocol';
+import { gameFileTools } from './game-files';
+import {
+  RELEASE_IDENTITY_MIME,
+  RELEASE_IDENTITY_URI,
+  releaseIdentityJson,
+} from '../install/release-manifest';
 
 /** Per-request environment. `cwd` is where project resolution starts by default. */
 export interface ServerCtx {
@@ -34,7 +40,7 @@ export interface ForgeaxMcpServerOptions {
   readonly authoringTools?: boolean;
   /** Only local stdio clients may redirect a request to their current working directory. */
   readonly allowTargetDir?: boolean;
-  /** A parent supervisor owns Server/Engine; this MCP process must not start a second Runtime. */
+  /** Accepted for supervisor compatibility; exact Engine Preview remains plugin-owned. */
   readonly existingServicesOnly?: boolean;
   /** Public origin used to turn loopback preview URLs into browser-reachable URLs. */
   readonly publicOrigin?: string;
@@ -98,13 +104,22 @@ export function createForgeaxMcpServer(
     instructions: ROUTING_TEXT,
 
     buildContext: () => ({ cwd: cwd ?? process.cwd() }),
+    shutdown: stopTrackedEnginePreviews,
 
     resources: [
+      {
+        uri: RELEASE_IDENTITY_URI,
+        name: 'ForgeaX game release identity',
+        description:
+          'Immutable package, Engine, carrier, SDK, pnpm, and release digest identity. Readable before a game is bound; performs no discovery or network request.',
+        mimeType: RELEASE_IDENTITY_MIME,
+        read: () => releaseIdentityJson(),
+      },
       {
         uri: 'forgeax://status',
         name: 'ForgeaX status',
         description:
-          'Preferred entry point. Project binding, capability tier, service health, game development kit and routing-rule freshness, and the single next action. Read-only.',
+          'Preferred entry point. Game binding, exact Engine/DevKit/carrier identity, Preview state, development kit and routing-rule freshness, and the single next action. Read-only.',
         mimeType: 'text/markdown',
         read: async (ctx) => renderStatus(await collectStatus(ctx.cwd)),
       },
@@ -114,7 +129,7 @@ export function createForgeaxMcpServer(
       {
         name: 'forgeax_status_lite',
         description:
-          'Compatibility fallback for clients that cannot read MCP resources; prefer the `forgeax://status` resource when available. Reports project binding, capability tier, service health, game development kit and routing-rule freshness, and the next action. Read-only — never writes to the workspace.',
+          'Compatibility fallback for clients that cannot read MCP resources; prefer the `forgeax://status` resource when available. Reports game binding, exact Engine/DevKit/carrier identity, Preview state, development kit and routing-rule freshness, and the next action. Read-only — never writes to the workspace.',
         inputSchema: {
           type: 'object',
           properties: allowTargetDir ? { ...TARGET_DIR_PROPERTY } : {},
@@ -128,13 +143,12 @@ export function createForgeaxMcpServer(
       {
         name: 'forgeax_run_current_game',
         description:
-          'Build, preview, reload, or verify the active game. One call covers what the user means by "run it", "let me see it", "reload", or "does it work": it installs the selected Runtime when needed, builds or reuses a static preview, returns a preview URL to open, and reports the Runtime log file. Read an available `runtime_logs.local_file` with your own file tool — log tailing is intentionally not a tool. Call this after a requested game change, not for ordinary edits the user has not asked to see.',
+          'Build and preview the active game through the exact released Engine CLI. The call runs the bounded Engine build, starts or reuses one release-aware verified Engine Preview child, and reports its exact Engine/build/instance identity plus state and log paths. Call this after a requested game change.',
         inputSchema: runInputSchema,
         run: async (args, ctx) => publicPreviewResult(
           await runCurrentGame(
             allowTargetDir ? args : { ...args, target_dir: ctx.cwd },
             ctx.cwd,
-            { existingServicesOnly: options.existingServicesOnly },
           ),
           options.publicOrigin,
         ),

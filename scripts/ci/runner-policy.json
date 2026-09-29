@@ -12,21 +12,6 @@
   "hostedRunnerAllowlist": [
     {
       "workflow": ".github/workflows/game-runtime-publish.yml",
-      "job": "runtime-scope",
-      "runners": [
-        "ubuntu-latest"
-      ],
-      "events": [
-        "pull_request",
-        "push:branch",
-        "push:tag",
-        "schedule",
-        "workflow_dispatch"
-      ],
-      "reason": "Runtime scope only derives an immutable affected-platform manifest and must complete before scarce native and self-hosted capacity is admitted."
-    },
-    {
-      "workflow": ".github/workflows/game-runtime-publish.yml",
       "job": "build-platform",
       "runners": [
         "macos-latest",
@@ -41,39 +26,11 @@
         ]
       ],
       "events": [
-        "pull_request",
-        "push:branch",
         "push:tag",
         "schedule",
         "workflow_dispatch"
       ],
-      "reason": "The tested affected-platform manifest admits only required native rows; macOS and Windows require hosted SDKs while Linux remains on the heavy self-hosted tier."
-    },
-    {
-      "workflow": ".github/workflows/submodule-pins.yml",
-      "job": "prerequisite-wait",
-      "runners": [
-        "ubuntu-latest"
-      ],
-      "events": [
-        "pull_request",
-        "push:branch",
-        "workflow_dispatch"
-      ],
-      "reason": "The prerequisite observer performs only GitHub API polling and must not reserve scarce self-hosted capacity while other required checks run."
-    },
-    {
-      "workflow": ".github/workflows/submodule-pins.yml",
-      "job": "check",
-      "runners": [
-        "ubuntu-latest"
-      ],
-      "events": [
-        "pull_request",
-        "push:branch",
-        "workflow_dispatch"
-      ],
-      "reason": "The required-context reporter only projects structured prerequisite and validator results; it does not materialize or execute Studio source."
+      "reason": "Only the scheduled, tagged, or explicitly dispatched low-frequency release lane may use native hosted SDKs; daily PR and branch runs are Linux self-hosted."
     }
   ]
 }

@@ -368,7 +368,7 @@ function readRecursiveInputResult(root: string): unknown {
   }
 }
 
-function checkRecursiveInput(root: string): { ok: boolean; result: RecursiveInputResult } {
+export function checkRecursiveInput(root: string): { ok: boolean; result: RecursiveInputResult } {
   const candidate = readRecursiveInputResult(root);
   const graph = projectGitlinkGraph(readAuthoritativeGitGraph(root));
   const typed = isRecursiveInputResult(candidate) ? candidate : null;
@@ -824,10 +824,10 @@ async function approveUnownedRuntimeStop(refusals: readonly StopRefusal[]): Prom
   }
 }
 
-function sourceProfileFromEnvironment(): Exclude<StartupProfile, 'desktop-prod'> {
+function sourceProfileFromEnvironment(): StartupProfile {
   const profile = process.env.FORGEAX_STARTUP_PROFILE;
   if (profile === undefined) return 'web-dev';
-  if (!isStartupProfile(profile) || profile === 'desktop-prod') {
+  if (!isStartupProfile(profile)) {
     throw new Error(`bun fx start web requires a source startup profile, got '${profile}'`);
   }
   return profile;
@@ -916,6 +916,17 @@ function doctor(args: string[]): never {
 }
 
 async function update(args: string[]): Promise<void> {
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log('Usage: bun fx update [--dry-run] [--no-stash] [--restart]');
+    console.log('Fast-forward the configured upstream, then materialize pinned inputs. No implicit main fallback.');
+    return;
+  }
+  const up = upstream();
+  if (!up) {
+    console.error('[update] no upstream configured; select the intended tracking branch before updating. No changes made.');
+    process.exitCode = 2;
+    return;
+  }
   const dryRun = args.includes('--dry-run');
   const stash = updateShouldStash(args);
   const restart = args.includes('--restart');
@@ -969,16 +980,8 @@ async function update(args: string[]): Promise<void> {
   }
 
   console.log(`[update] Updating ${currentBranch()}`);
-  const up = upstream();
   if (up) {
     results.push(runGitUpdateStep('root', '.', ['pull', '--ff-only', '--no-recurse-submodules'], dryRun, 'pulled latest root code'));
-  } else {
-    console.log('[update] no upstream; fetching origin/main and rebasing current branch');
-    const fetchResult = runGitUpdateStep('root', '.', ['fetch', '--no-recurse-submodules', 'origin', 'main'], dryRun, 'fetched origin/main');
-    results.push(fetchResult);
-    if (fetchResult.result !== 'failed') {
-      results.push(runGitUpdateStep('root', '.', ['rebase', 'origin/main'], dryRun, 'rebased onto origin/main'));
-    }
   }
 
   const rootOk = !results.some((row) => row.repoType === 'root' && row.result === 'failed');

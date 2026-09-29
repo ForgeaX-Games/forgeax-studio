@@ -52,6 +52,7 @@ export type ChangeManifest = {
 
 type BuildChangeManifestOptions = {
   eventName: string;
+  refType?: string;
   headSha: string;
   baseSha: string;
   trustScope: string;
@@ -112,7 +113,17 @@ export function buildChangeManifest(options: BuildChangeManifestOptions): Change
   const runCommon = fullNative || classified.changeClass === 'common' || classified.changeClass === 'platform-specific';
   const runUniversal = fullNative || classified.changeClass === 'universal-js'
     || classified.changeClass === 'common' || classified.changeClass === 'platform-specific';
-  const platforms = fullNative ? [...RUNTIME_PLATFORMS] : classified.platforms;
+  // Native macOS/Windows builders are an explicit low-frequency lane. A PR,
+  // ordinary branch push, or any other daily event may still validate the
+  // Linux package, but must not reserve hosted native capacity. Nightly,
+  // tag, and manual release runs remain the only native entry points.
+  const allowLowFrequencyNative = options.eventName === 'schedule'
+    || options.eventName === 'workflow_dispatch'
+    || options.refType === 'tag';
+  const requestedPlatforms = fullNative ? [...RUNTIME_PLATFORMS] : classified.platforms;
+  const platforms = allowLowFrequencyNative
+    ? requestedPlatforms
+    : requestedPlatforms.filter((platform) => platform === 'linux-x64');
   const runNative = platforms.length > 0;
   const runtimeRun = classified.changeClass !== 'none' && !draft;
   const studioQaRelevant = options.eventName !== 'pull_request' || changedPaths.some((path) =>
@@ -226,6 +237,7 @@ function main(): void {
   const inputDigest = computeInputDigest(collectInputDigestFacts(root, headSha, trustScope));
   const manifest = buildChangeManifest({
     eventName: requireValue(values, 'event'),
+    refType: values.get('ref-type'),
     headSha,
     baseSha: requireValue(values, 'base'),
     trustScope,

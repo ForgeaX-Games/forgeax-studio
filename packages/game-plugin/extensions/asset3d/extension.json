@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "asset3d",
+  "version": "1.0.0",
+  "skills": ["skills/art-3d-asset-library"],
+  "cli": "cli.mjs"
+}

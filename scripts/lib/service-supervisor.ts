@@ -46,6 +46,7 @@ export class ServiceSupervisor {
   constructor(private readonly options: ServiceSupervisorOptions = {}) {}
 
   launch(spec: ManagedServiceSpec): number {
+    if (this.shuttingDown) return 0;
     if (this.services.has(spec.name)) throw new Error(`service '${spec.name}' is already managed`);
     const service: ManagedService = { spec, restarts: 0 };
     this.services.set(spec.name, service);

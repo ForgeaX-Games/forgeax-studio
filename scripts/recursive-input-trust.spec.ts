@@ -123,7 +123,7 @@ describe('trusted recursive input producer', () => {
   });
 
   it('keeps the protected publisher token out of the source-as-data mount step', () => {
-    const sourceAsDataStepStart = trustedWorkflow.indexOf('Fetch trusted independent IDE mount (source-as-data)');
+    const sourceAsDataStepStart = trustedWorkflow.indexOf('Resolve trusted source snapshots from PR topology data');
     const sourceAsDataStepEnd = trustedWorkflow.indexOf('\n      - name:', sourceAsDataStepStart + 1);
     const sourceAsDataStep = trustedWorkflow.slice(
       sourceAsDataStepStart,

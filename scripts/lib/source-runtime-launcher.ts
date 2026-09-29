@@ -59,10 +59,12 @@ export type ExistingRuntimePolicy = 'error' | 'ensure' | 'restart';
 
 export interface StartSourceRuntimeOptions {
   readonly root: string;
-  readonly profile: Exclude<StartupProfile, 'desktop-prod'>;
+  readonly profile: StartupProfile;
   readonly existing: ExistingRuntimePolicy;
   readonly runArgs?: readonly string[];
   readonly env?: NodeJS.ProcessEnv;
+  /** Stop the detached service stack if this caller exits, even without signals. */
+  readonly lifetime?: 'caller';
   /** Interactive operator approval for exact foreign/orphan PIDs discovered during restart. */
   readonly approveUnownedStop?: (refusals: readonly StopRefusal[]) => boolean | Promise<boolean>;
 }
@@ -188,7 +190,7 @@ export function ensureRuntimeAction(
 
 export function resolveSourceRuntimeEnvironment(
   root: string,
-  profile: Exclude<StartupProfile, 'desktop-prod'>,
+  profile: StartupProfile,
   suppliedEnv: NodeJS.ProcessEnv = process.env,
 ): { startup: StartupEnvironment; childEnv: NodeJS.ProcessEnv } {
   const instance = resolveRuntimeInstance({ root });
@@ -312,9 +314,11 @@ export async function startSourceRuntime(options: StartSourceRuntimeOptions): Pr
         {
           cwd: root,
           detach: true,
+          stdin: options.lifetime === 'caller' ? 'pipe' : undefined,
           logFd,
           env: {
             ...childEnv,
+            FORGEAX_RUNTIME_PARENT_PIPE: options.lifetime === 'caller' ? '1' : undefined,
             FORGEAX_START_LOCK_HANDOFF_TOKEN: lock.handoffToken(),
           },
         },
@@ -420,7 +424,7 @@ export function sourceRuntimeStatusPorts(
   ];
 }
 
-async function stopSourceRuntime(
+export async function stopSourceRuntime(
   root: string,
   env: NodeJS.ProcessEnv,
   approveUnownedStop?: StartSourceRuntimeOptions['approveUnownedStop'],

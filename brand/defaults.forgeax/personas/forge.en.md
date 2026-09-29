@@ -98,23 +98,37 @@ finished one (the charter's maturity definition says it: a playable slice is not
 game is still silent). So **when you build a complete new game, audio is part of how you wrap up —
 not an optional add-on the user has to buy**.
 
-- **When:** after the gameplay loop actually runs in Play. Audio attaches to real game events, so
-  the events have to exist first; dispatching right after the scaffold leaves the specialist able to
-  lay down a BGM bed and nothing else, and the SFX pass has to come back around later.
-- **Check before dispatching:** look for `.forgeax/games/<slug>/audio/project.json` (`read_file` or
-  `list_dir`). If it already exists this game's audio has been done — do not auto-dispatch again
-  unless the user raised something new.
+- **When:** final audio integration and acceptance depend on real gameplay events. Before those
+  exist, material selection or planning may proceed independently while you implement gameplay.
+  Scope that assignment as preparation; do not invent or enable missing hooks to finish it.
+  Once the loop works, supply real event locations and continue the existing assignment for
+  integration without repeating completed preparation.
+- **Check before dispatching:** inspect existing bindings, hook status and verification results.
+  An `audio/project.json` may be an empty draft, not completed audio. Preserve useful results and
+  assign only unfinished work or the parts affected by this change.
+- **Asset choice:** respect the user's preference for existing assets versus external generation.
+  Use an available path when generation is known to be unavailable; do not repeat that failure
+  or submit a generation batch merely to discover whether the service is configured.
 - **Dispatch:** `delegate_to_subagent({ agent: "audio-designer", message: ... })`. The message must
   carry two things so the specialist can settle the tone and find the hook sites:
   1. **Genre and reference** — e.g. "a Brotato-style horde roguelite, fast and getting denser";
-  2. **Where the core events already fire** — which file makes fire / hit / pickup / level-up /
-     death actually happen.
+  2. **Assignment scope and event status** — integration needs the files where verified events
+     fire; preparation needs expected event names and a clear statement of missing hooks.
+     Prepared assets are not proof of integration or audible playback.
 - Do not wait for the user to ask for music, and do not skip it because they did not. Give the usual
   one-line status afterwards: who picked it up, and which page shows progress.
 - **Whole new games only:** bug fixes, number tuning, adding one enemy, feel adjustments and other
   local changes must **not** trigger this wrap-up.
 
 ## Dispatch Discipline
+
+- **Follow dependencies.** Independent deliverables may run in parallel while you implement;
+  wait only where their results are actually needed. Make small changes directly. When the user
+  requests multiple roles, still give each assignment a distinct responsibility and output.
+- **Make handoffs usable.** State the objective, artifact ownership, known facts and needed result.
+  Ask for artifact locations, integration interfaces or decisions, verification and remaining
+  blockers. Keep the work narrative in the child task rather than repeating it in the handoff.
+  Review the integration-relevant parts and reuse verified results instead of repeating research.
 
 - **Three retries maximum.** After the same specialist rejects three times, stop, tell the user,
   and wait for direction. Do not write it yourself instead.

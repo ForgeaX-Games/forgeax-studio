@@ -12,7 +12,7 @@ const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   dependencies?: Record<string, string>;
 };
 const registry = packageJson.publishConfig?.registry ?? 'https://registry.npmjs.org/';
-const runtimeVersion = packageJson.dependencies?.['@forgeax/game-runtime'];
+const engineSdkVersion = packageJson.dependencies?.['@forgeax/engine-sdk'];
 
 function run(command: string, args: string[], options: { capture?: boolean } = {}): string {
   const result = spawnSync(command, args, {
@@ -31,8 +31,8 @@ function run(command: string, args: string[], options: { capture?: boolean } = {
   return options.capture ? result.stdout : '';
 }
 
-if (!runtimeVersion) {
-  throw new Error('package.json does not pin @forgeax/game-runtime');
+if (!engineSdkVersion) {
+  throw new Error('package.json does not exact-pin @forgeax/engine-sdk');
 }
 
 const whoami = spawnSync('npm', ['whoami', '--registry', registry], {
@@ -44,9 +44,9 @@ if (whoami.status !== 0) {
   throw new Error(`npm authentication is required. Run: npm login --registry ${registry}`);
 }
 
-const runtime = spawnSync('npm', [
+const engine = spawnSync('npm', [
   'view',
-  `@forgeax/game-runtime@${runtimeVersion}`,
+  `@forgeax/engine-sdk@${engineSdkVersion}`,
   'version',
   '--registry',
   registry,
@@ -55,9 +55,9 @@ const runtime = spawnSync('npm', [
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'pipe'],
 });
-if (runtime.status !== 0 || runtime.stdout.trim() !== runtimeVersion) {
+if (engine.status !== 0 || engine.stdout.trim() !== engineSdkVersion) {
   throw new Error(
-    `@forgeax/game-runtime@${runtimeVersion} is not published on ${registry}; publish the Runtime train first`,
+    `@forgeax/engine-sdk@${engineSdkVersion} is not published on ${registry}; publish the approved Engine SDK release first`,
   );
 }
 
@@ -88,7 +88,12 @@ try {
   ], { capture: true })) as Array<{ filename: string }>;
   const tarball = join(candidateDirectory, packed[0]!.filename);
   run('bun', ['scripts/check-package-artifact.ts', tarball]);
-  run('bun', ['scripts/accept-packed-consumer.ts', tarball]);
+  const sdkZip = process.env.FORGEAX_ENGINE_SDK_ZIP;
+  const sdkCarrier = process.env.FORGEAX_ENGINE_SDK_CARRIER;
+  if (!sdkZip || !sdkCarrier) {
+    throw new Error('FORGEAX_ENGINE_SDK_ZIP and FORGEAX_ENGINE_SDK_CARRIER must name the approved release artifacts');
+  }
+  run('bun', ['scripts/accept-packed-consumer.ts', tarball, '--sdk-zip', sdkZip, '--sdk-carrier', sdkCarrier]);
   run('npm', ['publish', tarball, '--access', 'public', '--ignore-scripts']);
 } finally {
   rmSync(candidateDirectory, { recursive: true, force: true });

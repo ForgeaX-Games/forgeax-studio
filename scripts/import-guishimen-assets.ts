@@ -1,14 +1,13 @@
 // 鬼市门一次性导入:拷贝 40 视频→blobs/(重命名),生成 manifest/forge/scenarios。
-// 幂等:重跑覆盖(不追加)。用法:bun scripts/import-guishimen-assets.ts
+// 幂等:重跑覆盖(不追加)。用法:bun scripts/import-guishimen-assets.ts <source-directory>
 /* eslint-disable no-console */
 import { mkdirSync, copyFileSync, writeFileSync, readFileSync, statSync, existsSync } from 'fs'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { CLIP_MAP } from './guishimen/clip-map'
 import { assembleDb, SCENARIO_ID } from './guishimen/assemble'
 import { mergeSharedAssetManifest } from './video-asset-manifest'
 
-const SRC = '/Users/you/Downloads/video.chi1.4.boarding-1'
-const REPO = '/Users/you/github/forgeax-studio'
+const REPO = resolve(import.meta.dir, '..')
 const GAME = join(REPO, '.forgeax/games/guishimen')
 const GV = join(GAME, 'video-game')
 const ASSETS = join(GAME, 'assets')
@@ -16,6 +15,13 @@ const BLOBS = join(ASSETS, 'blobs')
 const NOW = 1751414400000 // 固定时间戳,保证幂等(不用 Date.now())
 
 function main() {
+  const sourceDirectory = process.argv[2]
+  if (!sourceDirectory || process.argv.length !== 3) {
+    console.error('Usage: bun scripts/import-guishimen-assets.ts <source-directory>')
+    process.exit(1)
+  }
+  const SRC = resolve(sourceDirectory)
+
   // 0) 前置:源目录齐全
   const missing = CLIP_MAP.filter((e) => !existsSync(join(SRC, e.src)))
   if (missing.length) {
@@ -25,6 +31,7 @@ function main() {
 
   // 1) 目录
   mkdirSync(BLOBS, { recursive: true })
+  mkdirSync(GV, { recursive: true })
 
   // 2) 拷贝 + manifest
   const assets = CLIP_MAP.map((e) => {

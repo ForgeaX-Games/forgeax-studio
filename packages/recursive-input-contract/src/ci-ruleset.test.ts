@@ -74,6 +74,37 @@ describe('read-only live ruleset probe', () => {
     expect(inactive.status).toBe('misaligned');
     expect(inactive.actual).toHaveProperty('enforcement', [{ id: '16532229', source: 'repository', enforcement: 'evaluate' }]);
 
+    const disabledExternalScan = compareLiveRulesets({
+      repository: expected.repository,
+      ref: expected.ref,
+      observedAt: 'now',
+      responseIdentity: 'disabled-external-scan',
+      rulesets: [
+        ruleset(),
+        ruleset({
+          id: '23589659',
+          enforcement: 'disabled',
+          contexts: ['ForgeaX Sensitive Scan - Other Repositories B@PULL_REQUEST'],
+          contextSource: 'repository:ruleset:23589659',
+        }),
+      ],
+    }, expected);
+    expect(disabledExternalScan.status).toBe('aligned');
+    expect(disabledExternalScan.actual).toHaveProperty('extra', []);
+
+    const disabledCannotSupplyRequiredContext = compareLiveRulesets({
+      repository: expected.repository,
+      ref: expected.ref,
+      observedAt: 'now',
+      responseIdentity: 'disabled-required-context',
+      rulesets: [
+        ruleset({ contexts: CI_REQUIRED_CONTEXTS.slice(0, -1) }),
+        ruleset({ id: 'disabled', enforcement: 'disabled', contexts: [CI_REQUIRED_CONTEXTS.at(-1)!] }),
+      ],
+    }, expected);
+    expect(disabledCannotSupplyRequiredContext.status).toBe('misaligned');
+    expect(disabledCannotSupplyRequiredContext.actual).toHaveProperty('missing', [CI_REQUIRED_CONTEXTS.at(-1)]);
+
     const strict = compareLiveRulesets({ repository: expected.repository, ref: expected.ref, observedAt: 'now', responseIdentity: 'strict', rulesets: [ruleset({ strictRequiredStatusChecks: true })] }, expected);
     expect(strict.status).toBe('misaligned');
     expect(strict.actual).toHaveProperty('strictRequiredStatusChecks', [true]);

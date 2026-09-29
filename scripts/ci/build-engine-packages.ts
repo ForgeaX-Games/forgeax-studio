@@ -24,6 +24,7 @@ export const ALL_ENGINE_PACKAGES_FILTER = './packages/**';
  * because their SDK/native artifacts are snapshots of every Engine package.
  */
 export const PREPARE_ENGINE_BUILD_FILTERS = [
+  '@forgeax/engine',
   '@forgeax/engine-app...',
   '@forgeax/engine-runtime...',
   '@forgeax/engine-ecs...',

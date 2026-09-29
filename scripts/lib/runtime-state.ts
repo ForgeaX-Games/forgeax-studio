@@ -265,15 +265,10 @@ function isRuntimeState(value: unknown): value is RuntimeState {
 
 function defaultRuntimeOwnerIdentity(startup: StartupEnvironment): RuntimeOwnerIdentity {
   const root = dirname(startup.resourceRoot);
-  return startup.sourceLayout === 'source'
-    ? {
-      server: { packageDir: join(root, 'packages/server'), entry: 'src/main.ts' },
-      interface: { dir: join(root, 'packages/ide') },
-    }
-    : {
-      server: { packageDir: join(startup.resourceRoot, 'server'), entry: 'src/main.ts' },
-      interface: { dir: join(startup.resourceRoot, 'interface') },
-    };
+  return {
+    server: { packageDir: join(root, 'packages/server'), entry: 'src/main.ts' },
+    interface: { dir: join(root, 'packages/ide') },
+  };
 }
 
 function cloneRuntimeOwnerIdentity(owners: RuntimeOwnerIdentity): RuntimeOwnerIdentity {
@@ -387,7 +382,7 @@ function validStartup(value: unknown, profile: string): value is StartupEnvironm
     'startupTimeoutMs',
   ]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return false;
-  if (value.sourceLayout !== 'source' && value.sourceLayout !== 'bundled') return false;
+  if (value.sourceLayout !== 'source') return false;
   return validPathFields(value)
     && validEndpoint(value.server)
     && validInterface(value.interface)
@@ -437,7 +432,7 @@ function validBridge(value: unknown): boolean {
 function validInterface(value: unknown): boolean {
   return validEndpoint(value)
     && isRecord(value)
-    && (value.runtime === 'vite' || value.runtime === 'server-spa')
+    && value.runtime === 'vite'
     && (value.protocol === 'http' || value.protocol === 'https')
     && typeof value.localOrigin === 'string' && value.localOrigin.trim() !== ''
     && typeof value.publicOrigin === 'string' && value.publicOrigin.trim() !== '';
@@ -511,21 +506,17 @@ function requireCoreManagedPorts(ports: ManagedRuntimePorts, startup: StartupEnv
 
 function coreManagedPortsMatch(
   ports: ManagedRuntimePorts,
-  startup: Pick<StartupEnvironment, 'server' | 'interface' | 'engine' | 'mcp'> & Partial<Pick<StartupEnvironment, 'sourceLayout'>>,
+  startup: Pick<StartupEnvironment, 'server' | 'interface' | 'engine' | 'mcp'>,
 ): boolean {
   if (ports.server !== startup.server.port || ports.engine !== startup.engine.port) return false;
-  // desktop-prod serves the SPA from the server listener; recording a second
-  // interface key for the same port would violate the no-duplicate contract.
-  return 'sourceLayout' in startup && startup.sourceLayout === 'bundled'
-    ? ports.interface === undefined
-    : ports.interface === startup.interface.port;
+  return ports.interface === startup.interface.port;
 }
 
 function coreManagedPorts(startup: StartupEnvironment): ManagedRuntimePorts {
   return {
     server: startup.server.port,
     engine: startup.engine.port,
-    ...(startup.sourceLayout === 'source' ? { interface: startup.interface.port } : {}),
+    interface: startup.interface.port,
     ...(startup.mcp.enabled ? { 'engine-mcp': startup.mcp.port } : {}),
   };
 }

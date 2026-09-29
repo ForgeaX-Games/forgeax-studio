@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { branchUsedByWorktreeList, packageGitEnvironment, syncPackages } from './package-sync.ts';
+import { branchUsedByWorktreeList, packageGitEnvironment, packageRemoteUrl, syncPackages } from './package-sync.ts';
 
 const roots: string[] = [];
 
@@ -19,6 +19,9 @@ function fixture(): { root: string; seed: string; remote: string } {
   const remote = join(root, 'remote.git');
   git(root, ['init', '-q', '--bare', remote]);
   git(root, ['init', '-q', seed]);
+  const hooks = join(root, 'empty-hooks');
+  mkdirSync(hooks);
+  git(seed, ['config', 'core.hooksPath', hooks]);
   git(seed, ['config', 'user.email', 'test@example.com']);
   git(seed, ['config', 'user.name', 'Test']);
   git(seed, ['switch', '-q', '-c', 'main']);
@@ -43,10 +46,83 @@ afterEach(() => {
 });
 
 describe('.packages checkout sync', () => {
-  test('rewrites canonical HTTPS package URLs even when the parent uses SSH', () => {
-    const env = packageGitEnvironment('/unused', {}, () => true);
-    expect(env.GIT_CONFIG_KEY_0).toBe('url.git@github.com:.insteadOf');
-    expect(env.GIT_CONFIG_VALUE_0).toBe('https://github.com/');
+  test('never treats an ordinary child directory as its parent Git checkout', () => {
+    const { root, remote } = fixture();
+    git(root, ['init', '-q']);
+    const parentRemote = 'https://example.invalid/parent.git';
+    git(root, ['remote', 'add', 'origin', parentRemote]);
+    const target = join(root, 'packages/sample');
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, 'package.json'), '{"name":"local-source"}');
+    writeFileSync(join(root, '.packages'), JSON.stringify([
+      { path: 'packages/sample', url: remote, branch: 'main' },
+    ]));
+    const result = syncPackages({ root, mode: 'ensure' });
+    expect(result.exitCode).toBe(1);
+    expect(result.results[0]?.detail).toBe('target exists but is not a git checkout');
+    expect(git(root, ['remote', 'get-url', 'origin'])).toBe(parentRemote);
+    expect(readFileSync(join(target, 'package.json'), 'utf8')).toBe('{"name":"local-source"}');
+  });
+
+  test('clones an empty child directory without reconfiguring its parent repository', () => {
+    const { root, remote } = fixture();
+    git(root, ['init', '-q']);
+    const parentRemote = 'https://example.invalid/parent.git';
+    git(root, ['remote', 'add', 'origin', parentRemote]);
+    mkdirSync(join(root, 'packages/sample'), { recursive: true });
+    writeFileSync(join(root, '.packages'), JSON.stringify([
+      { path: 'packages/sample', url: remote, branch: 'main' },
+    ]));
+    const result = syncPackages({ root, mode: 'ensure' });
+    expect(result.exitCode).toBe(0);
+    expect(result.results[0]?.action).toBe('cloned');
+    expect(git(root, ['remote', 'get-url', 'origin'])).toBe(parentRemote);
+    expect(git(join(root, 'packages/sample'), ['config', '--get', 'remote.origin.url'])).toBe(remote);
+  });
+
+  test('derives package remotes from the parent checkout transport', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forgeax-packages-parent-'));
+    roots.push(root);
+    git(root, ['init', '-q']);
+    git(root, ['remote', 'add', 'origin', 'git@github.com:ForgeaX-Games/forgeax-studio.git']);
+
+    expect(packageRemoteUrl(root, 'https://github.com/ForgeaX-Games/forgeax-ide.git'))
+      .toBe('git@github.com:ForgeaX-Games/forgeax-ide.git');
+    const env = packageGitEnvironment(root, {});
+    expect(env.GIT_CONFIG_COUNT).toBeUndefined();
+  });
+
+  test('records the derived SSH origin after cloning a canonical HTTPS package', () => {
+    const { root, remote } = fixture();
+    git(root, ['init', '-q']);
+    git(root, ['remote', 'add', 'origin', 'git@github.com:ForgeaX-Games/forgeax-studio.git']);
+    writeFileSync(join(root, '.packages'), JSON.stringify([
+      { path: 'packages/sample', url: 'https://github.com/ForgeaX-Games/sample.git', branch: 'main' },
+    ]));
+    const env = {
+      ...process.env,
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: `url.${remote}.insteadOf`,
+      GIT_CONFIG_VALUE_0: 'git@github.com:ForgeaX-Games/sample.git',
+    };
+
+    expect(syncPackages({ root, mode: 'ensure', env }).exitCode).toBe(0);
+    expect(git(join(root, 'packages/sample'), ['config', '--get', 'remote.origin.url']))
+      .toBe('git@github.com:ForgeaX-Games/sample.git');
+  });
+
+  test('migrates an existing canonical HTTPS checkout to the parent SSH transport', () => {
+    const { root, remote } = fixture();
+    git(root, ['init', '-q']);
+    git(root, ['remote', 'add', 'origin', 'git@github.com:ForgeaX-Games/forgeax-studio.git']);
+    writeFileSync(join(root, '.packages'), JSON.stringify([
+      { path: 'packages/sample', url: 'https://github.com/ForgeaX-Games/sample.git', branch: 'main' },
+    ]));
+    git(root, ['clone', '-q', remote, 'packages/sample']);
+
+    expect(syncPackages({ root, mode: 'ensure' }).exitCode).toBe(0);
+    expect(git(join(root, 'packages/sample'), ['config', '--get', 'remote.origin.url']))
+      .toBe('git@github.com:ForgeaX-Games/sample.git');
   });
 
   test('ensure clones once, preserves an existing checkout, and update advances it', () => {
@@ -64,6 +140,71 @@ describe('.packages checkout sync', () => {
 
     expect(syncPackages({ root, mode: 'update' }).exitCode).toBe(0);
     expect(readFileSync(join(root, 'packages/sample/value.txt'), 'utf8')).toBe('two\n');
+  });
+
+  test('fallback clone reuses an existing default branch', () => {
+    const { root, remote } = fixture();
+    git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    writeFileSync(join(root, '.packages'), JSON.stringify([
+      { path: 'packages/sample', url: remote, branch: 'main' },
+    ]));
+    const bin = join(root, 'bin');
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    git(root, ['init', '-q']);
+    mkdirSync(bin);
+    const wrapper = join(bin, 'git');
+    writeFileSync(wrapper, `#!/bin/sh\ncase " $* " in\n  *" clone --quiet --branch main "*) exit 128 ;;\nesac\nexec "${realGit}" "$@"\n`);
+    chmodSync(wrapper, 0o755);
+
+    const result = syncPackages({ root, mode: 'ensure', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    expect(result).toMatchObject({ exitCode: 0, results: [{ path: 'packages/sample', action: 'cloned' }] });
+    expect(git(join(root, 'packages/sample'), ['branch', '--show-current'])).toBe('main');
+  });
+
+  test('public installs use the selected snapshot tag and reject a missing tag', () => {
+    const { root, seed, remote } = fixture();
+    git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    git(seed, ['tag', 'v1.0.0-oss.test']);
+    git(seed, ['push', '-q', 'origin', 'v1.0.0-oss.test']);
+    advance(seed);
+    writeFileSync(join(root, '.forgeax-public-distribution'), '');
+    writeFileSync(join(root, '.packages'), JSON.stringify([
+      { path: 'packages/pinned', url: remote, branch: 'v1.0.0-oss.test' },
+      { path: 'packages/missing', url: remote, branch: 'v1.0.0-oss.missing' },
+    ]));
+    const result = syncPackages({ root, mode: 'ensure' });
+    expect(result.exitCode).toBe(1);
+    expect(result.results.map(({ action }) => action), JSON.stringify(result)).toEqual(['cloned', 'failed']);
+    expect(readFileSync(join(root, 'packages/pinned/value.txt'), 'utf8')).toBe('one\n');
+    expect(existsSync(join(root, 'packages/missing'))).toBe(false);
+  });
+
+  test('public updates follow the next snapshot and reject a deleted tag despite a local branch', () => {
+    const { root, seed, remote } = fixture();
+    git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    git(seed, ['tag', 'v1.0.0-oss.first']);
+    git(seed, ['push', '-q', 'origin', 'v1.0.0-oss.first']);
+    writeFileSync(join(root, '.forgeax-public-distribution'), '');
+    const select = (branch: string) => writeFileSync(join(root, '.packages'), JSON.stringify([
+      { path: 'packages/pinned', url: remote, branch },
+    ]));
+    select('v1.0.0-oss.first');
+    const installed = syncPackages({ root, mode: 'ensure' });
+    expect(installed.exitCode, JSON.stringify(installed)).toBe(0);
+    advance(seed);
+    git(seed, ['tag', 'v1.0.0-oss.next']);
+    git(seed, ['push', '-q', 'origin', 'v1.0.0-oss.next']);
+    select('v1.0.0-oss.next');
+    expect(syncPackages({ root, mode: 'update' }).results[0]?.action).toBe('updated');
+    const checkout = join(root, 'packages/pinned');
+    expect(readFileSync(join(checkout, 'value.txt'), 'utf8')).toBe('two\n');
+    expect(git(checkout, ['branch', '--show-current'])).toBe('');
+    git(checkout, ['branch', 'v1.0.0-oss.next']);
+    git(seed, ['push', '-q', 'origin', ':refs/tags/v1.0.0-oss.next']);
+    expect(syncPackages({ root, mode: 'update' })).toMatchObject({
+      exitCode: 1, results: [{ action: 'failed' }],
+    });
+    expect(readFileSync(join(checkout, 'value.txt'), 'utf8')).toBe('two\n');
   });
 
   test('focus updates only paths explicitly named by .packages.local', () => {

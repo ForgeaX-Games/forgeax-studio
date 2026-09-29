@@ -55,13 +55,21 @@
 
 ## 🚀 快速开始
 
+使用 `.bun-version`、`.nvmrc` 和 `.pnpm-version` 指定的 Bun、Node.js 与 pnpm
+版本。完整源码构建还需要 Rust 1.93.1 及 `wasm32-unknown-unknown` target、
+Emscripten 6.0.2（`emcc` 位于 `PATH`）和系统原生构建工具。下面的 bootstrap
+选项会安装所支持的引擎工具；请先激活 Emscripten 环境。
+
 ```bash
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
-bun install         # 装依赖 + 构建引擎/wasm;生成 .env(填 ANTHROPIC_API_KEY)
-bun fx start         # 启动 Studio 服务
+FORGEAX_BOOTSTRAP_YES=1 bun install  # 安装依赖并完成源码构建
+bun fx start web      # 启动 Server、IDE 与 Play runtime
 bun fx open          # 在常用 Chrome 中聚焦/打开 Studio
 ```
+
+首次启动向导支持先创建项目，使用 AI 生成时再配置模型供应商。
+用 `bun fx restart` 重启服务，用 `bun fx stop` 停止服务。
 
 本超级仓以 git submodule 形式把引擎、server、UI、编辑器、市场与游戏挂在 `packages/` 下。每个
 子模块都是 [ForgeaX-Games](https://github.com/ForgeaX-Games) 组织里的独立仓,各自带有详尽 README。

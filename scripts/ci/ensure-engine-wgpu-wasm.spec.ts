@@ -17,6 +17,10 @@ function fixture(): string {
 }
 
 describe('Engine wgpu WASM provisioning contract', () => {
+  test('rejects a caller-supplied Engine outside the selected Studio graph', () => {
+    const root = fixture();
+    expect(() => ensureEngineWgpuWasm({ root, engineRoot: join(root, 'other-engine') })).toThrow('wrong Engine working directory');
+  });
   test('accepts the complete wasm-pack output without invoking a toolchain', () => {
     const root = fixture();
     const pkg = join(root, 'packages/editor/packages/engine/packages/wgpu-wasm/pkg');

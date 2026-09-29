@@ -41,7 +41,7 @@ function fixture(mode: ReleaseIntentName = 'dry-run') {
   const definitions = [
     { logicalId: 'macos-arm64', targetTriple: 'aarch64-apple-darwin', installers: ['macos-arm64-dmg'] },
     { logicalId: 'macos-x64', targetTriple: 'x86_64-apple-darwin', installers: ['macos-x64-dmg'] },
-    { logicalId: 'windows-x64', targetTriple: 'x86_64-pc-windows-msvc', installers: ['windows-x64-msi', 'windows-x64-nsis'] },
+    { logicalId: 'windows-x64', targetTriple: 'x86_64-pc-windows-msvc', installers: ['windows-x64-nsis'] },
   ];
   const platforms = definitions.map((definition) => {
     const artifacts = definition.installers.map((logicalId) => {
@@ -103,7 +103,7 @@ function fixture(mode: ReleaseIntentName = 'dry-run') {
   const recoveryPath = join(root, 'recovery.jsonl');
   writeFileSync(recoveryPath, `${recovery.map((record) => JSON.stringify(record)).join('\n')}\n`);
   const options = {
-    version: '1.2.3', intent: mode, ideRevision: revision('a'), integrationRevision: revision('b'), mirror: false,
+    version: '1.2.3', intent: mode, ideRevision: revision('a'), integrationRevision: revision('b'),
     sidecarCandidateManifestUrl: sidecarUrl, sidecarCandidateManifestSha256: sidecarSha,
     orchestrationId, tag: 'v1.2.3', publisherRunId: '12345', publisherRunAttempt: 2,
     candidatePath, assetsDirectory: assets, evidenceDirectory: evidence, recoveryJournalPath: recoveryPath,

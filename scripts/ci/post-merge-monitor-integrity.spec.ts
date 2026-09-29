@@ -29,10 +29,17 @@ describe("post-merge recovery monitor", () => {
     expect(monitor).not.toContain("git push");
   });
 
+  test("observes scheduled and manual mirror publication failures", () => {
+    expect(monitor).toContain("github.event.workflow_run.name == 'mirror-multi'");
+    expect(monitor).toContain("github.event.workflow_run.event == 'schedule'");
+    expect(monitor).toContain("github.event.workflow_run.event == 'workflow_dispatch'");
+  });
+
   test("only ignores a cancelled run when a newer main run supersedes it", () => {
     expect(monitor).toContain("if: steps.inspect.outputs.conclusion == 'cancelled'");
     expect(monitor).toContain("A real failure is actionable even when main has advanced");
     expect(monitor).toContain("cancelled run superseded by newer run");
+    expect(monitor).toContain("event: wr.event");
     expect(monitor).not.toContain("Runs for different main SHAs can finish out of order. Ignore an older");
   });
 

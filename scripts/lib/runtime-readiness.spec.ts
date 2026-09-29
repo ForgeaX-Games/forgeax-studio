@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { probeRuntime, readinessSummary, waitForRuntime } from './runtime-readiness.ts';
+import { probeRuntime, readinessSummary, waitForHttp, waitForRuntime } from './runtime-readiness.ts';
 import { readRuntimeState, RuntimeStateStore } from './runtime-state.ts';
 import { resolveStartupEnvironment } from './startup-environment.ts';
 
@@ -16,6 +16,20 @@ afterEach(async () => {
 });
 
 describe('runtime readiness', () => {
+  test('desktop dependency wait requires HTTP readiness beyond a bound TCP port', async () => {
+    let ready = false;
+    const server = createServer((_request, response) => { response.statusCode = ready ? 200 : 503; response.end(); });
+    servers.push(server);
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('missing test port');
+    const url = `http://127.0.0.1:${address.port}/health`;
+    expect((await waitForHttp(url, 0)).ready).toBe(false);
+    const timer = setTimeout(() => { ready = true; }, 50);
+    try { expect((await waitForHttp(url, 2000)).ready).toBe(true); }
+    finally { clearTimeout(timer); }
+  });
+
   test('requires real HTTP success from server, interface proxy, and engine', async () => {
     const serverPort = await listen('/api/health');
     const interfacePort = await listen('/api/health');
@@ -71,8 +85,7 @@ describe('runtime state', () => {
     roots.push(root);
     const startup = resolveStartupEnvironment({
       root,
-      homeDir: root,
-      profile: 'desktop-prod',
+      profile: 'desktop-dev',
       env: {
         FORGEAX_RESOURCE_ROOT: join(root, 'resources'),
         FORGEAX_PROJECT_ROOT: join(root, 'projects'),
@@ -86,10 +99,10 @@ describe('runtime state', () => {
 
     expect(readRuntimeState(startup.stateFile)).toMatchObject({
       schemaVersion: 1,
-      profile: 'desktop-prod',
+      profile: 'desktop-dev',
       status: 'failed',
       launcherPid: 321,
-      publicOrigin: 'http://127.0.0.1:18810',
+      publicOrigin: 'http://127.0.0.1:18920',
       servicePids: { server: 111 },
       error: 'engine did not become ready',
     });

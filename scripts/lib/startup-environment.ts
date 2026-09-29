@@ -1,15 +1,13 @@
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 export const STARTUP_PROFILES = [
   'web-dev',
   'desktop-dev',
   'anydev-web',
-  'desktop-prod',
 ] as const;
 
 export type StartupProfile = (typeof STARTUP_PROFILES)[number];
-export type UiRuntime = 'vite' | 'server-spa';
+export type UiRuntime = 'vite';
 export type RestartPolicy = 'fail-fast' | 'bounded';
 
 export interface StartupEndpoint {
@@ -21,7 +19,7 @@ export interface StartupEndpoint {
 export interface StartupEnvironment {
   readonly schemaVersion: 1;
   readonly profile: StartupProfile;
-  readonly sourceLayout: 'source' | 'bundled';
+  readonly sourceLayout: 'source';
   readonly resourceRoot: string;
   readonly projectRoot: string;
   readonly envFile: string;
@@ -70,15 +68,12 @@ interface ResolveStartupEnvironmentOptions {
   readonly root: string;
   readonly profile?: StartupProfile | string;
   readonly env?: Readonly<Record<string, string | undefined>>;
-  readonly homeDir?: string;
 }
 
 const SOURCE_SERVER_PORT = 18900;
 const SOURCE_INTERFACE_PORT = 18920;
 const SOURCE_ENGINE_PORT = 15173;
 const SOURCE_MCP_PORT = 18940;
-const DESKTOP_SERVER_PORT = 18810;
-const DESKTOP_ENGINE_PORT = 15273;
 
 export function isStartupProfile(value: string | undefined): value is StartupProfile {
   return STARTUP_PROFILES.includes(value as StartupProfile);
@@ -95,37 +90,25 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
 
   const profile = profileValue;
   const root = resolve(options.root);
-  const home = resolve(options.homeDir ?? homedir());
-  const bundled = profile === 'desktop-prod';
   // assetRoot() is anchored at the `packages/` layout in source mode. Keep
   // the project root separate: it owns writable `.forgeax/` state, while the
   // resource root owns read-only editor templates, interface assets, and
   // marketplace extensions. Passing the repo root here makes game creation
   // look under `<repo>/games` and fail with "game template not found" even
   // though the engine-owned template exists under `<repo>/packages/editor`.
-  const resourceRoot = bundled
-    ? resolve(env.FORGEAX_RESOURCE_ROOT ?? root)
-    : resolve(root, 'packages');
-  const projectRoot = bundled
-    ? resolve(env.FORGEAX_PROJECT_ROOT ?? join(home, 'ForgeaxProjects'))
-    : resolve(env.FORGEAX_PROJECT_ROOT ?? root);
+  const resourceRoot = resolve(root, 'packages');
+  const projectRoot = resolve(env.FORGEAX_PROJECT_ROOT ?? root);
   const envFile = resolve(env.FORGEAX_ENV_FILE ?? join(projectRoot, '.env'));
 
-  const serverPort = bundled
-    ? portFrom(env, ['FORGEAX_DESKTOP_SERVER_PORT', 'FORGEAX_SERVER_PORT'], DESKTOP_SERVER_PORT)
-    : portFrom(env, ['FORGEAX_SERVER_PORT'], SOURCE_SERVER_PORT);
-  const enginePort = bundled
-    ? portFrom(env, ['FORGEAX_DESKTOP_ENGINE_PORT', 'FORGEAX_ENGINE_PORT'], DESKTOP_ENGINE_PORT)
-    : portFrom(env, ['FORGEAX_ENGINE_PORT'], SOURCE_ENGINE_PORT);
-  const interfacePort = bundled
-    ? serverPort
-    : port(env.FORGEAX_INTERFACE_PORT, SOURCE_INTERFACE_PORT, 'FORGEAX_INTERFACE_PORT');
-  const bridgeEnabled = !bundled && env.FORGEAX_BRIDGE !== '0';
-  const bridgePort = port(env.FORGEAX_BRIDGE_PORT, 15295, 'FORGEAX_BRIDGE_PORT');
-  const mcpEnabled = !bundled && env.FORGEAX_MCP_HTTP === '1';
+  const serverPort = port(env.FORGEAX_SERVER_PORT, SOURCE_SERVER_PORT, 'FORGEAX_SERVER_PORT');
+  const enginePort = port(env.FORGEAX_ENGINE_PORT, SOURCE_ENGINE_PORT, 'FORGEAX_ENGINE_PORT');
+  const interfacePort = port(env.FORGEAX_INTERFACE_PORT, SOURCE_INTERFACE_PORT, 'FORGEAX_INTERFACE_PORT');
+  const bridgeEnabled = env.FORGEAX_BRIDGE === '1';
+  const bridgePort = port(env.FORGEAX_BRIDGE_PORT ?? env.FORGEAX_BRIDGE_CONFIG_PORT, 15295, env.FORGEAX_BRIDGE_PORT === undefined ? 'FORGEAX_BRIDGE_CONFIG_PORT' : 'FORGEAX_BRIDGE_PORT');
+  const mcpEnabled = env.FORGEAX_MCP_HTTP === '1';
   const mcpPort = port(env.FORGEAX_MCP_PORT, SOURCE_MCP_PORT, 'FORGEAX_MCP_PORT');
 
-  if (serverPort === enginePort || (!bundled && new Set([serverPort, enginePort, interfacePort]).size !== 3)) {
+  if (new Set([serverPort, enginePort, interfacePort]).size !== 3) {
     throw new Error(
       `startup profile '${profile}' resolves colliding core ports: server=${serverPort}, interface=${interfacePort}, engine=${enginePort}`,
     );
@@ -136,48 +119,36 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
     );
   }
 
-  const protocol = !bundled && env.FORGEAX_INTERFACE_HTTPS === '1' ? 'https' : 'http';
+  const protocol = env.FORGEAX_INTERFACE_HTTPS === '1' ? 'https' : 'http';
   const localOrigin = `${protocol}://127.0.0.1:${interfacePort}`;
-  const publicOrigin = bundled
-    ? localOrigin
-    : env.FORGEAX_PUBLIC_ORIGIN?.trim() || localOrigin;
-  const optional = bundled
-    ? {
-      narrativePort: 8900,
-      faceMaskPort: 18930,
-      rhiReviewerPort: 15274,
-      reelUrl: 'http://127.0.0.1:15175',
-      pluginPortOffset: 0,
-    }
-    : {
-      narrativePort: port(env.NARRATIVE_PORT, 8900, 'NARRATIVE_PORT'),
-      faceMaskPort: port(env.FACE_MASK_PORT, 18930, 'FACE_MASK_PORT'),
-      rhiReviewerPort: port(env.FORGEAX_RHI_REVIEWER_PORT, 15274, 'FORGEAX_RHI_REVIEWER_PORT'),
-      reelUrl: env.FORGEAX_REEL_URL?.trim() || 'http://127.0.0.1:15175',
-      pluginPortOffset: nonNegativeInteger(env.FORGEAX_PLUGIN_PORT_OFFSET, 0, 'FORGEAX_PLUGIN_PORT_OFFSET'),
-    };
-  if (!bundled) {
-    const managedPorts: ReadonlyArray<readonly [name: string, port: number]> = [
-      ['server', serverPort],
-      ['interface', interfacePort],
-      ['engine', enginePort],
-      ...(mcpEnabled ? [['engine-mcp', mcpPort] as const] : []),
-      ...(bridgeEnabled ? [['bridge', bridgePort] as const] : []),
-      ['narrative', optional.narrativePort],
-      ['face-mask', optional.faceMaskPort],
-      ['rhi-reviewer', optional.rhiReviewerPort],
-    ];
-    const duplicates = managedPorts.filter((entry, index) =>
-      managedPorts.findIndex((candidate) => candidate[1] === entry[1]) !== index,
+  const publicOrigin = env.FORGEAX_PUBLIC_ORIGIN?.trim() || localOrigin;
+  const optional = {
+    narrativePort: port(env.NARRATIVE_PORT, 8900, 'NARRATIVE_PORT'),
+    faceMaskPort: port(env.FACE_MASK_PORT, 18930, 'FACE_MASK_PORT'),
+    rhiReviewerPort: port(env.FORGEAX_RHI_REVIEWER_PORT, 15274, 'FORGEAX_RHI_REVIEWER_PORT'),
+    reelUrl: env.FORGEAX_REEL_URL?.trim() || 'http://127.0.0.1:15175',
+    pluginPortOffset: nonNegativeInteger(env.FORGEAX_PLUGIN_PORT_OFFSET, 0, 'FORGEAX_PLUGIN_PORT_OFFSET'),
+  };
+  const managedPorts: ReadonlyArray<readonly [name: string, port: number]> = [
+    ['server', serverPort],
+    ['interface', interfacePort],
+    ['engine', enginePort],
+    ...(mcpEnabled ? [['engine-mcp', mcpPort] as const] : []),
+    ...(bridgeEnabled ? [['bridge', bridgePort] as const] : []),
+    ['narrative', optional.narrativePort],
+    ['face-mask', optional.faceMaskPort],
+    ['rhi-reviewer', optional.rhiReviewerPort],
+  ];
+  const duplicates = managedPorts.filter((entry, index) =>
+    managedPorts.findIndex((candidate) => candidate[1] === entry[1]) !== index,
+  );
+  if (duplicates.length > 0) {
+    throw new Error(
+      `startup profile '${profile}' resolves colliding managed ports: ${managedPorts
+        .filter((entry) => duplicates.some((duplicate) => duplicate[1] === entry[1]))
+        .map(([name, port]) => `${name}=${port}`)
+        .join(', ')}`,
     );
-    if (duplicates.length > 0) {
-      throw new Error(
-        `startup profile '${profile}' resolves colliding managed ports: ${managedPorts
-          .filter((entry) => duplicates.some((duplicate) => duplicate[1] === entry[1]))
-          .map(([name, port]) => `${name}=${port}`)
-          .join(', ')}`,
-      );
-    }
   }
   const stateFile = resolve(
     env.FORGEAX_RUNTIME_STATE_FILE
@@ -185,27 +156,25 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
   );
   const logFile = resolve(
     env.FORGEAX_RUNTIME_LOG_FILE
-      ?? (bundled
-        ? join(projectRoot, '.logs', 'local-runtime.log')
-        : join(projectRoot, '.forgeax', 'runtime', 'stack.log')),
+      ?? join(projectRoot, '.forgeax', 'runtime', 'stack.log'),
   );
 
   return {
     schemaVersion: 1,
     profile,
-    sourceLayout: bundled ? 'bundled' : 'source',
+    sourceLayout: 'source',
     resourceRoot,
     projectRoot,
     envFile,
     stateFile,
     logFile,
     server: {
-      host: bundled ? '127.0.0.1' : (env.FORGEAX_SERVER_HOST ?? '0.0.0.0'),
+      host: env.FORGEAX_SERVER_HOST ?? '0.0.0.0',
       port: serverPort,
       healthPath: '/api/health',
     },
     engine: {
-      host: bundled ? '127.0.0.1' : (env.FORGEAX_ENGINE_HOST ?? '0.0.0.0'),
+      host: env.FORGEAX_ENGINE_HOST ?? '0.0.0.0',
       port: enginePort,
       healthPath: '/preview/',
     },
@@ -222,8 +191,8 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
       port: bridgePort,
     },
     interface: {
-      runtime: bundled ? 'server-spa' : 'vite',
-      host: bundled ? '127.0.0.1' : '0.0.0.0',
+      runtime: 'vite',
+      host: '0.0.0.0',
       port: interfacePort,
       protocol,
       healthPath: '/api/health',
@@ -242,12 +211,10 @@ export function resolveStartupEnvironment(options: ResolveStartupEnvironmentOpti
     ...(env.FORGEAX_INTERFACE_ALLOWED_HOSTS === undefined
       ? {}
       : { allowedHosts: env.FORGEAX_INTERFACE_ALLOWED_HOSTS }),
-    supervision: bundled
-      ? { restartPolicy: 'bounded', maxRestarts: 5 }
-      : { restartPolicy: 'fail-fast', maxRestarts: 0 },
+    supervision: { restartPolicy: 'fail-fast', maxRestarts: 0 },
     startupTimeoutMs: positiveInteger(
       env.FORGEAX_STARTUP_TIMEOUT_MS,
-      bundled ? 60_000 : 180_000,
+      180_000,
       'FORGEAX_STARTUP_TIMEOUT_MS',
     ),
   };
@@ -278,28 +245,29 @@ export function startupProcessEnv(
       FORGEAX_MCP_URL: `http://127.0.0.1:${startup.mcp.port}`,
     } : {}),
     ...(startup.gatewayBridge.enabled
-      ? { FORGEAX_BRIDGE_PORT: String(startup.gatewayBridge.port) }
-      : startup.sourceLayout === 'source' ? { FORGEAX_BRIDGE: '0' } : {}),
+      ? { FORGEAX_BRIDGE: '1', FORGEAX_BRIDGE_PORT: String(startup.gatewayBridge.port), FORGEAX_EDITOR_RELAY_URL: `http://${startup.gatewayBridge.host}:${startup.gatewayBridge.port}` }
+      : { FORGEAX_BRIDGE: '0' }),
     FORGEAX_INTERFACE_PORT: String(startup.interface.port),
     FORGEAX_HMR_CLIENT_PORT: String(startup.hmrClientPort),
-    ...(startup.sourceLayout === 'source' ? {
-      NARRATIVE_PORT: String(startup.optional.narrativePort),
-      FACE_MASK_PORT: String(startup.optional.faceMaskPort),
-      FORGEAX_RHI_REVIEWER_PORT: String(startup.optional.rhiReviewerPort),
-      FORGEAX_REEL_URL: startup.optional.reelUrl,
-      FORGEAX_PLUGIN_PORT_OFFSET: String(startup.optional.pluginPortOffset),
-      FORGEAX_ASSET_CORS_ORIGINS: startup.assetCorsOrigins.join(','),
-      FORGEAX_AGENT_HOST_SOCK: startup.agentHostSocket,
-      // Source startup readiness must describe the three core services, not an
-      // optional project-MCP warmup whose browser server can take minutes to
-      // enumerate. The first MCP turn still discovers lazily; packaged runtimes
-      // keep eager warmup, and developers can opt source mode back in with `=1`.
-      FORGEAX_PROJECT_MCP_PREWARM: base.FORGEAX_PROJECT_MCP_PREWARM ?? '0',
-    } : {}),
-    FORGEAX_SERVE_SPA: startup.interface.runtime === 'server-spa' ? '1' : '0',
+    FORGEAX_BRIDGE_CONFIG_PORT: String(startup.gatewayBridge.port),
+    NARRATIVE_PORT: String(startup.optional.narrativePort),
+    FACE_MASK_PORT: String(startup.optional.faceMaskPort),
+    FORGEAX_RHI_REVIEWER_PORT: String(startup.optional.rhiReviewerPort),
+    FORGEAX_REEL_URL: startup.optional.reelUrl,
+    FORGEAX_PLUGIN_PORT_OFFSET: String(startup.optional.pluginPortOffset),
+    FORGEAX_ASSET_CORS_ORIGINS: startup.assetCorsOrigins.join(','),
+    FORGEAX_AGENT_HOST_SOCK: startup.agentHostSocket,
+    // Source startup readiness must describe the three core services, not an
+    // optional project-MCP warmup whose browser server can take minutes to
+    // enumerate. The first MCP turn discovers lazily; developers can opt
+    // back into eager warmup with `=1`.
+    FORGEAX_PROJECT_MCP_PREWARM: base.FORGEAX_PROJECT_MCP_PREWARM ?? '0',
+    FORGEAX_SERVE_SPA: '0',
   };
-  if (!startup.gatewayBridge.enabled && startup.sourceLayout === 'source') {
+  if (!startup.gatewayBridge.enabled) {
     delete childEnv.FORGEAX_BRIDGE_PORT;
+    delete childEnv.FORGEAX_BRIDGE_URL;
+    delete childEnv.FORGEAX_EDITOR_RELAY_URL;
   }
   return childEnv;
 }
@@ -312,22 +280,6 @@ function port(value: string | undefined, fallback: number, name: string): number
   const resolved = positiveInteger(value, fallback, name);
   if (resolved > 65_535) throw new Error(`${name} must be <= 65535, got ${resolved}`);
   return resolved;
-}
-
-/**
- * Read a port from the first variable that is actually set, so a malformed value is
- * reported against the variable that carried it rather than the preferred one.
- */
-function portFrom(
-  env: Readonly<Record<string, string | undefined>>,
-  names: readonly string[],
-  fallback: number,
-): number {
-  for (const name of names) {
-    const value = env[name];
-    if (value !== undefined && value.trim() !== '') return port(value, fallback, name);
-  }
-  return fallback;
 }
 
 function positiveInteger(value: string | undefined, fallback: number, name: string): number {

@@ -3,12 +3,16 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { verifyLaunch } from '../src/install/verify';
+import { INSTALL_VERIFY_TIMEOUT_MS, verifyLaunch } from '../src/install/verify';
 
 const root = resolve(import.meta.dir, '..');
 const binary = resolve(root, 'dist', 'main.js');
 
 describe('real self-binary MCP handshake', () => {
+  test('keeps the bounded cold-start install verification timeout', () => {
+    expect(INSTALL_VERIFY_TIMEOUT_MS).toBe(120_000);
+  });
+
   beforeAll(() => {
     execFileSync('bun', ['build.mjs'], { cwd: root, stdio: 'pipe' });
   });

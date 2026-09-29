@@ -57,201 +57,68 @@ jobs:
   build:
     name: typecheck + build + smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
+    env:
+      FORGEAX_BOOTSTRAP_YES: '1'
+      FORGEAX_REQUIRE_COMPLETE_SETUP: '1'
+      FORGEAX_SKIP_GAMES: '1'
+      FORGEAX_SKIP_HARNESS: '1'
     steps:
-      # Public mirror: all submodules are public repos under ForgeaX-Games — no
-      # token needed (unlike internal CI, which uses INTERNAL_TOKEN for private subs).
-      - name: Checkout (with submodules)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 1
-
-      # ── Toolchain ──────────────────────────────────────────────────────
-      # bun / node(.nvmrc) / pnpm(.pnpm-version) + the Rust+wasm toolchain that
-      # `bun install` needs to build wgpu-wasm (without it the engine vite server
-      # dies with ENOENT wgpu_wasm_bg.wasm).
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v2
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
-
-      - name: Setup Node.js (from .nvmrc)
-        uses: actions/setup-node@v4
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
-
-      - name: Read pnpm version (SSOT .pnpm-version)
+      - name: Read pnpm version
         id: pnpm-version
         run: echo "value=$(cat .pnpm-version)" >> "$GITHUB_OUTPUT"
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: ${{ steps.pnpm-version.outputs.value }}
-
-      # 1.93 = wgpu's MSRV (same crate as internal, just at the top-level engine path).
-      - name: Setup Rust toolchain (for wgpu-wasm)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup native source build tools
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
-          toolchain: '1.93'
+          toolchain: '1.93.1'
           targets: wasm32-unknown-unknown
-
-      - name: Setup wasm-pack
-        uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.14.0
-
-      # ── Caches (deps / compile output only — never dist artifacts) ─────
-      # Engine lives at packages/editor/packages/engine (nested under editor, same as
-      # internal — that's what root workspaces builds). Caches key on lockfiles /
-      # submodule SHAs so a stale cache can never mask a regression (miss → cold
-      # build at full cost, never a false green).
-      - name: Cache Rust (cargo registry + wgpu-wasm target)
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: packages/editor/packages/engine/packages/wgpu-wasm
-          shared-key: wgpu-wasm
-          cache-on-failure: 'false'
-
-      - name: Resolve pnpm store path
-        id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache pnpm store (engine + plugin deps)
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('.pnpm-version', '.nvmrc', 'packages/editor/packages/engine/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Cache bun install (root + plugin deps)
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('.nvmrc', 'bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
-      # Engine dist cache — keyed on the engine submodule SHA (perfect fingerprint
-      # of its source; pin unchanged ⇒ dist unchanged). On hit, FORGEAX_SKIP_ENGINE_BUILD
-      # lets prepare.ts skip the tsup build (it still installs workspace symlinks);
-      # prepare.ts guards the skip on dist/ existing, so a partial restore self-heals.
-      - name: Resolve engine submodule SHA
-        id: engine-sha
-        run: echo "sha=$(git -C packages/editor/packages/engine rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache engine package dist (tsup output)
-        id: engine-dist
-        uses: actions/cache@v4
-        with:
-          # wgpu-wasm/pkg is fetched (not committed) by the build step below; a
-          # dist-only cache hit skips that step and leaves studio's vite build
-          # without pkg/wgpu_wasm.js. Cache pkg alongside dist so hits restore
-          # both. Key v2: v1 entries were saved without pkg/ and must be missed.
-          path: |
-            packages/editor/packages/engine/packages/*/dist
-            packages/editor/packages/engine/packages/wgpu-wasm/pkg
-          key: ${{ runner.os }}-engine-dist-v2-${{ steps.engine-sha.outputs.sha }}
-
-      - name: Enable engine-build skip on dist cache hit
-        if: steps.engine-dist.outputs.cache-hit == 'true'
-        run: echo "FORGEAX_SKIP_ENGINE_BUILD=1" >> "$GITHUB_ENV"
-
-      # Marketplace plugin dist cache — keyed on the marketplace submodule SHA.
-      # Touch restored dist before prepare.ts so its per-plugin freshness check skips
-      # the rebuild (checkout stamps source to "now"; cached dist must look newer).
-      # ── Seed .env before prepare (non-interactive) ────────────────────
-      # prepare.ts scaffolds .env from .env.example silently when missing;
-      # pre-seed a dummy key so smoke never depends on interactive prompts.
-      - name: Seed .env (dummy ANTHROPIC_API_KEY for non-interactive setup)
+      - name: Install Emscripten archive support
         run: |
-          set -eux
-          cp .env.example .env
-          sed -i 's|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=sk-ant-ci-dummy|' .env
-          grep -E '^ANTHROPIC_API_KEY=' .env
-
-      # ── Script syntax gate (cheap, runs first) ─────────────────────────
-      - name: Script syntax check (scripts/*.ts + remaining *.sh)
-        run: |
-          set -eux
-          for f in scripts/*.ts scripts/lib/*.ts; do bun build "$f" --target=node >/dev/null; done
-          find scripts -maxdepth 2 -name '*.sh' -print0 | xargs -0 -n1 bash -n
-
-      # ── bun install (triggers prepare once) ───────────────────────────
-      # No --frozen-lockfile gate: the mirror ships no bun.lock (workspace set
-      # differs from internal). FORGEAX_SKIP_HARNESS=1: skip harness sync +
-      # skill-install (public mirror has no harness; avoids py-missing warn).
-      - name: bun install (triggers prepare)
+          if ! command -v xz >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get install -y xz-utils
+            else
+              sudo apt-get install -y xz-utils
+            fi
+          fi
+      - name: Setup Emscripten for public WASM builds
+        uses: mymindstorm/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021
+        with:
+          version: '6.0.2'
+      - name: Complete anonymous source install
         run: bun install
-        env:
-          FORGEAX_SKIP_HARNESS: '1'
-
-      # publicDistribution skips engine builds in prepare.ts, but the editor
-      # typecheck needs engine .d.ts. When the dist cache misses, build here.
-      - name: Build engine packages (dist cache miss)
-        if: steps.engine-dist.outputs.cache-hit != 'true'
-        run: |
-          set -eux
-          cd packages/editor/packages/engine
-          pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
-          # wgpu wasm — try prebuilt release first, fall back to compile
-          pnpm -F @forgeax/engine-wgpu-wasm fetch-wasm || \
-            pnpm -F @forgeax/engine-wgpu-wasm build:wasm || true
-          # Build library packages only. Engine demo apps are not required by
-          # Studio and some intentionally depend on optional private asset roots;
-          # building the whole workspace makes an asset-less public clone attempt
-          # to resolve their virtual pack modules.
-          pnpm --filter './packages/**' -r build
-          # emit .d.ts (tsc composite project)
-          pnpm exec tsc -b || { pnpm exec tsc -b --clean && pnpm exec tsc -b; } || true
-
-      # Restore mtime ordering so run.ts's freshness gates don't refuse to boot
-      # (wgpu .wasm must be newer than the committed pkg/*.js; engine dist newer
-      # than src on a cache hit). Content is correct; only mtime ordering needs repair.
-      - name: Touch engine artifacts to satisfy run.ts freshness gates
-        run: |
-          set -eux
-          # wasm/dist may not exist on first run (publicDistribution skips engine builds);
-          # the touch is only needed when a cache restore made mtime ordering stale.
-          [ -f packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm ] && \
-            touch packages/editor/packages/engine/packages/wgpu-wasm/pkg/wgpu_wasm_bg.wasm || true
-          find packages/editor/packages/engine/packages/*/dist -type f -exec touch {} + 2>/dev/null || true
-
-      # The current public topology keeps only root-owned source packages in
-      # the superproject workspace. Gitlink repositories and the floating IDE
-      # own independent dependency graphs and must not be typechecked as if they
-      # were still one monorepo.
+      - name: Validate and build the public IDE
+        run: bun scripts/ci/check-public-ide.ts
       - name: Typecheck inline Studio workspaces
         run: |
           bun run --cwd packages/recursive-input-contract typecheck
           bun run --cwd packages/npc-client typecheck
-
-      # Hydrate the public IDE from the generated public .packages manifest.
-      # This is source-only and anonymous: the manifest points at ForgeaX-Games.
-      - name: Materialize public IDE source
-        run: bun scripts/packages.ts ensure --only ide
-
-      - name: Install independent public product dependencies
-        run: |
-          bun install --cwd packages/interface --frozen-lockfile --ignore-scripts
-          bun install --cwd packages/ide --frozen-lockfile --ignore-scripts
-
-      # Interface is independently buildable at its selected source revision.
-      # IDE is a product composition snapshot selected from a different release
-      # branch; verify its release-source and desktop resource contracts without
-      # rewriting either source to manufacture cross-repository compatibility.
-      - name: Interface package-boundary guard
-        run: bun run --cwd packages/interface lint:dep
-
-      - name: Build public Interface
-        run: bun run --cwd packages/interface build
-
-      - name: Validate public IDE release sources
+      - name: Install browser for runtime verification
+        run: node packages/ide/node_modules/playwright-core/cli.js install --with-deps chromium
+      - name: Start, open, restart, and stop Studio
         env:
-          FORGEAX_INTEGRATION_ROOT: ${{ github.workspace }}
-        run: bun run --cwd packages/ide check:release-sources
-
-      - name: Test public IDE desktop resource contract
-        run: bun run --cwd packages/ide test:desktop:resources
+          FORGEAX_LIFECYCLE_BROWSER_SMOKE: '1'
+        run: bash scripts/ci/studio-lifecycle-smoke.sh
+      - name: Preserve runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-runtime-diagnostics
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .forgeax/runtime/stack.log
+            .forgeax/runtime/browser-smoke/

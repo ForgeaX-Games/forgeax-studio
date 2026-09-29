@@ -77,6 +77,16 @@ export function readinessSummary(readiness: RuntimeReadiness): string {
     .join(', ');
 }
 
+export async function waitForHttp(url: string, timeoutMs: number): Promise<ServiceReadiness> {
+  const deadline = performance.now() + timeoutMs;
+  let result = await probeHttp(url);
+  while (!result.ready && performance.now() < deadline) {
+    await Bun.sleep(250);
+    result = await probeHttp(url);
+  }
+  return result;
+}
+
 function probeHttp(url: string): Promise<ServiceReadiness> {
   return new Promise((resolve) => {
     const parsed = new URL(url);

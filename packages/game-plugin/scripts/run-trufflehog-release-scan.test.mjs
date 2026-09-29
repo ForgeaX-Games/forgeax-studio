@@ -9,7 +9,7 @@ import { test } from "node:test";
 const script = resolve(dirname(fileURLToPath(import.meta.url)), "run-trufflehog-release-scan.sh");
 const pinnedImage = "trufflesecurity/trufflehog:3.96.0@sha256:aa821cf4ace8861c7d096d83818cdf7bb9719028a52d37a52eaad44086a52577";
 
-function runWithFakeDocker({ dockerExitCode = 0, mode = "package", scanRootExists = true } = {}) {
+function runWithFakeDocker({ dockerExitCode = 0, mode = "package", scanRootExists = true, native = false, invalidNative = false } = {}) {
   const fixture = mkdtempSync(join(tmpdir(), "forgeax-trufflehog-wrapper-"));
   const fakeBin = join(fixture, "bin");
   const scanRoot = join(fixture, "scan-root");
@@ -28,6 +28,7 @@ function runWithFakeDocker({ dockerExitCode = 0, mode = "package", scanRootExist
       FAKE_DOCKER_EXIT_CODE: String(dockerExitCode),
       PATH: `${fakeBin}:${process.env.PATH}`,
       RUNNER_TEMP: fixture,
+      TRUFFLEHOG_BINARY: invalidNative ? "relative-scanner" : native ? fakeDocker : "",
     },
   });
 
@@ -35,6 +36,7 @@ function runWithFakeDocker({ dockerExitCode = 0, mode = "package", scanRootExist
     cleanup: () => rmSync(fixture, { force: true, recursive: true }),
     dockerArgs,
     result,
+    scanRoot,
   };
 }
 
@@ -52,6 +54,37 @@ test("invokes the immutable multi-platform TruffleHog image", () => {
   } finally {
     fixture.cleanup();
   }
+});
+
+test("native scanner keeps fail-closed flags and receives the real scan root", () => {
+  for (const mode of ["source", "package"]) {
+    const fixture = runWithFakeDocker({ native: true, mode });
+    try {
+      assert.equal(fixture.result.status, 0, fixture.result.stderr);
+      const args = readFileSync(fixture.dockerArgs, "utf8").split("\n");
+      assert.equal(args[0], "filesystem");
+      assert.equal(args[1], fixture.scanRoot);
+      for (const flag of ["--fail", "--fail-on-scan-errors", "--no-update", "--results=verified,unknown"]) assert.ok(args.includes(flag));
+      assert.equal(args.includes("--exclude-paths"), mode === "source");
+      assert.ok(!args.includes(pinnedImage));
+    } finally { fixture.cleanup(); }
+  }
+});
+
+test("native scan errors remain blocking and relative binaries are rejected", () => {
+  for (const options of [{ native: true, dockerExitCode: 23 }, { invalidNative: true }]) {
+    const fixture = runWithFakeDocker(options);
+    try { assert.equal(fixture.result.status, options.invalidNative ? 2 : 23); }
+    finally { fixture.cleanup(); }
+  }
+});
+
+test("CI verifies the immutable native archive before running it", () => {
+  const workflow = readFileSync(resolve(dirname(script), '../.github/workflows/ci.yml'), 'utf8');
+  assert.ok(workflow.includes('trufflehog_3.96.0_linux_amd64.tar.gz'));
+  assert.ok(workflow.includes('7105f1cd6577f058a9e39d0578f1a99c8a1e481e4d3512cd8a09acfe22a0fdc0'));
+  assert.ok(workflow.indexOf('sha256sum --check --strict') < workflow.indexOf('tar -xzf'));
+  assert.ok(workflow.includes('TRUFFLEHOG_BINARY='));
 });
 
 test("package mode scans without directory exclusions", () => {

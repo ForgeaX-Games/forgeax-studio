@@ -13,6 +13,12 @@ function spec(): McpServerSpec<{ value: string }> {
         inputSchema: { type: 'object' },
         run: (args, ctx) => `${ctx.value}:${String(args.message)}`,
       },
+      {
+        name: 'fail',
+        description: 'fail',
+        inputSchema: { type: 'object' },
+        run: () => { throw new Error('preview unavailable'); },
+      },
     ],
     resources: [
       {
@@ -43,7 +49,7 @@ describe('MCP protocol dispatch', () => {
     });
 
     expect(await dispatch(spec(), { id: 2, method: 'tools/list' })).toMatchObject({
-      result: { tools: [{ name: 'echo' }] },
+      result: { tools: [{ name: 'echo' }, { name: 'fail' }] },
     });
     expect(await dispatch(spec(), { id: 3, method: 'resources/list' })).toMatchObject({
       result: { resources: [{ uri: 'test://status' }] },
@@ -81,10 +87,16 @@ describe('MCP protocol dispatch', () => {
     ).toMatchObject({
       result: {
         isError: true,
-        structuredContent: { code: 'not_found', tool: 'missing', availableTools: ['echo'] },
+        structuredContent: { code: 'not_found', tool: 'missing', availableTools: ['echo', 'fail'] },
       },
     });
     expect(await dispatch(spec(), { method: 'notifications/initialized' })).toBeNull();
     expect(await dispatch(spec(), { method: 'tools/list' })).toBeNull();
+  });
+
+  test('marks business failures as MCP tool errors', async () => {
+    expect(await dispatch(spec(), { id: 7, method: 'tools/call', params: { name: 'fail' } })).toMatchObject({
+      result: { isError: true, content: [{ type: 'text', text: 'error: preview unavailable' }] },
+    });
   });
 });

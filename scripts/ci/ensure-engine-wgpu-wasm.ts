@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureEngineToolchain, ensureNativeToolchain } from '../lib/toolchain.ts';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const engineRelativeRoot = join('packages', 'editor', 'packages', 'engine');
@@ -69,6 +70,7 @@ function resolveGithubToken(env: NodeJS.ProcessEnv): string | undefined {
 export function ensureEngineWgpuWasm(options: EnsureEngineWgpuWasmOptions = {}): boolean {
   const root = resolve(options.root ?? repositoryRoot);
   const engineRoot = resolve(options.engineRoot ?? join(root, engineRelativeRoot));
+  if (engineRoot !== resolve(root, engineRelativeRoot)) throw new Error(`wrong Engine working directory: ${engineRoot}`);
   const wgpuRoot = join(engineRoot, 'packages', 'wgpu-wasm');
   const force = options.force ?? false;
   const strict = options.strict ?? false;
@@ -78,11 +80,10 @@ export function ensureEngineWgpuWasm(options: EnsureEngineWgpuWasmOptions = {}):
     return failure(`Engine wgpu-wasm package is missing: ${wgpuRoot}`, strict);
   }
   if (!force && hasWgpuWasm(wgpuRoot)) return true;
-  if (!commandAvailable('pnpm')) {
-    return failure('pnpm is required to provision Engine wgpu WASM', strict);
-  }
+  const provisionTools = env.FORGEAX_SKIP_BOOTSTRAP !== '1' && env.FORGEAX_BOOTSTRAP_YES === '1';
+  Object.assign(env, ensureEngineToolchain(root, provisionTools, env));
 
-  const githubToken = resolveGithubToken(env);
+  const githubToken = existsSync(join(root, '.forgeax-public-distribution')) ? undefined : resolveGithubToken(env);
   const fetchEnv = githubToken ? { ...env, GITHUB_TOKEN: githubToken, GH_TOKEN: githubToken } : env;
   console.log(`→ ${packageFilter}: trying prebuilt release (fetch-wasm)…`);
   const fetched = run('pnpm', ['-F', packageFilter, 'fetch-wasm'], engineRoot, fetchEnv);
@@ -93,19 +94,7 @@ export function ensureEngineWgpuWasm(options: EnsureEngineWgpuWasmOptions = {}):
   // that old output back into a cache hit; compile the current source instead.
   if (fetched && hasWgpuWasm(wgpuRoot)) return true;
 
-  if (!commandAvailable('rustc') || !commandAvailable('wasm-pack')) {
-    return failure(
-      'Rust and wasm-pack are required to compile Engine wgpu WASM (install Rust 1.93 and wasm-pack 0.14.0)',
-      strict,
-    );
-  }
-  if (commandAvailable('rustup')) {
-    const targets = spawnSync('rustup', ['target', 'list', '--installed'], { encoding: 'utf8' });
-    if (!(targets.stdout ?? '').includes('wasm32-unknown-unknown')
-      && !run('rustup', ['target', 'add', 'wasm32-unknown-unknown'], engineRoot, env)) {
-      return failure('Rust wasm32-unknown-unknown target could not be installed', strict);
-    }
-  }
+  Object.assign(env, ensureNativeToolchain(root, engineRoot, provisionTools, env));
 
   if (!run('pnpm', ['-F', packageFilter, 'build:wasm'], engineRoot, env)) {
     return failure('Engine wgpu WASM compilation failed', strict);

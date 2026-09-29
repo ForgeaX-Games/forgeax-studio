@@ -161,6 +161,19 @@ export function hasTomlTable(content: string, header: string): boolean {
   return [...content.matchAll(HEADER_RE)].some((match) => sameHeader(match[1]!, header));
 }
 
+/** Return one owned table's source without parsing unrelated TOML values. */
+export function readTomlTable(content: string, header: string): string | undefined {
+  const headerLines = [...content.matchAll(HEADER_RE)];
+  const ownedIndexes = headerLines.flatMap((match, index) =>
+    sameHeader(match[1]!, header) ? [index] : [],
+  );
+  if (ownedIndexes.length !== 1) return undefined;
+  const ownedIndex = ownedIndexes[0]!;
+  const owned = headerLines[ownedIndex]!;
+  const next = headerLines[ownedIndex + 1];
+  return content.slice(owned.index!, next?.index ?? content.length);
+}
+
 export function hasCompetingTomlDefinition(content: string, header: string): boolean {
   const headerLines = [...content.matchAll(HEADER_RE)];
   return hasCompetingInlineOwner(content, header, headerLines);

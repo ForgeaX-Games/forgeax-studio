@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { assertForwardPins } from '../check-pin-forward.ts';
 import {
   parseGitmodules,
   resolveSubmoduleUrl,
@@ -178,6 +179,7 @@ export async function run(root = process.cwd()): Promise<PinUpdate[]> {
   assertRootClean();
   const pins = directPins(root);
   const updates = planPinUpdates(pins, remoteHeads(pins));
+  assertForwardPins(updates);
   if (updates.length > 0) stageUpdates(updates);
   console.log(formatPinSummary(updates));
   return updates;

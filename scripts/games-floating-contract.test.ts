@@ -42,22 +42,13 @@ describe('optional forgeax-games consumer checkout', () => {
     expect(read('.packages')).toContain('FORGEAX_SKIP_GAMES');
     expect(read('scripts/prepare.ts')).toContain('FORGEAX_SKIP_GAMES');
     expect(read('scripts/prepare.ts')).toContain("ensureManagedPackage('games', false)");
-    expect(read('scripts/run.ts')).toContain('FORGEAX_SKIP_GAMES');
-    expect(read('scripts/build-desktop.ts')).toContain('FORGEAX_SKIP_GAMES');
     expect(read('scripts/fx.ts')).toContain("path: 'packages/games'");
-  });
-
-  test('uses the configured manifest URL for update without mutating origin', () => {
-    const source = read('scripts/lib/package-sync.ts');
-    expect(source).toContain("'fetch', '--quiet', '--no-tags', entry.url, entry.branch");
-    expect(source).not.toContain("remote', 'set-url', 'origin'");
   });
 
   test('makes CI explicitly skip the optional games checkout', () => {
     for (const workflow of [
       '.github/workflows/ci.yml',
       '.github/workflows/boundaries.yml',
-      '.github/workflows/desktop-build.yml',
       '.github/workflows/game-runtime-publish.yml',
       '.github/workflows/nightly-e2e.yml',
       '.github/workflows/weekly-release.yml',

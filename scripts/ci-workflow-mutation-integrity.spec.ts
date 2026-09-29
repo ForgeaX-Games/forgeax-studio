@@ -5,7 +5,8 @@ import { describe, expect, test } from 'bun:test';
 const root = join(import.meta.dir, '..');
 const surfaces = {
   mirrorForward: readFileSync(join(root, 'scripts/mirror/publish-multi.sh'), 'utf8'),
-  verifiedMirror: readFileSync(join(root, 'scripts/release/run-verified-mirror.ts'), 'utf8'),
+  mirrorWorkflow: readFileSync(join(root, '.github/workflows/mirror-multi.yml'), 'utf8'),
+  publicRelease: readFileSync(join(root, 'scripts/mirror/reconcile-public-release.ts'), 'utf8'),
   routeBackLegacy: readFileSync(join(root, 'scripts/mirror/route-back.sh'), 'utf8'),
   routeBackMulti: readFileSync(join(root, 'scripts/mirror/route-back-multi.sh'), 'utf8'),
   routeBackWorkflow: readFileSync(join(root, '.github/workflows/mirror-route-back.yml'), 'utf8'),
@@ -17,7 +18,8 @@ const surfaces = {
 
 type MutationEdge = { id: string; target: string; publisher: string; candidate: string; gate: string };
 const dag: MutationEdge[] = [
-  { id: 'mirror-forward-push', target: 'ForgeaX-Games', publisher: 'mirror-forward-publisher', candidate: 'candidateId', gate: 'verifiedMirrorAuthorization' },
+  { id: 'mirror-forward-push', target: 'ForgeaX-Games', publisher: 'mirror-forward-publisher', candidate: 'candidateId', gate: 'verifiedScheduledOrManualAuthorization' },
+  { id: 'public-product-release', target: 'ForgeaX-Games/forgeax-studio', publisher: 'trusted-public-release-publisher', candidate: 'sourceCandidateId', gate: 'verifiedPublicMergeAndTagReconciliation' },
   { id: 'route-back-internal-pr', target: 'ForgeaX-Games/*', publisher: 'route-back-to-internal-pr', candidate: 'candidateId', gate: 'mutationOrder' },
   { id: 'release-metadata-pr', target: 'ForgeaX-Games/forgeax-studio', publisher: 'forgeax-bot', candidate: 'integrationRevision', gate: 'release-publish' },
   { id: 'ide-owner-dispatch', target: 'ForgeaX-Games/forgeax-ide/actions', publisher: 'studio-release-orchestrator', candidate: 'orchestrationId', gate: 'immutableTagAndRunObservation' },
@@ -57,16 +59,20 @@ describe('mutation trust DAG coverage', () => {
     expect(surfaces.routeBackContract).toContain('external-outcome-unobserved');
   });
 
-  test('requires verified candidate outputs at the only remaining mirror mutation boundary', () => {
+  test('requires verified candidate outputs at every remaining public mirror mutation boundary', () => {
     expect(surfaces.mirrorForward).toContain('mirror_validate_publisher_edge');
-    expect(surfaces.verifiedMirror).toContain('validateVerifiedMirrorAuthorization');
-    expect(surfaces.verifiedMirror).toContain('FORGEAX_VERIFIED_IDE_CANDIDATE_DIGEST');
-    expect(surfaces.weekly).toContain("needs.ide-owner-release.outputs.candidate_digest");
+    expect(surfaces.mirrorWorkflow).toContain('verify-release-candidate.ts');
+    expect(surfaces.mirrorWorkflow).toContain('reconcile-public-release.ts');
+    expect(surfaces.mirrorWorkflow).toContain('MIRROR_AUTO_PUBLISH_ENABLED');
+    expect(surfaces.weekly).not.toContain('mirror-publish:');
+    expect(surfaces.publicRelease).toContain('trusted-public-release-publisher');
+    expect(surfaces.publicRelease).toContain('sourceCandidateId');
+    expect(surfaces.publicRelease).toContain('externalOutcome');
   });
 
   test('keeps dry-run outside metadata, mirror, and notification mutations', () => {
     expect(surfaces.weekly).toContain("if: needs.gate.outputs.intent == 'publish'");
-    expect(surfaces.weekly).toContain("needs.gate.outputs.intent == 'publish' && needs.gate.outputs.mirror == 'true'");
+    expect(surfaces.mirrorWorkflow).toContain("steps.publication.outputs.publish == 'true'");
     expect(surfaces.mirrorForward).toContain('MIRROR_DRY_RUN');
     expect(surfaces.routeBackLegacy).toContain('ROUTE_BACK_DRY_RUN');
   });

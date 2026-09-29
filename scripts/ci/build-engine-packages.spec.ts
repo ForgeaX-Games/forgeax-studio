@@ -28,6 +28,7 @@ describe('Engine package build graph command', () => {
   test('prepare reuses the same ordered command with its narrower package closure', () => {
     const args = buildEnginePackagesArgs(PREPARE_ENGINE_BUILD_FILTERS);
     expect(args.slice(-3)).toEqual(['-r', '--sort', 'build']);
+    expect(args).toContain('@forgeax/engine');
     expect(args).toContain('@forgeax/engine-fbx...');
     expect(args).toContain('@forgeax/engine-devkit...');
   });

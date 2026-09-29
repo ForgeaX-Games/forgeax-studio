@@ -23,6 +23,37 @@ export interface CredentialConfig {
 
 export type SshProbe = () => boolean;
 
+const GITHUB_HTTPS_PREFIX = 'https://github.com/';
+const GITHUB_SCP_PREFIX = 'git@github.com:';
+const GITHUB_SSH_PREFIX = 'ssh://git@github.com/';
+
+function githubRepositoryPath(url: string): string | null {
+  const canonical = url.replace(
+    /^https:\/\/x-access-token:[^@]+@github\.com\//,
+    GITHUB_HTTPS_PREFIX,
+  );
+  for (const prefix of [GITHUB_HTTPS_PREFIX, GITHUB_SCP_PREFIX, GITHUB_SSH_PREFIX]) {
+    if (canonical.startsWith(prefix)) return canonical.slice(prefix.length);
+  }
+  return null;
+}
+
+/**
+ * Keep floating repositories on the same GitHub transport as their owning
+ * checkout. Manifests retain portable, credential-free HTTPS identities;
+ * materialized Git remotes inherit SSH or HTTPS from the root origin.
+ */
+export function deriveRepositoryTransportUrl(repositoryUrl: string, parentOrigin: string): string {
+  const repositoryPath = githubRepositoryPath(repositoryUrl);
+  if (!repositoryPath) return repositoryUrl;
+  if (parentOrigin.startsWith(GITHUB_SCP_PREFIX)) return `${GITHUB_SCP_PREFIX}${repositoryPath}`;
+  if (parentOrigin.startsWith(GITHUB_SSH_PREFIX)) return `${GITHUB_SSH_PREFIX}${repositoryPath}`;
+  if (githubRepositoryPath(parentOrigin) && /^https:\/\//.test(parentOrigin)) {
+    return `${GITHUB_HTTPS_PREFIX}${repositoryPath}`;
+  }
+  return repositoryUrl;
+}
+
 /**
  * Decide how to teach child git processes to auth against GitHub.
  *

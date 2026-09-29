@@ -55,6 +55,10 @@ __pycache__/
 .worktrees/
 .bc/
 .claude/
+# Runtime-generated agent hooks and machine-local development TLS material.
+/.codex/hooks.json
+/.cursor/hooks.json
+/.tls/
 # Ad-hoc screenshots dropped at repo root during dev/debug
 /agent-*.png
 /matrix-*.png

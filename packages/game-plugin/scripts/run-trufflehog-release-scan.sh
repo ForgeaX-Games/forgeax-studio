@@ -16,6 +16,16 @@ fi
 scan_root="$(cd "$scan_root" && pwd)"
 report="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/trufflehog-release-scan.jsonl"
 errors="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/trufflehog-release-scan.stderr"
+scanner_binary="${TRUFFLEHOG_BINARY:-}"
+if [ -n "$scanner_binary" ]; then
+  if [[ "$scanner_binary" != /* ]] || [ ! -x "$scanner_binary" ]; then
+    echo "TRUFFLEHOG_BINARY must name an absolute executable path to the verified scanner." >&2
+    exit 2
+  fi
+elif ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is unavailable; provision the pinned native scanner and set TRUFFLEHOG_BINARY." >&2
+  exit 127
+fi
 
 docker_args=(
   run --rm
@@ -24,6 +34,9 @@ docker_args=(
 scanner_args=(
   filesystem /scan
 )
+if [ -n "$scanner_binary" ]; then
+  scanner_args=( filesystem "$scan_root" )
+fi
 
 if [ "$scan_mode" = "source" ]; then
   excludes="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/trufflehog-release-scan-excludes.txt"
@@ -33,8 +46,12 @@ if [ "$scan_mode" = "source" ]; then
 (^|/)\.worktrees(/|$)
 (^|/)(coverage|\.cache|\.turbo|\.npm)(/|$)
 EOF
-  docker_args+=( -v "$excludes:/scan-excludes.txt:ro" )
-  scanner_args+=( --exclude-paths /scan-excludes.txt )
+  if [ -n "$scanner_binary" ]; then
+    scanner_args+=( --exclude-paths "$excludes" )
+  else
+    docker_args+=( -v "$excludes:/scan-excludes.txt:ro" )
+    scanner_args+=( --exclude-paths /scan-excludes.txt )
+  fi
 fi
 
 scanner_args+=(
@@ -46,10 +63,13 @@ scanner_args+=(
 )
 
 set +e
-docker "${docker_args[@]}" \
-  trufflesecurity/trufflehog:3.96.0@sha256:aa821cf4ace8861c7d096d83818cdf7bb9719028a52d37a52eaad44086a52577 \
-  "${scanner_args[@]}" \
-  >"$report" 2>"$errors"
+if [ -n "$scanner_binary" ]; then
+  "$scanner_binary" "${scanner_args[@]}" >"$report" 2>"$errors"
+else
+  docker "${docker_args[@]}" \
+    trufflesecurity/trufflehog:3.96.0@sha256:aa821cf4ace8861c7d096d83818cdf7bb9719028a52d37a52eaad44086a52577 \
+    "${scanner_args[@]}" >"$report" 2>"$errors"
+fi
 scan_rc=$?
 set -e
 

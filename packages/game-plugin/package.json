@@ -1,16 +1,17 @@
 {
   "packageManager": "bun@1.4.0",
   "name": "@forgeax/game",
-  "version": "0.2.4",
+  "version": "0.3.10",
   "private": false,
   "type": "module",
-  "description": "@forgeax/game \u2014 ForgeaX game development as a plugin for MCP-capable agent CLIs (Codex, the reference agent CLI, Cursor, Trae, ZCode, OpenCode, WorkBuddy). Single binary, dual mode: no args = stdio MCP server, subcommand = CLI.",
+  "description": "@forgeax/game — an MCP/CLI connector for exact released ForgeaX Engine games and Engine-owned Preview.",
   "main": "./dist/main.js",
   "bin": {
-    "forgeax-game": "dist/main.js"
+    "forgeax-game": "dist/main.js",
+    "game": "dist/main.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13.0"
   },
   "publishConfig": {
     "access": "public",
@@ -18,7 +19,10 @@
   },
   "files": [
     "dist",
-    "assets/skills",
+    "assets",
+    "docs/asset3d.md",
+    "docs/plugin-integration-standard.md",
+    "docs/engine-0.2.1-to-0.3.3-migration.md",
     "README.md"
   ],
   "scripts": {
@@ -42,10 +46,17 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@forgeax/game-runtime": "0.3.33"
+    "@forgeax/engine-sdk": "0.3.3",
+    "pnpm": "11.7.0"
   },
   "devDependencies": {
+    "fflate": "0.8.2",
     "@types/bun": "^1.2.0",
     "typescript": "^5.9.2"
-  }
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "author": ""
 }

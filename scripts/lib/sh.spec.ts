@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { run } from "./sh";
+import { pnpmVersion, run } from "./sh";
 
 const originalTrace = process.env.FORGEAX_COMMAND_TRACE;
 const originalToken = process.env.GH_TOKEN;
@@ -9,6 +9,14 @@ afterEach(() => {
   else process.env.FORGEAX_COMMAND_TRACE = originalTrace;
   if (originalToken === undefined) delete process.env.GH_TOKEN;
   else process.env.GH_TOKEN = originalToken;
+});
+
+describe("pnpmVersion", () => {
+  test("returns a semver when pnpm is on PATH (neutral cwd avoids bun packageManager)", () => {
+    const version = pnpmVersion();
+    if (version === null) return;
+    expect(/^\d+\.\d+\.\d+/.test(version)).toBeTrue();
+  });
 });
 
 describe("run command tracing", () => {

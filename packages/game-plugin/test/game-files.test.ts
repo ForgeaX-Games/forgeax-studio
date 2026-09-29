@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gameFileTools } from '../src/mcp/game-files';
-import { initLocalGame } from '../src/project/locate';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -13,7 +12,15 @@ afterEach(() => {
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'forgeax-game-files-'));
   roots.push(root);
-  const game = initLocalGame(root, 'demo');
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, 'forge.json'), `${JSON.stringify({
+    id: 'demo', name: 'Demo', schemaVersion: '1.0.0', entry: 'src/main.ts',
+  }, null, 2)}\n`);
+  writeFileSync(join(root, 'package.json'), `${JSON.stringify({
+    name: '@forgeax/demo', private: true, dependencies: { '@forgeax/engine': '0.1.7' },
+  }, null, 2)}\n`);
+  writeFileSync(join(root, 'main.ts'), 'export const initial = true;\n');
+  const game = { gameRoot: root };
   const tools = new Map(gameFileTools<{ cwd: string }>().map((tool) => [tool.name, tool]));
   const call = (name: string, args: Record<string, unknown>) => tools.get(name)!.run(args, { cwd: root });
   return { root, game, call };

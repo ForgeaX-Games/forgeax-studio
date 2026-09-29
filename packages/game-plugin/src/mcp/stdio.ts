@@ -32,8 +32,12 @@ export function runStdioServer<Ctx>(spec: McpServerSpec<Ctx>): void {
     // A departed client is normal operation, not a crash. Let Node exit naturally
     // so buffered protocol writes are flushed instead of being truncated by
     // process.exit().
-    process.exitCode = 0;
     process.stdin.pause();
+    void Promise.resolve(spec.shutdown?.())
+      .catch((error) => writeCrashLog('shutdown', error))
+      .finally(() => {
+        process.exitCode = 0;
+      });
   };
 
   const finishAfterDrain = (): void => {
@@ -111,4 +115,6 @@ export function runStdioServer<Ctx>(spec: McpServerSpec<Ctx>): void {
     else writeCrashLog('uncaughtException', e);
   });
   process.on('unhandledRejection', (e) => writeCrashLog('unhandledRejection', e));
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }

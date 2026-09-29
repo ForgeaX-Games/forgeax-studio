@@ -127,3 +127,12 @@ describe('producer-owned CI contract', () => {
     ]));
   });
 });
+
+describe('required context reporters', () => {
+  test('rejects external reporters because external scans are not required', () => {
+    const manifest = structuredClone(loadCiContractFiles().manifest);
+    expect(validateCiManifest(manifest).ok).toBe(true);
+    Object.assign(manifest.requiredContexts[0]!, { reporter: 'external' });
+    expect(validateCiManifest(manifest).ok).toBe(false);
+  });
+});

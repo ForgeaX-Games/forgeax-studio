@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { createConnection, createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { canBindPort, isDefunctProcessState, readPidfilePid } from './proc';
+import { canBindPort, isAlive, isDefunctProcessState, readPidfilePid, sleep } from './proc';
 
 const roots: string[] = [];
 
@@ -14,6 +15,37 @@ function close(server: Server): Promise<void> {
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+test('a detached child observes pipe EOF when its owner is forcibly terminated', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'forgeax-parent-pipe-'));
+  roots.push(root);
+  const childFile = join(root, 'child.ts');
+  const readyFile = join(root, 'ready');
+  const stoppedFile = join(root, 'stopped');
+  writeFileSync(childFile, `import { writeFileSync } from 'node:fs';
+process.stdin.on('end', () => { writeFileSync(${JSON.stringify(stoppedFile)}, 'stopped'); process.exit(0); });
+process.stdin.resume(); writeFileSync(${JSON.stringify(readyFile)}, String(process.pid)); setInterval(() => {}, 1000);`);
+  const parentFile = join(root, 'parent.ts');
+  writeFileSync(parentFile, `import { spawnService } from ${JSON.stringify(new URL('./proc.ts', import.meta.url).href)};
+const child = spawnService(process.execPath, [${JSON.stringify(childFile)}], { detach: true, stdin: 'pipe' });
+setInterval(() => {}, 1000);`);
+  const parent = spawn(process.execPath, [parentFile], { stdio: 'ignore' });
+  let childPid = 0;
+  try {
+    const readyDeadline = Date.now() + 3000;
+    while (!existsSync(readyFile) && Date.now() < readyDeadline) await sleep(25);
+    expect(existsSync(readyFile)).toBe(true);
+    childPid = Number(readFileSync(readyFile, 'utf8'));
+    parent.kill('SIGKILL');
+    const stopDeadline = Date.now() + 3000;
+    while ((!existsSync(stoppedFile) || isAlive(childPid)) && Date.now() < stopDeadline) await sleep(25);
+    expect(existsSync(stoppedFile)).toBe(true);
+    expect(isAlive(childPid)).toBe(false);
+  } finally {
+    if (parent.exitCode === null && parent.signalCode === null) parent.kill('SIGKILL');
+    if (childPid && isAlive(childPid)) process.kill(childPid, 'SIGKILL');
+  }
+}, 10_000);
 
 describe('readPidfilePid', () => {
   test('returns null when a pidfile disappears after directory enumeration', () => {

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
+import { resolveSourceRuntimeEnvironment } from '../../lib/source-runtime-launcher.ts';
 
 export const IDE_MOUNT_NOT_FOUND = 'IDE_MOUNT_NOT_FOUND';
 export const PUBLIC_TEARDOWN_COMMANDS = new Set(['stop', 'teardown']);
@@ -28,6 +29,7 @@ export function ideProcessEnv(
 export type IdeCommandDependencies = {
   existsSync: typeof existsSync;
   spawnSync: typeof spawnSync;
+  desktopDevUrl?: (root: string) => string;
 };
 
 const DEFAULT_DEPENDENCIES: IdeCommandDependencies = { existsSync, spawnSync };
@@ -68,11 +70,11 @@ function ensureDependencies(
   return runBun(root, cwd, ['install', '--frozen-lockfile', '--ignore-scripts'], dependencies);
 }
 
-async function runBunWithSignals(root: string, cwd: string, args: readonly string[]): Promise<number> {
+async function runBunWithSignals(root: string, cwd: string, args: readonly string[], env = ideProcessEnv(root)): Promise<number> {
   const child = spawn(process.execPath, args, {
     cwd,
     stdio: 'inherit',
-    env: ideProcessEnv(root),
+    env: ideProcessEnv(root, env),
     windowsHide: true,
   });
   let forwardedSignal: NodeJS.Signals | undefined;
@@ -96,8 +98,21 @@ async function runBunWithSignals(root: string, cwd: string, args: readonly strin
   return status;
 }
 
-export function ideDesktopInvocation(args: readonly string[]): readonly string[] {
-  return ['run', 'dev:desktop', ...args];
+export function ideDesktopInvocation(args: readonly string[], devUrl: string): readonly string[] {
+  const forwarded = args[0] === 'debug' ? args.slice(1) : [...args];
+  const separator = forwarded.indexOf('--');
+  const insertion = separator < 0 ? forwarded.length : separator;
+  return ['run', 'dev:desktop', ...forwarded.slice(0, insertion),
+    '--config', JSON.stringify({ build: { devUrl } }), ...forwarded.slice(insertion)];
+}
+
+function desktopDevUrl(root: string): string {
+  return resolveSourceRuntimeEnvironment(root, 'desktop-dev').startup.interface.localOrigin;
+}
+
+function desktopEnv(root: string, args: readonly string[]): NodeJS.ProcessEnv {
+  return { ...ideProcessEnv(root), FORGEAX_STARTUP_PROFILE: 'desktop-dev',
+    FORGEAX_DEVTOOLS: args[0] === 'debug' ? '1' : '0' };
 }
 
 export function ideMount(root: string): string {
@@ -131,21 +146,17 @@ export function runIdeCommand(
   if (command === 'desktop') {
     const installed = ensureDependencies(root, cwd, dependencies);
     if (installed !== 0) return installed;
-    return runBun(root, cwd, ideDesktopInvocation(commandArgs), dependencies);
+    return runBun(root, cwd, ideDesktopInvocation(commandArgs, (dependencies.desktopDevUrl ?? desktopDevUrl)(root)), dependencies, desktopEnv(root, commandArgs));
   }
   if (command === 'build') {
     const installed = ensureDependencies(root, cwd, dependencies);
     if (installed !== 0) return installed;
-    return runBun(root, cwd, ['run', 'build:desktop', ...commandArgs], dependencies);
+    return runBun(root, cwd, ['run', 'package:desktop:local', ...commandArgs], dependencies);
   }
   if (command === 'ci') {
     const installed = runBun(root, cwd, ['install', '--frozen-lockfile', '--ignore-scripts'], dependencies);
     if (installed !== 0) return installed;
-    for (const script of ['lint', 'test', 'build:web']) {
-      const status = runBun(root, cwd, ['run', script, ...commandArgs], dependencies);
-      if (status !== 0) return status;
-    }
-    return 0;
+    return runBun(root, cwd, ['run', 'check:web', ...commandArgs], dependencies);
   }
   console.error(`unknown IDE public command: ${command}`);
   printIdeHelp();
@@ -160,5 +171,5 @@ export async function runIdeDesktopCommand(root: string, args: readonly string[]
   }
   const installed = ensureDependencies(root, cwd);
   if (installed !== 0) return installed;
-  return runBunWithSignals(root, cwd, ideDesktopInvocation(args));
+  return runBunWithSignals(root, cwd, ideDesktopInvocation(args, desktopDevUrl(root)), desktopEnv(root, args));
 }

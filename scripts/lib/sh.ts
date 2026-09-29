@@ -1,8 +1,23 @@
 // scripts/lib/sh.ts — tiny shared shell helpers for the setup/build scripts.
 
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 
 export const IS_WIN = process.platform === 'win32';
+
+/**
+ * Probe installed pnpm version from a neutral cwd.
+ * pnpm rejects `packageManager: "bun@…"` in the project package.json when invoked
+ * from that directory, so bootstrap/prepare must not run `pnpm --version` in-repo.
+ */
+export function pnpmVersion(): string | null {
+  if (!has('pnpm')) return null;
+  try {
+    return (execFileSync('pnpm', ['--version'], { encoding: 'utf8', cwd: tmpdir() }) || '').trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 /** True if `cmd` resolves on PATH (cross-platform `command -v`). */
 export function has(cmd: string): boolean {

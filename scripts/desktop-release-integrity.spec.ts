@@ -43,16 +43,16 @@ describe('IDE-owned desktop release wire contract', () => {
     expect(weekly).toContain('--tag "$PRODUCT_TAG"');
   });
 
-  test('keeps dry-run outside Studio mutation jobs and verifies before mirror mutation', () => {
+  test('keeps the desktop release orchestrator separate from source mirror mutation', () => {
     expect(weekly).toContain("if: needs.gate.outputs.intent == 'publish'");
-    expect(weekly).toContain("needs.gate.outputs.intent == 'publish' && needs.gate.outputs.mirror == 'true'");
-    expect(ordered(weekly, 'verify-candidate', 'run-verified-mirror.ts')).toBe(true);
+    expect(weekly).not.toContain('mirror-publish:');
+    expect(weekly).not.toContain('run-verified-mirror.ts');
+    expect(weekly).not.toContain('MIRROR_TOKEN');
   });
 
   test('binds metadata merge to complete expected bytes and the reviewed head', () => {
     expect(weekly).toContain('cmp "$expected/$file" "$actual/$file"');
     expect(weekly).toContain('--match-head-commit "$reviewed_head"');
     expect(weekly).toContain('steps.verify.outputs.candidate_digest');
-    expect(weekly).toContain('needs.ide-owner-release.outputs.candidate_digest');
   });
 });

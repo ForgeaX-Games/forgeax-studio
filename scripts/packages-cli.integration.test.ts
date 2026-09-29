@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -11,6 +11,33 @@ function git(cwd: string, args: string[]): string {
 }
 
 describe('bun fx packages CLI', () => {
+  test('branch never switches the parent of a non-Git package directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forgeax-packages-parent-branch-'));
+    try {
+      git(root, ['init', '-q', '-b', 'main']);
+      git(root, ['config', 'user.email', 'test@example.com']);
+      git(root, ['config', 'user.name', 'Test']);
+      mkdirSync(join(root, 'packages/sample'), { recursive: true });
+      writeFileSync(join(root, 'packages/sample/value.txt'), 'local source');
+      writeFileSync(join(root, '.packages'), JSON.stringify([
+        { path: 'packages/sample', url: 'https://example.invalid/sample.git', branch: 'main' },
+      ]));
+      git(root, ['add', '.']);
+      const hooks = join(root, 'empty-hooks');
+      mkdirSync(hooks);
+      git(root, ['config', 'core.hooksPath', hooks]);
+      git(root, ['commit', '-qm', 'fixture']);
+      const branch = spawnSync(process.execPath,
+        [SCRIPT, 'branch', 'feat/sample', '--only', 'sample', '--allow-dirty'],
+        { cwd: root, encoding: 'utf8' });
+      expect(branch.status).toBe(0);
+      expect(git(root, ['branch', '--show-current'])).toBe('main');
+      expect(readFileSync(join(root, 'packages/sample/value.txt'), 'utf8')).toBe('local source');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('syncs a package then records and switches a matching feature branch', () => {
     const root = mkdtempSync(join(tmpdir(), 'forgeax-packages-cli-'));
     try {

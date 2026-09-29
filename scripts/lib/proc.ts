@@ -379,6 +379,8 @@ export interface SpawnOpts {
   detach?: boolean;
   /** fd to redirect stdout+stderr into (detached background logging). */
   logFd?: number;
+  /** Keep an owner-held pipe so the child can observe owner death through EOF. */
+  stdin?: 'pipe';
 }
 
 /**
@@ -423,7 +425,9 @@ function resolveCmd(cmd: string): string {
  */
 export function spawnService(cmd: string, args: string[], opts: SpawnOpts = {}): ChildProcess {
   const child = spawn(resolveCmd(cmd), args, {
-    stdio: opts.detach ? ['ignore', opts.logFd ?? 'ignore', opts.logFd ?? 'ignore'] : 'inherit',
+    stdio: opts.detach
+      ? [opts.stdin ?? 'ignore', opts.logFd ?? 'ignore', opts.logFd ?? 'ignore']
+      : [opts.stdin ?? 'inherit', 'inherit', 'inherit'],
     detached: opts.detach || !IS_WIN, // bg: detach everywhere; fg POSIX: own group
     cwd: opts.cwd,
     env: opts.env ?? process.env,

@@ -10,6 +10,7 @@
 // Env: FORGEAX_SKIP_PREPARE · FORGEAX_FORCE_PREPARE ·
 // FORGEAX_SKIP_ENGINE_BUILD · FORGEAX_SUBMODULE_FULL · FORGEAX_SKIP_HARNESS_SYNC ·
 // FORGEAX_SKIP_SUBMODULE_INIT · FORGEAX_SKIP_HARNESS · FORGEAX_SKIP_GAMES ·
+// FORGEAX_SKIP_IDE_INTEGRATION_INSTALL · FORGEAX_VERBOSE_INSTALL ·
 // FORGEAX_SKIP_BOOTSTRAP · FORGEAX_SKIP_CONTRACTS_BUILD ·
 // FORGEAX_BOOTSTRAP_YES
 
@@ -19,11 +20,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ENGINE_ENTRY_OUTPUTS,
+  areEngineUmbrellaArtifactsPresent,
   areEnginePrepareArtifactsFresh,
   collectMissingEngineArtifacts,
+  engineUmbrellaArtifactPaths,
   formatMissingEngineArtifacts,
 } from './lib/engine-entry-freshness.ts';
 import { has, resolvePython, run } from './lib/sh.ts';
+import { applyToolchainEnvironment, ensureBootstrapToolchain, ensureEngineToolchain } from './lib/toolchain.ts';
 import { hardenedGitEnv, NO_CRED_ARGV, probeGitHubSsh, resolveCredentialConfig } from './lib/git-credential.ts';
 import {
   bunWorkspaceInstallArgs,
@@ -34,10 +38,7 @@ import {
   restoreWindowsDirectoryAlias,
 } from './lib/bun-workspace-install.ts';
 import { ensureWorkspacePackageLink } from './lib/workspace-package-link.ts';
-import {
-  ensureIdeIntegrationPackageLinks,
-  writeIdeIntegrationWorkspaceManifest,
-} from './lib/ide-integration-workspace.ts';
+import { ensureIdeIntegrationPackageLinks, writeIdeIntegrationWorkspaceManifest } from './lib/ide-integration-workspace.ts';
 import { runIdeWorkspaceInstall } from './lib/ide-install-diagnostics.ts';
 import {
   restoreUpdateRepoStashes,
@@ -115,7 +116,6 @@ if (process.env.FORGEAX_SKIP_PREPARE === '1') {
 }
 const force = process.env.FORGEAX_FORCE_PREPARE === '1';
 const skipSubmoduleInit = process.env.FORGEAX_SKIP_SUBMODULE_INIT === '1';
-const requireCompleteSetup = process.env.FORGEAX_REQUIRE_COMPLETE_SETUP === '1';
 // Integration-only mode is an explicit CI boundary. Do not infer it from a
 // missing package.json: in a normal non-recursive clone every gitlink directory
 // starts empty, and prepare must still materialize the product repositories.
@@ -124,6 +124,7 @@ const integrationOnly = process.env.FORGEAX_ROOT_INTEGRATION_ONLY === '1';
 // repositories. The marker is assembled into every public repository so this
 // remains true for a recursive clone and for an independently cloned child.
 const publicDistribution = existsSync(join(ROOT, '.forgeax-public-distribution'));
+const requireCompleteSetup = publicDistribution || process.env.FORGEAX_REQUIRE_COMPLETE_SETUP === '1';
 
 
 const bold = (s: string) => console.log(`\x1b[1m${s}\x1b[0m`);
@@ -201,8 +202,11 @@ Env:
   FORGEAX_SKIP_HARNESS_SYNC=1  skip .forgeax-harness floating-clone sync
   FORGEAX_SKIP_HARNESS=1       skip harness sync + skill install entirely (CI)
   FORGEAX_SKIP_GAMES=1         skip optional forgeax-games checkout + sample seeding (CI)
-  FORGEAX_SKIP_BOOTSTRAP=1     skip toolchain provisioning (node/pnpm/rust) — CI
-  FORGEAX_BOOTSTRAP_YES=1      auto-accept toolchain installs (non-interactive)
+  FORGEAX_SKIP_IDE_INTEGRATION_INSTALL=1
+                                skip [1c/5] IDE integration workspace bun install
+  FORGEAX_VERBOSE_INSTALL=1    pass --verbose to nested bun install steps ([1c/5], [1e/5])
+  FORGEAX_SKIP_BOOTSTRAP=1     skip toolchain provisioning (still verifies) — CI
+  FORGEAX_BOOTSTRAP_YES=1      auto-provision Engine toolchain (pnpm/rust/wasm-pack)
 `);
     process.exit(0);
   } else fail(`unknown arg: ${a}`);
@@ -213,31 +217,19 @@ const commandTrace = env.FORGEAX_COMMAND_TRACE === '1';
 
 // ── 0. toolchain (provision if missing, then verify) ──────────────────────────
 bold('[0/5] Toolchain (provision + verify)');
-// Provision node22 / pnpm / rust+wasm-pack via bootstrap.ts when missing.
-// Idempotent: already-present tools are detected and skipped. Interactive on a
-// TTY (set FORGEAX_BOOTSTRAP_YES=1 for auto-yes); a non-interactive shell skips
-// installs and falls through to the hard gate below (fail-fast with guidance).
-// CI provisions its own toolchain via workflow steps and sets
-// FORGEAX_SKIP_BOOTSTRAP=1 to bypass this.
-if (process.env.FORGEAX_SKIP_BOOTSTRAP !== '1') {
-  const r = spawnSync(process.execPath, [join(ROOT, 'scripts/bootstrap.ts'), '--toolchain-only'], {
-    stdio: 'inherit',
-    cwd: ROOT,
-    env,
-  });
-  if (r.status !== 0) fail('toolchain provisioning failed (bootstrap.ts --toolchain-only)');
-}
-// Hard gate backstop: anything still missing (e.g. an install was declined) stops here.
+// Keep selected PATH changes in this process so all later installs/builds use
+// the verified tools. Skipping provisioning never skips exact verification.
+// Bun/Node: provision on mismatch during prepare (nvm when available) so a plain
+// `bun install` is not blocked by a patch-level Node drift on PATH.
+// Engine/native (pnpm, rust, wasm-pack): still gated on FORGEAX_BOOTSTRAP_YES.
+const skipBootstrap = env.FORGEAX_SKIP_BOOTSTRAP === '1';
+const bootstrapYes = env.FORGEAX_BOOTSTRAP_YES === '1';
+const provisionBootstrap = !skipBootstrap;
+const provisionEngineToolchain = !skipBootstrap && bootstrapYes;
 if (!has('git')) fail('git not found.');
-if (!has('bun')) fail('bun not found. Install: https://bun.sh');
-if (!has('node')) fail('node not found. Install Node 22+.');
-if (!has('pnpm')) fail('pnpm not found. Install: https://pnpm.io/installation');
-const nodeMajor = Number.parseInt(
-  execFileSync('node', ['-v'], { encoding: 'utf8' }).trim().replace(/^v/, '').split('.')[0] ?? '0',
-  10,
-);
-if (nodeMajor < 22) fail(`Node ${nodeMajor} found; forgeax-server needs ≥22.`);
-ok(`git + bun + pnpm + node v${nodeMajor} present`);
+Object.assign(env, ensureBootstrapToolchain(ROOT, provisionBootstrap, env));
+applyToolchainEnvironment(env);
+ok('Bun and Node exact versions verified');
 
 // ── 2. submodule init + floating harness sync ────────────────────────────────
 bold('[1/5] Initialising submodules');
@@ -267,7 +259,7 @@ const gitEnv: NodeJS.ProcessEnv = normalizePackageManagerRegistry({
   // FORGEAX_SKIP_HARNESS also covers the nested engine lifecycle. Without
   // this propagation, engine pnpm install still clones its private harness in
   // CI after the Studio harness branch has already been skipped.
-  ...(env.FORGEAX_SKIP_HARNESS === '1' ? { FORGEAX_SKIP_HARNESS_SYNC: '1' } : {}),
+  ...(env.FORGEAX_SKIP_HARNESS === '1' || publicDistribution ? { FORGEAX_SKIP_HARNESS_SYNC: '1' } : {}),
 });
 const noCredHelper = [...NO_CRED_ARGV];
 if (cred.branch === 'ssh-rewrite' || cred.branch === 'pat-rewrite') ok(cred.message!);
@@ -443,7 +435,13 @@ if (!integrationOnly) {
   } else if (existsSync(serveDist) && process.env.FORGEAX_FORCE_PREPARE !== '1') {
     ok('@forgeax/cli dist/cli/main.js present');
   } else {
-    const r = spawnSync('bun', ['run', 'build'], {
+    // CLI owns its dependency graph, including the pinned Node native headers.
+    // Root installation only installs integration workspaces, so a cold source
+    // checkout must install CLI dependencies before invoking its native build.
+    if (!run('bun', ['install', '--frozen-lockfile', '--ignore-scripts'], { cwd: cliDir, env: gitEnv })) {
+      fail('@forgeax/cli dependency installation failed');
+    }
+    const r = spawnSync('bun', ['run', 'build:dev'], {
       cwd: cliDir,
       stdio: 'inherit',
       env: { ...env, FORGEAX_SKIP_PREPARE: '1' },
@@ -498,10 +496,16 @@ if (process.env.FORGEAX_SKIP_GAMES === '1' || publicDistribution) {
 // submodule pin. Materialize it before building the shared installation graph:
 // IDE-owned workspace packages may consume Studio-owned source packages through
 // workspace:* edges, but IDE intentionally has no duplicate Interface checkout.
-if (publicDistribution) {
-  console.log('  → IDE floating checkout skipped (public distribution)');
-} else {
+{
   ensureManagedPackage('ide', true);
+  ensureManagedPackage('app-shell', true);
+  // Root setup files are needed before the floating IDE and nested Engine are
+  // available. Now that both are materialized, reject any stale CI/local pins
+  // before installing the product workspace.
+  Object.assign(env, ensureEngineToolchain(ROOT, provisionEngineToolchain, env));
+  applyToolchainEnvironment(env);
+  gitEnv.PATH = env.PATH;
+  ok('IDE/Engine toolchain sources and exact pnpm version verified');
 }
 
 // IDE resolves these product packages directly to source in vite.config.ts.
@@ -511,30 +515,49 @@ if (publicDistribution) {
 // the IDE, its owned packages, and every source dependency without changing
 // root package ownership.
 const ideSourceWorkspaceDir = join(ROOT, '.forgeax/ide-source-workspace');
-if (!publicDistribution) {
+{
   try {
     writeIdeIntegrationWorkspaceManifest(ideSourceWorkspaceDir);
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
-  bold('[1c/5] Installing IDE integration workspace dependencies');
-  const workspaceLinks = prepareWindowsWorkspaceJunctions(ideSourceWorkspaceDir);
-  if (workspaceLinks.length > 0) {
-    ok(`Windows IDE source workspace junctions ready (${workspaceLinks.length})`);
+  if (process.env.FORGEAX_SKIP_IDE_INTEGRATION_INSTALL === '1') {
+    warnY('IDE integration workspace install skipped (FORGEAX_SKIP_IDE_INTEGRATION_INSTALL=1)');
+  } else {
+    bold('[1c/5] Installing IDE integration workspace dependencies');
+    const workspaceLinks = prepareWindowsWorkspaceJunctions(ideSourceWorkspaceDir);
+    if (workspaceLinks.length > 0) {
+      ok(`Windows IDE source workspace junctions ready (${workspaceLinks.length})`);
+    }
+    const ideInstallArgs = bunWorkspaceInstallArgs();
+    if (process.env.FORGEAX_VERBOSE_INSTALL === '1') ideInstallArgs.push('--verbose');
+    const r = await runIdeWorkspaceInstall({
+      root: ROOT,
+      args: ideInstallArgs,
+      cwd: ideSourceWorkspaceDir,
+      env: gitEnv,
+    });
+    if ((r.status ?? 1) !== 0) fail(`@forgeax/ide integration workspace dependency installation exited ${r.status ?? 1}`);
+    ensureIdeIntegrationPackageLinks(ROOT);
+    ok('@forgeax/ide integration workspace dependencies ready');
+    if (!run('bun', ['run', '--cwd', 'packages/app-shell', 'build'], { cwd: ROOT, env: gitEnv })) {
+      fail('@forgeax/app-shell source build failed');
+    }
   }
-  const r = await runIdeWorkspaceInstall({
-    root: ROOT,
-    args: bunWorkspaceInstallArgs(),
-    cwd: ideSourceWorkspaceDir,
-    env: gitEnv,
-  });
-  if ((r.status ?? 1) !== 0) fail(`@forgeax/ide integration workspace dependency installation exited ${r.status ?? 1}`);
-  ensureIdeIntegrationPackageLinks(ROOT);
-  ok('@forgeax/ide integration workspace dependencies ready');
+}
+
+// Public Orchestrator subpaths share emitted chunks. Build the complete graph
+// after its shared source dependencies are installed, before a source server
+// can resolve /extensions or /kernel from dist.
+{
+  bold('[1b/5] Building @forgeax/orchestrator public runtime entries');
+  if (!run('bun', ['run', '--cwd', 'packages/orchestrator', 'build'], { cwd: ROOT, env: gitEnv })) {
+    fail('@forgeax/orchestrator build failed — public runtime entries unavailable');
+  }
 }
 
 const editorDir = editorRoot(ROOT);
-if (!publicDistribution && existsSync(join(editorDir, 'package.json'))) {
+if (existsSync(join(editorDir, 'package.json'))) {
   bold('[1e/5] Installing @forgeax/editor workspace dependencies');
   const workspaceLinks = prepareWindowsWorkspaceJunctions(editorDir, process.platform, false);
   if (workspaceLinks.length > 0) {
@@ -554,13 +577,7 @@ if (!publicDistribution && existsSync(join(editorDir, 'package.json'))) {
 }
 
 // ── 3. engine submodule build ────────────────────────────────────────────────
-if (publicDistribution) {
-  // The mirrored source ships the engine's emitted dist files but deliberately
-  // excludes private release credentials and source-built WASM artifacts. A
-  // public `bun install` must therefore consume that published output, not try
-  // to rebuild the engine (which would require Rust/wasm-pack).
-  console.log('  → public distribution — skip engine package + WASM builds');
-} else {
+{
 bold('[2/5] Building engine submodule packages');
 const engineDir = engineRoot(ROOT);
 if (!existsSync(engineDir)) fail('packages/editor/packages/engine (editor nested engine) submodule missing — run git submodule update --init --recursive');
@@ -621,6 +638,8 @@ healDanglingEngineSymlinks(engineDir, process.platform === 'win32');
 // from the env or the gh CLI once and thread it into each fetch attempt; without
 // a token fetch 403s and we fall back to compiling (still correct, just slower).
 function resolveGithubToken(): string | undefined {
+  // Public installs must work without the developer's private GitHub identity.
+  if (publicDistribution) return undefined;
   for (const k of ['GITHUB_TOKEN', 'GH_TOKEN']) {
     const v = process.env[k];
     if (v && v.trim()) return v.trim();
@@ -724,7 +743,8 @@ const engineDeclarationSentinel = join(ROOT, '.forgeax/sentinels/engine-declarat
 const engineDevkitCliDir = join(enginePkgDir, 'devkit');
 const engineDevkitCliPath = join(engineDevkitCliDir, 'dist', 'cli.mjs');
 const engineEntryDistsFresh = (): boolean =>
-  areEnginePrepareArtifactsFresh(enginePkgDir, engineEntryPkgs, engineDeclarationSentinel);
+  areEnginePrepareArtifactsFresh(enginePkgDir, engineEntryPkgs, engineDeclarationSentinel)
+  && areEngineUmbrellaArtifactsPresent(enginePkgDir);
 const skipEngineBuild =
   !force &&
   // CI's cached engine dist is safe to skip only when EVERY Vite-config entry
@@ -748,8 +768,8 @@ if (skipEngineBuild) {
   // .d.ts for every engine package EXCEPT engine-project / engine-fbx
   // (which ship none via studio's tsup-only build); without this, the editor + studio typecheck
   // fan-out reds out at TS7016 / TS2709. Incremental (.tsbuildinfo) so re-runs
-  // are near-instant. Non-fatal: a d.ts miss only breaks typecheck, not runtime
-  // (vite strips types), so warn rather than abort the whole prepare.
+  // are near-instant. Complete setup requires declarations; ordinary local
+  // development may still run Vite while fixing a type error.
   //
   // Self-heal on stale/corrupt incremental cache: a `dist/.tsbuildinfo` left in a
   // bad state (e.g. after a TS-version swap, or an interrupted build) can wedge
@@ -757,13 +777,14 @@ if (skipEngineBuild) {
   // emitted `dist/*.d.ts` as inputs → TS5055 "would overwrite input file". CI never
   // hits this because it always runs `tsc -b --clean && tsc -b` (fresh); the local
   // incremental path can. So on failure, clean the composite outputs and retry once
-  // — mirroring CI's clean-then-build. If it still fails, the error is real; warn.
+  // — mirroring CI's clean-then-build. If it still fails, the error is real.
   let declarationsBuilt = run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir });
   if (!declarationsBuilt) {
     warnY('engine tsc -b failed — clearing incremental cache (tsc -b --clean) and retrying once…');
     run('pnpm', ['exec', 'tsc', '-b', '--clean'], { cwd: engineDir });
     declarationsBuilt = run('pnpm', ['exec', 'tsc', '-b'], { cwd: engineDir });
     if (!declarationsBuilt) {
+      if (requireCompleteSetup) fail('engine declaration generation failed after clean retry');
       warnY('engine tsc -b (d.ts generation) still failing after clean — typecheck will red out until fixed; runtime is unaffected.');
     } else {
       ok('engine .d.ts generated (tsc -b, after clean retry)');
@@ -781,6 +802,13 @@ if (skipEngineBuild) {
 // it before its package build, but the skip path doesn't run that. Ensure pkg/ is
 // present (built/fetched) so the preview engine + any later app rebuild resolve it.
 if (skipEngineBuild) buildWgpuWasm();
+
+// Compile the default Engine shader profile before readiness probes start.
+// The producer owns content-based reuse; existence alone is not freshness.
+if (!run('node', ['scripts/forgeax/prepare-shader-release-inputs.mjs', '--build', '--profile', 'base-ssao'], { cwd: engineDir })) {
+  fail('engine shader profile preparation failed');
+}
+
 
 // ── 3c. fbx wasm ──────────────────────────────────────────────────────────────
 // editor-core's fbx-cook needs pkg/fbx-wasm.mjs (the ufbx→wasm glue emitted by
@@ -859,6 +887,7 @@ const enginePrepareArtifactPaths = [
   codecEncoderWasm,
   codecEncoderMjs,
   engineDevkitCliPath,
+  ...engineUmbrellaArtifactPaths(enginePkgDir),
   ...engineEntryPkgs.flatMap((name) =>
     ENGINE_ENTRY_OUTPUTS.map((output) => join(enginePkgDir, name, 'dist', output))),
   join(enginePkgDir, 'net-websocket', 'dist', 'browser.mjs'),
@@ -1000,7 +1029,7 @@ if (prepareResults.length > 0) {
   bold('[prepare] submodule result report');
   console.log(formatPrepareReport(prepareResults));
 }
-if (publicDistribution) {
+if (publicDistribution && !existsSync(join(ROOT, '.git'))) {
   console.log('[prepare] recursive input result skipped (public distribution has no Git metadata)');
 } else {
   try {
@@ -1050,6 +1079,14 @@ function syncHarness(cwd: string, label: string): void {
 }
 
 function ensureManagedPackage(selector: string, required: boolean): void {
+  // Release validation overlays the exact candidate, including floating sources,
+  // before installing it. An archive has no Git metadata and must not be replaced
+  // by an older public checkout while validating the new release.
+  if (publicDistribution && existsSync(join(ROOT, 'packages', selector, '.forgeax-public-distribution'))
+    && existsSync(join(ROOT, 'packages', selector, 'package.json'))) {
+    ok(`packages/${selector} public source snapshot ready`);
+    return;
+  }
   console.log(`  → bun scripts/packages.ts ensure --only ${selector}`);
   const r = spawnSync(process.execPath, [join(ROOT, 'scripts/packages.ts'), 'ensure', '--only', selector], {
     stdio: 'inherit',

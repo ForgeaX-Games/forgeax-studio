@@ -9,14 +9,15 @@ import {
 } from '../lib/ide-integration-workspace.ts';
 
 const root = resolve(import.meta.dir, '../..');
-async function install(cwd: string): Promise<number> {
+async function install(cwd: string, flags: string[] = []): Promise<number> {
   return (await runIdeWorkspaceInstall({
     root,
-    args: ['install', '--ignore-scripts'],
+    args: ['install', '--ignore-scripts', ...flags],
     cwd,
     env: process.env,
   })).status ?? 1;
 }
+
 
 if (process.platform === 'win32') {
   // Bun cannot currently link workspace members located above the workspace
@@ -25,7 +26,7 @@ if (process.platform === 'win32') {
   const manifestPath = join(root, 'package.json');
   const originalManifest = readFileSync(manifestPath, 'utf8');
   try {
-    const manifest = createIdeIntegrationRootManifest(JSON.parse(originalManifest));
+    const manifest = createIdeIntegrationRootManifest(JSON.parse(originalManifest), root);
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     const status = await install(root);
     if (status === 0) ensureIdeIntegrationPackageLinks(root);

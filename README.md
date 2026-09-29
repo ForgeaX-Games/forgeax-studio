@@ -63,13 +63,23 @@ drop into a visual editor to tweak the scene directly at any time.
 
 ## 🚀 Quickstart
 
+Use the Bun, Node.js and pnpm versions in `.bun-version`, `.nvmrc` and
+`.pnpm-version`. A complete source build also needs Rust 1.93.1 with the
+`wasm32-unknown-unknown` target, Emscripten 6.0.2 (`emcc` on `PATH`), and your
+platform's native build tools. The bootstrap flag below provisions the supported
+Engine tools; activate Emscripten before running it.
+
 ```bash
 git clone --recurse-submodules https://github.com/ForgeaX-Games/forgeax-studio.git
 cd forgeax-studio
-bun install         # deps + engine/wasm build; scaffolds .env (set ANTHROPIC_API_KEY)
-bun fx start         # starts Studio services
+FORGEAX_BOOTSTRAP_YES=1 bun install  # dependencies and complete source build
+bun fx start web      # starts Server, IDE and Play runtime
 bun fx open          # focuses/opens Studio in your normal Chrome
 ```
+
+The first-run wizard can create a project without connecting a model. Configure
+your model provider when you want AI generation. Use `bun fx restart` to restart
+the services and `bun fx stop` to stop them.
 
 This superproject wires the engine, server, UI, editor and marketplace as
 git submodules under `packages/`. Each submodule is its own repo in the

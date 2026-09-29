@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveLiteLlmConfig } from '../src/gen/config';
 import { generate3dTool, generateImageTool } from '../src/gen/generate';
-import { initLocalGame } from '../src/project/locate';
 
 const ORIGINAL = {
   base: process.env.FORGEAX_LITELLM_BASE_URL,
@@ -25,7 +24,9 @@ afterEach(() => {
 function makeProject(): string {
   const root = mkdtempSync(join(tmpdir(), 'forgeax-gen-'));
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-  initLocalGame(root, 'demo');
+  mkdirSync(join(root, 'assets'), { recursive: true });
+  writeFileSync(join(root, 'forge.json'), `${JSON.stringify({ id: 'demo', entry: 'src/main.ts' })}\n`);
+  writeFileSync(join(root, 'package.json'), `${JSON.stringify({ dependencies: { '@forgeax/engine': 'fixture' } })}\n`);
   return root;
 }
 
@@ -70,7 +71,7 @@ describe('forgeax_generate_image', () => {
 
     expect(out).toContain('demo');
     expect(out).toContain('assets/cube.png');
-    const assets = join(root, '.forgeax', 'games', 'demo', 'assets');
+    const assets = join(root, 'assets');
     expect(readdirSync(assets)).toContain('cube.png');
   });
 
@@ -119,7 +120,7 @@ describe('forgeax_generate_3d', () => {
     const out = await generate3dTool({ prompt: 'a wooden barrel', name: 'barrel' }, root);
 
     expect(out).toContain('assets/barrel.glb');
-    expect(existsSync(join(root, '.forgeax', 'games', 'demo', 'assets', 'barrel.glb'))).toBe(true);
+    expect(existsSync(join(root, 'assets', 'barrel.glb'))).toBe(true);
     expect(polls).toBeGreaterThanOrEqual(2);
     expect(authSeen.every(Boolean)).toBe(true);
   }, 15_000);
@@ -130,8 +131,7 @@ describe('forgeax_generate_3d', () => {
       delete process.env[k];
     }
     const root = makeProject();
-    const localImage = join(root, '.forgeax', 'games', 'demo', 'assets', 'src.png');
-    mkdirSync(join(root, '.forgeax', 'games', 'demo', 'assets'), { recursive: true });
+    const localImage = join(root, 'assets', 'src.png');
     writeFileSync(localImage, Buffer.from(PNG_1PX_B64, 'base64'));
     await expect(generate3dTool({ image: localImage }, root)).rejects.toThrow(/FORGEAX_COS/i);
   });

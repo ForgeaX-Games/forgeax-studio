@@ -14,7 +14,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { engineSdkRoot } from '@forgeax/game-runtime';
+import { activeGame, gameDir } from '../project/locate';
 import { ROUTING_TEXT } from '../routing';
 
 /** The plugin's own skill: routes the model to the MCP surface and owns the rule file. */
@@ -90,14 +90,19 @@ interface SkillRoot {
  * prefers a developer's working tree. Engine skills sit beside the SDK snapshot
  * because both are generated from one Engine commit.
  */
-function skillRoots(): SkillRoot[] {
+function skillRoots(projectRoot?: string): SkillRoot[] {
   const here = dirname(fileURLToPath(import.meta.url));
   const isPluginSkill = (id: string): boolean => id === PLUGIN_SKILL_ID;
   const anySkill = (): boolean => true;
   return [
     { path: resolve(here, '..', 'assets', 'skills'), accepts: anySkill },
     { path: resolve(here, '..', '..', 'assets', 'skills'), accepts: anySkill },
-    { path: resolve(engineSdkRoot(), 'skills'), accepts: isEngineSkill },
+    ...(projectRoot && activeGame(projectRoot) && gameDir(projectRoot, activeGame(projectRoot)!)
+      ? [{
+          path: resolve(gameDir(projectRoot, activeGame(projectRoot)!)!, 'skills'),
+          accepts: isEngineSkill,
+        }]
+      : []),
     // This repository's own skill source, used when running from a checkout before
     // `build` has populated assets/.
     { path: resolve(here, '..', '..', 'skills'), accepts: isPluginSkill },
@@ -110,9 +115,9 @@ function skillRoots(): SkillRoot[] {
  * Deliberately not an enumerated list: the Engine ships its own authoring skills and
  * adding one upstream must not require editing this installer.
  */
-export function bundledSkills(): readonly BundledSkill[] {
+export function bundledSkills(projectRoot?: string): readonly BundledSkill[] {
   const found = new Map<string, string>();
-  for (const root of skillRoots()) {
+  for (const root of skillRoots(projectRoot)) {
     if (!existsSync(root.path)) continue;
     for (const entry of readdirSync(root.path, { withFileTypes: true })) {
       if (!entry.isDirectory() || found.has(entry.name) || !root.accepts(entry.name)) continue;
@@ -150,15 +155,20 @@ function sameFile(left: string, right: string): boolean {
 
 function copySkill(source: string, destination: string): boolean {
   const destinationIsSymlink = existsSync(destination) && lstatSync(destination).isSymbolicLink();
+  const linksToSource = destinationIsSymlink && realpathSync(source) === realpathSync(destination);
   if (!destinationIsSymlink && existsSync(destination) && realpathSync(source) === realpathSync(destination)) return false;
   const files = filesUnder(source);
   const changed = destinationIsSymlink || files.some((path) => !sameFile(join(source, path), join(destination, path)));
   if (!changed) return false;
 
   if (existsSync(destination)) {
-    const backup = `${destination}.bak.latest`;
-    rmSync(backup, { recursive: true, force: true });
-    cpSync(destination, backup, { recursive: true });
+    // Fresh Engine templates link to this exact source. Backing that link up
+    // exposes a duplicate Skill to the host without preserving any unique data.
+    if (!linksToSource) {
+      const backup = `${destination}.bak.latest`;
+      rmSync(backup, { recursive: true, force: true });
+      cpSync(destination, backup, { recursive: true });
+    }
     rmSync(destination, { recursive: true, force: true });
   }
   for (const path of files) {
@@ -314,7 +324,7 @@ export function installDevKit(
   projectRoot: string,
   clients: readonly string[],
 ): DevKitInstallResult {
-  const skills = bundledSkills();
+  const skills = bundledSkills(projectRoot);
   const hosts = installHostDevKit(projectRoot, clients, skills);
   const mounted = replayForgeaxInstall(projectRoot);
   return {
@@ -371,7 +381,7 @@ export interface DevKitRemoval {
  * A host directory holding unrelated skills is left in place.
  */
 export function removeDevKit(projectRoot: string): DevKitRemoval {
-  const owned = new Set(bundledSkills().map((skill) => skill.id));
+  const owned = new Set(bundledSkills(projectRoot).map((skill) => skill.id));
   const removed: string[] = [];
   let skillCount = 0;
   for (const mount of new Set(Object.values(HOST_MOUNTS).map((entry) => entry.skills))) {
@@ -420,9 +430,9 @@ export function removeDevKit(projectRoot: string): DevKitRemoval {
 }
 
 /** How many Engine authoring skills this build carries, regardless of any project. */
-export function bundledEngineSkillCount(): number {
+export function bundledEngineSkillCount(projectRoot?: string): number {
   try {
-    return bundledSkills().filter((skill) => isEngineSkill(skill.id)).length;
+    return bundledSkills(projectRoot).filter((skill) => isEngineSkill(skill.id)).length;
   } catch {
     return 0;
   }

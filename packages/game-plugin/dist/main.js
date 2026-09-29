@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // src/main.ts
-import { resolve as resolve7 } from "node:path";
+import { resolve as resolve14 } from "node:path";
 
 // src/mcp/protocol.ts
 var MCP_PROTOCOL_VERSION = "2024-11-05";
@@ -168,8 +168,10 @@ function runStdioServer(spec) {
     if (shuttingDown)
       return;
     shuttingDown = true;
-    process.exitCode = 0;
     process.stdin.pause();
+    Promise.resolve(spec.shutdown?.()).catch((error) => writeCrashLog("shutdown", error)).finally(() => {
+      process.exitCode = 0;
+    });
   };
   const finishAfterDrain = () => {
     if (inputClosed && inFlight === 0)
@@ -248,335 +250,17 @@ function runStdioServer(spec) {
       writeCrashLog("uncaughtException", e);
   });
   process.on("unhandledRejection", (e) => writeCrashLog("unhandledRejection", e));
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }
 
 // src/mcp/forgeax-server.ts
-import { readFileSync as readFileSync8 } from "node:fs";
-import { resolve as resolve5 } from "node:path";
+import { readFileSync as readFileSync10 } from "node:fs";
+import { resolve as resolve8 } from "node:path";
 
 // src/status/collect.ts
-import { readFileSync as readFileSync4 } from "node:fs";
+import { readFileSync as readFileSync6 } from "node:fs";
 import { join as join5 } from "node:path";
-
-// src/project/locate.ts
-import {
-  existsSync,
-  mkdirSync as mkdirSync2,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  statSync as statSync2,
-  writeFileSync
-} from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { dirname as dirname2, isAbsolute, join as join2, relative, resolve, sep } from "node:path";
-var SLUG_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
-function ensureLocalProject(root) {
-  const projectRoot = resolve(root);
-  const forgeaxRoot = join2(projectRoot, ".forgeax");
-  const created = !existsSync(forgeaxRoot);
-  mkdirSync2(join2(forgeaxRoot, "games"), { recursive: true });
-  const metadataPath = join2(forgeaxRoot, "project.json");
-  if (!existsSync(metadataPath)) {
-    const name = projectRoot.split(sep).filter(Boolean).pop() || "forgeax-project";
-    writeFileSync(metadataPath, `${JSON.stringify({ version: 1, type: "game", name }, null, 2)}
-`, "utf8");
-  }
-  return { root: projectRoot, created };
-}
-var LOCAL_GAME_MAIN = `/** Minimal ForgeaX game scaffold. Add systems and assets here. */
-export function bootstrap() {
-  // The engine accepts an empty bootstrap; this keeps package-only init offline.
-}
-`;
-function initLocalGame(root, slug) {
-  const project = ensureLocalProject(root);
-  const gameRoot = join2(project.root, ".forgeax", "games", slug);
-  if (existsSync(gameRoot))
-    throw new Error(`game ${JSON.stringify(slug)} already exists`);
-  mkdirSync2(gameRoot, { recursive: true });
-  writeFileSync(join2(gameRoot, "forge.json"), `${JSON.stringify({ id: slug, name: slug, schemaVersion: "1.0.0", entry: "main.ts", physics: "3d" }, null, 2)}
-`, "utf8");
-  writeFileSync(join2(gameRoot, "package.json"), `${JSON.stringify({ name: slug, private: true, type: "module" }, null, 2)}
-`, "utf8");
-  writeFileSync(join2(gameRoot, "main.ts"), LOCAL_GAME_MAIN, "utf8");
-  writeFileSync(join2(gameRoot, "tsconfig.json"), `${JSON.stringify({
-    extends: "../../engine-sdk/tsconfig.json",
-    include: ["**/*.ts"]
-  }, null, 2)}
-`, "utf8");
-  writeFileSync(join2(gameRoot, "FORGE.md"), `# ${slug}
-
-_(created by the package-local ForgeaX bootstrap)_
-`, "utf8");
-  writeFileSync(join2(project.root, ".forgeax", "active-game.json"), `${JSON.stringify({ version: 1, slug }, null, 2)}
-`, "utf8");
-  return { root: project.root, gameRoot, projectCreated: project.created };
-}
-function isConfinedToProject(root, path) {
-  try {
-    const rel = relative(realpathSync(root), realpathSync(path));
-    return rel === "" || rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-  } catch {
-    return false;
-  }
-}
-function isProjectRoot(dir) {
-  if (resolve(dir) === resolve(homedir2()))
-    return false;
-  const forgeax = join2(dir, ".forgeax");
-  if (!existsSync(forgeax))
-    return false;
-  return ["project.json", "active-game.json", "games"].some((marker) => existsSync(join2(forgeax, marker)));
-}
-function findInstanceRoot(start) {
-  let dir = resolve(start);
-  for (;; ) {
-    if (isProjectRoot(dir))
-      return dir;
-    const parent = dirname2(dir);
-    if (parent === dir)
-      return;
-    dir = parent;
-  }
-}
-function resolveProject(explicitDir) {
-  if (explicitDir?.trim()) {
-    const from = resolve(explicitDir.trim());
-    const root2 = findInstanceRoot(from);
-    return root2 ? { root: root2, source: "explicit", searchedFrom: from } : { source: "none", searchedFrom: from };
-  }
-  const envRoot = process.env.FORGEAX_PROJECT_ROOT?.trim();
-  if (envRoot) {
-    const from = resolve(envRoot);
-    if (isProjectRoot(from))
-      return { root: from, source: "env", searchedFrom: from };
-  }
-  const cwd = process.cwd();
-  const root = findInstanceRoot(cwd);
-  return root ? { root, source: "cwd-walkup", searchedFrom: cwd } : { source: "none", searchedFrom: cwd };
-}
-function activeGame(root) {
-  try {
-    const raw = readFileSync(join2(root, ".forgeax", "active-game.json"), "utf8");
-    const slug = JSON.parse(raw).slug;
-    return typeof slug === "string" && SLUG_RE.test(slug) ? slug : undefined;
-  } catch {
-    return;
-  }
-}
-function listGames(root) {
-  const found = new Set;
-  for (const base of [join2(root, ".forgeax", "games"), join2(root, "games")]) {
-    let entries;
-    try {
-      entries = readdirSync(base, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (e.name.startsWith("_") || e.name.startsWith("."))
-        continue;
-      if (e.isDirectory() && isConfinedToProject(root, join2(base, e.name))) {
-        found.add(e.name);
-        continue;
-      }
-      if (e.isSymbolicLink()) {
-        try {
-          const path = join2(base, e.name);
-          if (statSync2(path).isDirectory() && isConfinedToProject(root, path))
-            found.add(e.name);
-        } catch {}
-      }
-    }
-  }
-  return [...found].sort();
-}
-function gameDir(root, slug) {
-  if (!SLUG_RE.test(slug))
-    return;
-  for (const base of [join2(root, ".forgeax", "games"), join2(root, "games")]) {
-    const dir = join2(base, slug);
-    try {
-      if (statSync2(dir).isDirectory() && isConfinedToProject(root, dir))
-        return dir;
-    } catch {}
-  }
-  return;
-}
-
-// src/services/probe.ts
-import { get as httpsGet } from "node:https";
-import { realpathSync as realpathSync2 } from "node:fs";
-var DEFAULT_PORTS = {
-  server: 18900,
-  interface: 18920,
-  engine: 15173
-};
-function portOf(name) {
-  const env = process.env[`FORGEAX_${name.toUpperCase()}_PORT`];
-  const n = env ? Number.parseInt(env, 10) : Number.NaN;
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_PORTS[name];
-}
-function urlOf(name, port) {
-  const scheme = name === "interface" && process.env.FORGEAX_INTERFACE_HTTPS === "1" ? "https" : "http";
-  return `${scheme}://127.0.0.1:${port}`;
-}
-var PROBE_TIMEOUT_MS = 1500;
-async function identityAt(url, expectedName, signal) {
-  if (!url.startsWith("https://")) {
-    const response = await fetch(url, { signal });
-    if (!response.ok)
-      return;
-    const value = await response.json();
-    return value.status === "ok" && value.name === expectedName && typeof value.instanceRootAbs === "string" ? {
-      instanceRootAbs: value.instanceRootAbs,
-      ...typeof value.runtimeVersion === "string" ? { runtimeVersion: value.runtimeVersion } : {},
-      ...typeof value.engineVersion === "string" ? { engineVersion: value.engineVersion } : {}
-    } : undefined;
-  }
-  return await new Promise((resolve2, reject) => {
-    const request = httpsGet(url, { rejectUnauthorized: false, signal }, (response) => {
-      response.setEncoding("utf8");
-      let body = "";
-      response.on("data", (chunk) => {
-        body = `${body}${chunk}`.slice(0, 16384);
-      });
-      response.on("end", () => {
-        try {
-          const value = JSON.parse(body);
-          resolve2(value.status === "ok" && value.name === expectedName && typeof value.instanceRootAbs === "string" ? {
-            instanceRootAbs: value.instanceRootAbs,
-            ...typeof value.runtimeVersion === "string" ? { runtimeVersion: value.runtimeVersion } : {},
-            ...typeof value.engineVersion === "string" ? { engineVersion: value.engineVersion } : {}
-          } : undefined);
-        } catch {
-          resolve2(undefined);
-        }
-      });
-    });
-    request.on("error", reject);
-  });
-}
-async function isExpectedService(name, url, signal) {
-  if (name === "server") {
-    const response = await fetch(`${url}/api/health`, { signal });
-    if (!response.ok)
-      return false;
-    const health = await response.json();
-    return health.status === "ok" && health.name === "@forgeax/server";
-  }
-  if (name === "engine") {
-    return await identityAt(`${url}/preview/__forgeax_health`, "@forgeax/play-runtime", signal) !== undefined;
-  }
-  return await identityAt(`${url}/api/health`, "@forgeax/server", signal) !== undefined;
-}
-async function probeOne(name) {
-  const port = portOf(name);
-  const url = urlOf(name, port);
-  const controller = new AbortController;
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-  try {
-    const reachable = await isExpectedService(name, url, controller.signal);
-    return {
-      name,
-      port,
-      url,
-      reachable,
-      ...reachable ? {} : { reason: `endpoint did not identify as ForgeaX ${name}` }
-    };
-  } catch (e) {
-    const reason = controller.signal.aborted ? `no response within ${PROBE_TIMEOUT_MS}ms` : e.message;
-    return { name, port, url, reachable: false, reason };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-async function probeServices() {
-  const services = await Promise.all(Object.keys(DEFAULT_PORTS).map((n) => probeOne(n)));
-  const up = (n) => services.find((s) => s.name === n)?.reachable === true;
-  const tier = !up("server") ? "local" : up("engine") ? "runtime" : "backend";
-  return { tier, services };
-}
-var TIER_ORDER = { local: 0, backend: 1, runtime: 2 };
-function tierAtLeast(actual, wanted) {
-  return TIER_ORDER[actual] >= TIER_ORDER[wanted];
-}
-async function waitForTier(wanted, timeoutMs, intervalMs = 700) {
-  const deadline = Date.now() + timeoutMs;
-  let last = await probeServices();
-  while (!tierAtLeast(last.tier, wanted) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, intervalMs));
-    last = await probeServices();
-  }
-  return last;
-}
-function previewUrl(slug) {
-  return `${urlOf("engine", portOf("engine"))}/?game=${encodeURIComponent(slug)}`;
-}
-function serverBaseUrl() {
-  return urlOf("server", portOf("server"));
-}
-async function assertServerProjectRoot(root) {
-  const controller = new AbortController;
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${serverBaseUrl()}/api/health`, { signal: controller.signal });
-    if (!response.ok)
-      throw new Error(`health returned HTTP ${response.status}`);
-    const health = await response.json();
-    if (health.status !== "ok" || health.name !== "@forgeax/server" || typeof health.instanceRootAbs !== "string") {
-      throw new Error("health response did not identify a ForgeaX server with instanceRootAbs");
-    }
-    const expected = realpathSync2(root);
-    const actual = realpathSync2(health.instanceRootAbs);
-    if (actual !== expected) {
-      throw new Error(`ForgeaX server at ${serverBaseUrl()} belongs to ${health.instanceRootAbs}, but this command is bound to ${root}; start the server for this project before continuing`);
-    }
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`${serverBaseUrl()} did not answer /api/health within ${PROBE_TIMEOUT_MS}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-async function assertEngineProjectRoot(root) {
-  const port = portOf("engine");
-  const url = urlOf("engine", port);
-  const controller = new AbortController;
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-  try {
-    const identity = await identityAt(`${url}/preview/__forgeax_health`, "@forgeax/play-runtime", controller.signal);
-    if (!identity) {
-      throw new Error("health response did not identify a ForgeaX play runtime with instanceRootAbs");
-    }
-    const expected = realpathSync2(root);
-    const actual = realpathSync2(identity.instanceRootAbs);
-    if (actual !== expected) {
-      throw new Error(`ForgeaX engine at ${url} belongs to ${identity.instanceRootAbs}, but this command is bound to ${root}; start the engine for this project before continuing`);
-    }
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`${url} did not answer runtime health within ${PROBE_TIMEOUT_MS}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-async function fetchEngineRuntimeIdentity() {
-  const port = portOf("engine");
-  const url = urlOf("engine", port);
-  const controller = new AbortController;
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-  try {
-    return await identityAt(`${url}/preview/__forgeax_health`, "@forgeax/play-runtime", controller.signal);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 // src/agents-md/managed-block.ts
 import { createHash } from "node:crypto";
@@ -634,26 +318,82 @@ import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
   cpSync,
-  existsSync as existsSync2,
+  existsSync,
   lstatSync,
-  mkdirSync as mkdirSync3,
+  mkdirSync as mkdirSync2,
   readFileSync as readFileSync2,
-  readdirSync as readdirSync2,
-  realpathSync as realpathSync3,
+  readdirSync,
+  realpathSync as realpathSync2,
   rmSync,
-  statSync as statSync3,
-  writeFileSync as writeFileSync2
+  statSync as statSync2,
+  writeFileSync
 } from "node:fs";
-import { dirname as dirname3, join as join3, relative as relative2, resolve as resolve2 } from "node:path";
+import { dirname as dirname3, join as join3, relative, resolve as resolve2 } from "node:path";
 import { fileURLToPath } from "node:url";
-import { engineSdkRoot } from "@forgeax/game-runtime";
+
+// src/project/locate.ts
+import { readFileSync, realpathSync } from "node:fs";
+import { dirname as dirname2, join as join2, resolve } from "node:path";
+var SLUG_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
+var GUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+function isProjectRoot(dir) {
+  return engineGameId(dir) !== undefined;
+}
+function engineGameId(root) {
+  try {
+    const manifest = JSON.parse(readFileSync(join2(root, "forge.json"), "utf8"));
+    const pkg = JSON.parse(readFileSync(join2(root, "package.json"), "utf8"));
+    return typeof manifest.id === "string" && SLUG_RE.test(manifest.id) && (manifest.schemaVersion === "3.0.0" ? manifest.roots !== null && typeof manifest.roots === "object" && !Array.isArray(manifest.roots) && Object.entries(manifest.roots).every(([realm, guid]) => ["host", "frontend", "engine", "build"].includes(realm) && typeof guid === "string" && GUID_RE.test(guid)) : manifest.schemaVersion === "2.0.0" ? typeof manifest.defaultScene === "string" && GUID_RE.test(manifest.defaultScene) : (manifest.schemaVersion === undefined || manifest.schemaVersion === "1.0.0") && typeof manifest.entry === "string") && typeof pkg.dependencies?.["@forgeax/engine"] === "string" ? manifest.id : undefined;
+  } catch {
+    return;
+  }
+}
+function findInstanceRoot(start) {
+  let dir = resolve(start);
+  for (;; ) {
+    if (isProjectRoot(dir))
+      return dir;
+    const parent = dirname2(dir);
+    if (parent === dir)
+      return;
+    dir = parent;
+  }
+}
+function resolveProject(explicitDir) {
+  if (explicitDir?.trim()) {
+    const from = resolve(explicitDir.trim());
+    const root2 = findInstanceRoot(from);
+    return root2 ? { root: root2, source: "explicit", searchedFrom: from } : { source: "none", searchedFrom: from };
+  }
+  const envRoot = process.env.FORGEAX_PROJECT_ROOT?.trim();
+  if (envRoot) {
+    const from = resolve(envRoot);
+    if (isProjectRoot(from))
+      return { root: from, source: "env", searchedFrom: from };
+  }
+  const cwd = process.cwd();
+  const root = findInstanceRoot(cwd);
+  return root ? { root, source: "cwd-walkup", searchedFrom: cwd } : { source: "none", searchedFrom: cwd };
+}
+function activeGame(root) {
+  return engineGameId(root);
+}
+function listGames(root) {
+  const direct = engineGameId(root);
+  return direct ? [direct] : [];
+}
+function gameDir(root, slug) {
+  if (!SLUG_RE.test(slug))
+    return;
+  return engineGameId(root) === slug ? realpathSync(root) : undefined;
+}
 
 // src/routing.ts
 var ROUTING_TEXT = `## ForgeaX game development
 
 This project is a ForgeaX game workspace. Route game work through the \`forgeax\` MCP
 server rather than reconstructing it from shell commands. The current host Agent owns
-reasoning and game-code edits; the plugin owns ForgeaX Runtime lifecycle and feedback.
+reasoning and game-code edits; the plugin owns the exact Engine Preview adapter.
 
 - Game implementation and failure recovery: follow the \`forgeax-game\` project skill.
   The published plugin carries the Skill and host rules; install or refresh it with
@@ -663,10 +403,11 @@ reasoning and game-code edits; the plugin owns ForgeaX Runtime lifecycle and fee
   resource first. Clients without resource support call \`forgeax_status_lite\`.
   Status is read-only and never writes to the workspace.
 - Running, previewing, or verifying the game ("run it", "let me see it", "does it
-  work"): call \`forgeax_run_current_game\`. It installs/starts whatever Runtime
-  services are missing, returns a preview URL, and reports Runtime/log identity.
-- Reading runtime errors or engine logs: read the file path returned in
-  \`runtime_logs.local_file\` with your own file-reading tool. Log tailing is
+  work"): call \`forgeax_run_current_game\`. It invokes the exact installed Engine
+  CLI build, starts or reuses Engine-owned Preview, and reports its verified
+  release/build/instance identity.
+- Reading build or Preview errors: read the returned \`preview.stdout_log\` and
+  \`preview.stderr_log\` paths with your own file-reading tool. Log tailing is
   deliberately not an MCP tool — the log is a file, so read it like one.
 - Generating art or 3D assets ("make a sprite", "I need a texture", "generate a
   model of…"): call \`forgeax_generate_image\` (text-to-image, or image-to-image
@@ -676,15 +417,36 @@ reasoning and game-code edits; the plugin owns ForgeaX Runtime lifecycle and fee
   public https URL, or a local file path when COS is configured (it is uploaded and
   passed as a short-lived presigned URL). They need \`FORGEAX_LITELLM_API_KEY\` (and
   \`FORGEAX_COS_*\` for local-file image-to-3D) in the environment.
+- Reusing a library 3D asset: read the installed \`art-3d-asset-library\` Skill
+  and use its pinned CLI to search candidates and import the selected ID.
+  If not enabled, report the missing setup. Do not relabel procedural geometry
+  or generated models as library results.
 - Creating a game, switching the active game, installing or upgrading the plugin:
   these are one-time operations and are CLI subcommands, not MCP tools. Run
-  \`npx -y -p @forgeax/game forgeax-game <init|use|doctor|devkit|upgrade>\`.
+  \`npx -y @forgeax/game <init|use|doctor|devkit|upgrade>\`.
 
-If no project exists yet, run \`forgeax-game init --game <slug>\` in the user's empty
-workspace; do not ask them to clone ForgeaX Studio. Writing gameplay code is ordinary
-file editing — use your normal editing tools against \`.forgeax/games/<slug>/\`. The
-MCP server exists for the things you cannot do by editing files: knowing what is
-running, and running it.`;
+In an empty standalone directory, \`forgeax-game init\` creates the released Engine
+game and installs this guidance. In an existing exact Engine game it refreshes the
+binding idempotently. Follow \`forge.json\` and the installed Engine authoring layout
+(v2 uses \`assets/\` and \`plugins[]\`), rather than prescribing \`src/\`. Studio's
+\`.forgeax/games/<slug>\` layout is a different hosted-project boundary and must not be
+invented here. Before claiming a requested game complete, replace the Empty template
+identity in \`forge.json\`, \`package.json\`, and README, keep tests/controls accurate,
+and call \`forgeax_run_current_game\`. Mount UI under the Engine Host \`uiRoot\` or
+\`#game-ui\`; the released Host provides \`#game-ui\`, so direct \`document.body\`
+mutation is rejected. Export and behavior-test at least one named game-specific state
+transition or rule; renaming the Empty template test is not completion.
+Any run-tool error means the game is not previewed: never curl, reuse, open, or report
+an existing localhost port. HTTP 200 is not ownership evidence. Only a successful tool
+result containing \`preview.status: ready\`, root, build digest, instance ID, and its own
+\`preview_url\` authorizes a Preview claim, not a gameplay-verification claim.
+For playable-game requests, check the requested interactions and visible feedback
+with an available browser tool. If unavailable, report gameplay as unverified and
+provide manual checks; do not stop useful implementation or invent test results.
+Use the installed Engine contract for Host access and UI lifecycle, and verify
+requested UI is mounted rather than silently skipping it when a Host lookup fails.
+Never substitute Studio, Editor, PATH, or a source checkout for the installed Engine
+release.`;
 
 // src/devkit/install.ts
 var PLUGIN_SKILL_ID = "forgeax-game";
@@ -702,27 +464,30 @@ var HOST_MOUNTS = {
   zcode: { skills: ".zcode/skills" },
   opencode: { skills: ".config/opencode/skills", rules: ".config/opencode/rules" }
 };
-function skillRoots() {
+function skillRoots(projectRoot) {
   const here = dirname3(fileURLToPath(import.meta.url));
   const isPluginSkill = (id) => id === PLUGIN_SKILL_ID;
   const anySkill = () => true;
   return [
     { path: resolve2(here, "..", "assets", "skills"), accepts: anySkill },
     { path: resolve2(here, "..", "..", "assets", "skills"), accepts: anySkill },
-    { path: resolve2(engineSdkRoot(), "skills"), accepts: isEngineSkill },
+    ...projectRoot && activeGame(projectRoot) && gameDir(projectRoot, activeGame(projectRoot)) ? [{
+      path: resolve2(gameDir(projectRoot, activeGame(projectRoot)), "skills"),
+      accepts: isEngineSkill
+    }] : [],
     { path: resolve2(here, "..", "..", "skills"), accepts: isPluginSkill }
   ];
 }
-function bundledSkills() {
+function bundledSkills(projectRoot) {
   const found = new Map;
-  for (const root of skillRoots()) {
-    if (!existsSync2(root.path))
+  for (const root of skillRoots(projectRoot)) {
+    if (!existsSync(root.path))
       continue;
-    for (const entry of readdirSync2(root.path, { withFileTypes: true })) {
+    for (const entry of readdirSync(root.path, { withFileTypes: true })) {
       if (!entry.isDirectory() || found.has(entry.name) || !root.accepts(entry.name))
         continue;
       const path = join3(root.path, entry.name);
-      if (existsSync2(join3(path, "SKILL.md")))
+      if (existsSync(join3(path, "SKILL.md")))
         found.set(entry.name, path);
     }
   }
@@ -739,48 +504,51 @@ function describeSkills(ids) {
   return `${ids.length} skills (${engine} Engine authoring)`;
 }
 function filesUnder(root, current = root) {
-  return readdirSync2(current, { withFileTypes: true }).flatMap((entry) => {
+  return readdirSync(current, { withFileTypes: true }).flatMap((entry) => {
     const path = join3(current, entry.name);
-    return entry.isDirectory() ? filesUnder(root, path) : [relative2(root, path)];
+    return entry.isDirectory() ? filesUnder(root, path) : [relative(root, path)];
   });
 }
 function sameFile(left, right) {
-  return existsSync2(right) && readFileSync2(left).equals(readFileSync2(right));
+  return existsSync(right) && readFileSync2(left).equals(readFileSync2(right));
 }
 function copySkill(source, destination) {
-  const destinationIsSymlink = existsSync2(destination) && lstatSync(destination).isSymbolicLink();
-  if (!destinationIsSymlink && existsSync2(destination) && realpathSync3(source) === realpathSync3(destination))
+  const destinationIsSymlink = existsSync(destination) && lstatSync(destination).isSymbolicLink();
+  const linksToSource = destinationIsSymlink && realpathSync2(source) === realpathSync2(destination);
+  if (!destinationIsSymlink && existsSync(destination) && realpathSync2(source) === realpathSync2(destination))
     return false;
   const files = filesUnder(source);
   const changed = destinationIsSymlink || files.some((path) => !sameFile(join3(source, path), join3(destination, path)));
   if (!changed)
     return false;
-  if (existsSync2(destination)) {
-    const backup = `${destination}.bak.latest`;
-    rmSync(backup, { recursive: true, force: true });
-    cpSync(destination, backup, { recursive: true });
+  if (existsSync(destination)) {
+    if (!linksToSource) {
+      const backup = `${destination}.bak.latest`;
+      rmSync(backup, { recursive: true, force: true });
+      cpSync(destination, backup, { recursive: true });
+    }
     rmSync(destination, { recursive: true, force: true });
   }
   for (const path of files) {
     const target = join3(destination, path);
-    mkdirSync3(dirname3(target), { recursive: true });
+    mkdirSync2(dirname3(target), { recursive: true });
     copyFileSync(join3(source, path), target);
   }
   return true;
 }
 function writeTextIfChanged(path, content) {
-  const destinationIsSymlink = existsSync2(path) && lstatSync(path).isSymbolicLink();
-  if (!destinationIsSymlink && existsSync2(path) && readFileSync2(path, "utf8") === content)
+  const destinationIsSymlink = existsSync(path) && lstatSync(path).isSymbolicLink();
+  if (!destinationIsSymlink && existsSync(path) && readFileSync2(path, "utf8") === content)
     return false;
-  if (existsSync2(path)) {
+  if (existsSync(path)) {
     const backup = `${path}.bak.latest`;
     rmSync(backup, { force: true });
     copyFileSync(path, backup);
     if (destinationIsSymlink)
       rmSync(path, { force: true });
   }
-  mkdirSync3(dirname3(path), { recursive: true });
-  writeFileSync2(path, content, "utf8");
+  mkdirSync2(dirname3(path), { recursive: true });
+  writeFileSync(path, content, "utf8");
   return true;
 }
 function selectedHostIds(clients) {
@@ -818,7 +586,7 @@ function installHostDevKit(projectRoot, clients, skills = bundledSkills()) {
 }
 function replayForgeaxInstall(projectRoot) {
   const manifestPath = join3(projectRoot, ".forgeax-harness", "install-manifest.json");
-  if (!existsSync2(manifestPath)) {
+  if (!existsSync(manifestPath)) {
     return {
       mounted: false,
       note: "Package-owned host mounts are active; forgeax-install is optional compatibility for additional harness capabilities."
@@ -837,13 +605,13 @@ function replayForgeaxInstall(projectRoot) {
     throw new Error(`${manifestPath} belongs to ${manifest.targetRoot}, not ${projectRoot}`);
   }
   const installer = join3(manifest.harnessRoot, "skills", "forgeax-install", "scripts", "install_harness.py");
-  if (!existsSync2(installer) || !existsSync2(manifest.specPath)) {
+  if (!existsSync(installer) || !existsSync(manifest.specPath)) {
     return {
       mounted: false,
       note: "Package-owned host mounts are active; the recorded forgeax-install checkout is unavailable (optional)."
     };
   }
-  const python = manifest.pythonInterpreter && existsSync2(manifest.pythonInterpreter) ? manifest.pythonInterpreter : "python3";
+  const python = manifest.pythonInterpreter && existsSync(manifest.pythonInterpreter) ? manifest.pythonInterpreter : "python3";
   const result = spawnSync(python, [installer, "--spec", manifest.specPath, "--target-root", projectRoot], { cwd: manifest.harnessRoot, encoding: "utf8" });
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout || `exit ${result.status}`).trim();
@@ -852,7 +620,7 @@ function replayForgeaxInstall(projectRoot) {
   return { mounted: true, note: "Mounted by forgeax-install into all configured agent hosts." };
 }
 function installDevKit(projectRoot, clients) {
-  const skills = bundledSkills();
+  const skills = bundledSkills(projectRoot);
   const hosts = installHostDevKit(projectRoot, clients, skills);
   const mounted = replayForgeaxInstall(projectRoot);
   return {
@@ -868,7 +636,7 @@ function installDevKit(projectRoot, clients) {
 function hasDevKit(projectRoot) {
   return hostSkillDirs(projectRoot).some((dir) => {
     const skillPath = join3(dir, PLUGIN_SKILL_ID, "SKILL.md");
-    return existsSync2(skillPath) && statSync3(skillPath).isFile();
+    return existsSync(skillPath) && statSync2(skillPath).isFile();
   });
 }
 function installedEngineSkills(projectRoot) {
@@ -876,28 +644,28 @@ function installedEngineSkills(projectRoot) {
   for (const dir of hostSkillDirs(projectRoot)) {
     let entries;
     try {
-      entries = readdirSync2(dir, { withFileTypes: true });
+      entries = readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
       if (!entry.isDirectory() || !isEngineSkill(entry.name))
         continue;
-      if (existsSync2(join3(dir, entry.name, "SKILL.md")))
+      if (existsSync(join3(dir, entry.name, "SKILL.md")))
         found.add(entry.name);
     }
   }
   return [...found].sort();
 }
 function removeDevKit(projectRoot) {
-  const owned = new Set(bundledSkills().map((skill) => skill.id));
+  const owned = new Set(bundledSkills(projectRoot).map((skill) => skill.id));
   const removed = [];
   let skillCount = 0;
   for (const mount of new Set(Object.values(HOST_MOUNTS).map((entry) => entry.skills))) {
     const dir = join3(projectRoot, mount);
     let entries;
     try {
-      entries = readdirSync2(dir, { withFileTypes: true });
+      entries = readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -921,7 +689,7 @@ function removeDevKit(projectRoot) {
     const dir = join3(projectRoot, legacy);
     let entries;
     try {
-      entries = readdirSync2(dir, { withFileTypes: true });
+      entries = readdirSync(dir, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -932,47 +700,546 @@ function removeDevKit(projectRoot) {
       rmSync(join3(dir, entry.name), { recursive: true, force: true });
     }
     try {
-      if (readdirSync2(dir).length === 0)
+      if (readdirSync(dir).length === 0)
         rmSync(dir, { recursive: true, force: true });
     } catch {}
   }
   return { removed, skillCount };
 }
-function bundledEngineSkillCount() {
+function bundledEngineSkillCount(projectRoot) {
   try {
-    return bundledSkills().filter((skill) => isEngineSkill(skill.id)).length;
+    return bundledSkills(projectRoot).filter((skill) => isEngineSkill(skill.id)).length;
   } catch {
     return 0;
   }
 }
 
-// src/run/log-paths.ts
-import { mkdirSync as mkdirSync4, readFileSync as readFileSync3, unlinkSync, writeFileSync as writeFileSync3 } from "node:fs";
-import { join as join4 } from "node:path";
-function runtimeLogPaths(root) {
-  const dir = join4(root, ".forgeax", "logs", "runtime");
-  return {
-    dir,
-    logFile: join4(dir, "runtime.log"),
-    stateFile: join4(dir, "state.json"),
-    startLockFile: join4(dir, "start.lock")
-  };
-}
-function readWatcherState(root) {
+// src/engine/release.ts
+import { existsSync as existsSync3, lstatSync as lstatSync3, readFileSync as readFileSync4, realpathSync as realpathSync4 } from "node:fs";
+import { isAbsolute as isAbsolute2, relative as relative3, resolve as resolve4, sep as sep2 } from "node:path";
+
+// src/engine/constants.ts
+var ENGINE_VERSION = "0.3.3";
+var ENGINE_COMMIT = "4ad48ef03d8f8f1bb74f5bf7cde71c4799d51060";
+var ENGINE_SDK_PACKAGE = "@forgeax/engine-sdk";
+var PNPM_VERSION = "11.7.0";
+
+// src/engine/carrier.ts
+import { execFile } from "node:child_process";
+import {
+  chmodSync,
+  existsSync as existsSync2,
+  lstatSync as lstatSync2,
+  mkdtempSync,
+  readFileSync as readFileSync3,
+  readdirSync as readdirSync2,
+  realpathSync as realpathSync3,
+  rmSync as rmSync2,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { createRequire } from "node:module";
+import { basename, delimiter, dirname as dirname4, isAbsolute, relative as relative2, resolve as resolve3, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var SDK_MANIFEST_SCHEMA = "1.8.0";
+var SDK_CLI_RELATIVE = ["bin", "forgeax.mjs"];
+var CARRIER_ENVIRONMENT_ALLOWLIST = [
+  "HOME",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "SystemRoot",
+  "SYSTEMROOT",
+  "ComSpec",
+  "COMSPEC",
+  "PATHEXT",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LC_COLLATE",
+  "TZ",
+  "TERM",
+  "COLORTERM",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "NODE_EXTRA_CA_CERTS",
+  "npm_config_registry",
+  "NPM_CONFIG_REGISTRY",
+  "npm_config_userconfig",
+  "NPM_CONFIG_USERCONFIG",
+  "npm_config_globalconfig",
+  "NPM_CONFIG_GLOBALCONFIG",
+  "npm_config_cafile",
+  "NPM_CONFIG_CAFILE",
+  "npm_config_ca",
+  "NPM_CONFIG_CA",
+  "npm_config_cert",
+  "NPM_CONFIG_CERT",
+  "npm_config_key",
+  "NPM_CONFIG_KEY",
+  "npm_config_strict_ssl",
+  "NPM_CONFIG_STRICT_SSL",
+  "npm_config_proxy",
+  "NPM_CONFIG_PROXY",
+  "npm_config_https_proxy",
+  "NPM_CONFIG_HTTPS_PROXY",
+  "npm_config_http_proxy",
+  "NPM_CONFIG_HTTP_PROXY",
+  "npm_config_noproxy",
+  "NPM_CONFIG_NOPROXY",
+  "npm_config_offline",
+  "NPM_CONFIG_OFFLINE",
+  "npm_config_prefer_offline",
+  "NPM_CONFIG_PREFER_OFFLINE",
+  "npm_config_cache",
+  "NPM_CONFIG_CACHE",
+  "npm_config_store_dir",
+  "NPM_CONFIG_STORE_DIR"
+];
+var CARRIER_ENVIRONMENT_EXCLUDE = [
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "FORGEAX_SDK_ROOT",
+  "npm_execpath",
+  "NPM_EXEC_PATH",
+  "npm_node_execpath",
+  "NPM_NODE_EXEC_PATH",
+  "npm_config_execpath",
+  "NPM_CONFIG_EXECPATH",
+  "npm_config_node_execpath",
+  "NPM_CONFIG_NODE_EXECPATH",
+  "npm_config_node_options",
+  "NPM_CONFIG_NODE_OPTIONS",
+  "npm_config_script_shell",
+  "NPM_CONFIG_SCRIPT_SHELL",
+  "npm_config_shell",
+  "NPM_CONFIG_SHELL",
+  "npm_config_prefix",
+  "NPM_CONFIG_PREFIX",
+  "PNPM_HOME",
+  "pnpm_home",
+  "COREPACK_HOME",
+  "COREPACK_BIN_PATH"
+];
+function packageJson(path) {
   try {
-    return JSON.parse(readFileSync3(runtimeLogPaths(root).stateFile, "utf8"));
-  } catch {
-    return;
+    const value = JSON.parse(readFileSync3(path, "utf8"));
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+      throw new Error("not-an-object");
+    return value;
+  } catch (error) {
+    throw new Error(`engine_sdk_manifest_invalid: cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
-function updateWatcherState(root, patch) {
+function confined(root, candidate) {
+  const rel = relative2(root, candidate);
+  return rel === "" || rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+function canonicalRegularFile(path, code, root) {
+  if (!existsSync2(path) || !lstatSync2(path).isFile())
+    throw new Error(`${code}: ${path}`);
+  const canonical = realpathSync3(path);
+  if (!confined(root, canonical))
+    throw new Error(`${code}_escape: ${canonical}`);
+  return canonical;
+}
+function pluginRootFromModule() {
+  let cursor = resolve3(dirname4(fileURLToPath2(import.meta.url)));
+  for (;; ) {
+    const manifestPath = resolve3(cursor, "package.json");
+    try {
+      if (packageJson(manifestPath).name === "@forgeax/game")
+        return realpathSync3(cursor);
+    } catch {}
+    const parent = dirname4(cursor);
+    if (parent === cursor)
+      throw new Error("engine_sdk_plugin_missing: cannot locate @forgeax/game package root");
+    cursor = parent;
+  }
+}
+function manifestFromEntry(entry, name) {
+  let cursor = resolve3(dirname4(entry));
+  for (;; ) {
+    const manifestPath = resolve3(cursor, "package.json");
+    try {
+      if (packageJson(manifestPath).name === name)
+        return realpathSync3(manifestPath);
+    } catch {}
+    const parent = dirname4(cursor);
+    if (parent === cursor)
+      throw new Error(`engine_sdk_dependency_invalid: ${name} package.json was not found`);
+    cursor = parent;
+  }
+}
+function installationRoot(pluginRoot) {
+  let cursor = pluginRoot;
+  let found;
+  for (;; ) {
+    if (basename(cursor) === "node_modules")
+      found = cursor;
+    const parent = dirname4(cursor);
+    if (parent === cursor)
+      break;
+    cursor = parent;
+  }
+  if (found === undefined) {
+    throw new Error(`engine_sdk_install_root_missing: ${pluginRoot} is not inside a node_modules installation`);
+  }
+  return realpathSync3(found);
+}
+function resolveDependency(pluginRoot, installRoot, name, missingCode) {
+  const packageRequire = createRequire(resolve3(pluginRoot, "package.json"));
+  let manifestPath;
   try {
-    const paths = runtimeLogPaths(root);
-    mkdirSync4(paths.dir, { recursive: true });
-    const current = readWatcherState(root) ?? {};
-    writeFileSync3(paths.stateFile, `${JSON.stringify({ ...current, ...patch }, null, 2)}
-`);
-  } catch {}
+    try {
+      manifestPath = packageRequire.resolve(`${name}/package.json`, { paths: [pluginRoot] });
+    } catch {
+      manifestPath = manifestFromEntry(packageRequire.resolve(name, { paths: [pluginRoot] }), name);
+    }
+  } catch (error) {
+    throw new Error(`${missingCode}: ${name} is not installed in the Game Plugin dependency graph${error instanceof Error ? ` (${error.message})` : ""}`);
+  }
+  const canonicalManifest = realpathSync3(manifestPath);
+  const root = realpathSync3(dirname4(canonicalManifest));
+  if (!confined(installRoot, pluginRoot) || !confined(installRoot, root)) {
+    throw new Error(`engine_sdk_dependency_escape: ${name} resolves outside the Game Plugin installation root`);
+  }
+  return { root, manifest: packageJson(canonicalManifest) };
+}
+function sdkManifest(path) {
+  const value = packageJson(path);
+  const packageEntries = Array.isArray(value.packages) ? value.packages : [];
+  const requiredPackages = new Map;
+  const packageNames = new Set;
+  let packagesValid = Array.isArray(value.packages);
+  for (const entry of packageEntries) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      packagesValid = false;
+      continue;
+    }
+    const name = entry.name;
+    const version = entry.version;
+    if (typeof name !== "string" || typeof version !== "string" || packageNames.has(name)) {
+      packagesValid = false;
+    } else {
+      packageNames.add(name);
+      requiredPackages.set(name, version);
+    }
+  }
+  if (!packagesValid || value.schemaVersion !== SDK_MANIFEST_SCHEMA || value.sdkVersion !== ENGINE_VERSION || value.engineCommit !== ENGINE_COMMIT || value.requirements?.pnpm !== PNPM_VERSION || requiredPackages.get("@forgeax/engine") !== ENGINE_VERSION || requiredPackages.get("@forgeax/engine-devkit") !== ENGINE_VERSION) {
+    throw new Error("engine_sdk_manifest_mismatch: carrier does not identify the approved Engine/DevKit/pnpm set");
+  }
+  return value;
+}
+function packageBin(manifest, name) {
+  if (typeof manifest.bin === "string")
+    return manifest.bin;
+  if (manifest.bin !== null && typeof manifest.bin === "object") {
+    const value = manifest.bin[name];
+    if (typeof value === "string" && value.length > 0)
+      return value;
+  }
+  throw new Error(`engine_sdk_cli_invalid: ${name} package does not declare a ${name} binary`);
+}
+function resolveGamePluginCarrier(options = {}) {
+  const configuredRoot = resolve3(options.pluginRoot ?? pluginRootFromModule());
+  let pluginRoot;
+  try {
+    pluginRoot = realpathSync3(configuredRoot);
+  } catch (error) {
+    throw new Error(`engine_sdk_plugin_missing: cannot read Game Plugin root ${configuredRoot}${error instanceof Error ? ` (${error.message})` : ""}`);
+  }
+  const plugin = packageJson(resolve3(pluginRoot, "package.json"));
+  const installRoot = installationRoot(pluginRoot);
+  if (!confined(installRoot, pluginRoot)) {
+    throw new Error(`engine_sdk_plugin_escape: ${pluginRoot} is outside its installation root`);
+  }
+  if (plugin.name !== "@forgeax/game")
+    throw new Error(`engine_sdk_plugin_invalid: ${pluginRoot}`);
+  if (plugin.dependencies?.[ENGINE_SDK_PACKAGE] !== ENGINE_VERSION) {
+    throw new Error(`engine_sdk_dependency_mismatch: ${ENGINE_SDK_PACKAGE} must be ${ENGINE_VERSION}`);
+  }
+  if (plugin.dependencies?.pnpm !== PNPM_VERSION) {
+    throw new Error(`pnpm_dependency_mismatch: pnpm must be ${PNPM_VERSION}`);
+  }
+  const carrier = resolveDependency(pluginRoot, installRoot, ENGINE_SDK_PACKAGE, "engine_sdk_carrier_missing");
+  if (carrier.manifest.name !== ENGINE_SDK_PACKAGE || carrier.manifest.version !== ENGINE_VERSION) {
+    throw new Error(`engine_sdk_carrier_mismatch: installed SDK carrier must be ${ENGINE_SDK_PACKAGE}@${ENGINE_VERSION}`);
+  }
+  const sdkRoot = resolve3(carrier.root, "sdk");
+  if (!existsSync2(sdkRoot) || !lstatSync2(sdkRoot).isDirectory()) {
+    throw new Error(`engine_sdk_root_missing: ${sdkRoot}`);
+  }
+  const canonicalSdkRoot = realpathSync3(sdkRoot);
+  if (!confined(carrier.root, canonicalSdkRoot))
+    throw new Error("engine_sdk_root_escape: SDK root escaped carrier");
+  const manifest = sdkManifest(resolve3(canonicalSdkRoot, "sdk-manifest.json"));
+  const cliPath = canonicalRegularFile(resolve3(canonicalSdkRoot, ...SDK_CLI_RELATIVE), "engine_sdk_cli_invalid", canonicalSdkRoot);
+  const pnpm = resolveDependency(pluginRoot, installRoot, "pnpm", "pnpm_missing");
+  if (pnpm.manifest.name !== "pnpm" || pnpm.manifest.version !== PNPM_VERSION) {
+    throw new Error(`pnpm_version_mismatch: installed pnpm must be ${PNPM_VERSION}`);
+  }
+  const pnpmCliPath = canonicalRegularFile(resolve3(pnpm.root, packageBin(pnpm.manifest, "pnpm")), "pnpm_cli_invalid", pnpm.root);
+  return {
+    pluginRoot,
+    root: carrier.root,
+    sdkRoot: canonicalSdkRoot,
+    cliPath,
+    pnpmRoot: pnpm.root,
+    pnpmCliPath,
+    sdkManifest: manifest
+  };
+}
+function emptyTarget(targetRoot) {
+  const absolute = resolve3(targetRoot);
+  if (!existsSync2(absolute) || !lstatSync2(absolute).isDirectory()) {
+    throw new Error(`project_target_invalid: ${absolute} must be an existing directory`);
+  }
+  const entries = readdirSync2(absolute);
+  if (entries.length !== 0)
+    throw new Error(`project_target_not_empty: ${absolute}`);
+  return absolute;
+}
+function createPnpmShim(pnpmCliPath) {
+  const root = mkdtempSync(resolve3(tmpdir(), "forgeax-game-pnpm-"));
+  try {
+    if (process.platform === "win32") {
+      const path = resolve3(root, "pnpm.cmd");
+      writeFileSync2(path, `@echo off\r
+"${process.execPath}" "${pnpmCliPath}" %*\r
+`, "utf8");
+    } else {
+      const path = resolve3(root, "pnpm");
+      const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+      writeFileSync2(path, `#!/bin/sh
+exec ${quote(process.execPath)} ${quote(pnpmCliPath)} "$@"
+`, "utf8");
+      chmodSync(path, 493);
+    }
+    return { root, cleanup: () => rmSync2(root, { recursive: true, force: true }) };
+  } catch (error) {
+    rmSync2(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+function carrierEnvironment(pnpmShimRoot) {
+  const environment = {};
+  for (const key of CARRIER_ENVIRONMENT_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined)
+      environment[key] = value;
+  }
+  const systemPath = process.platform === "win32" ? [dirname4(process.execPath), "C:\\Windows\\System32", "C:\\Windows"] : [dirname4(process.execPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  environment.FORGEAX_DISABLE_UPDATE_CHECK = "1";
+  environment.PATH = [pnpmShimRoot, ...new Set(systemPath)].join(delimiter);
+  for (const key of CARRIER_ENVIRONMENT_EXCLUDE)
+    delete environment[key];
+  return environment;
+}
+function runCarrierProcess(carrier, args, environment) {
+  return new Promise((resolveOutput, rejectOutput) => {
+    execFile(process.execPath, ["./bin/forgeax.mjs", ...args], {
+      cwd: carrier.sdkRoot,
+      env: environment,
+      maxBuffer: 32 * 1024 * 1024,
+      windowsHide: true
+    }, (error, stdout, stderr) => {
+      const status = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
+      if (error !== null && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+        rejectOutput(new Error(`engine_sdk_${args[0]}_failed: output exceeded 32 MiB`));
+        return;
+      }
+      resolveOutput({ status, stdout: String(stdout), stderr: String(stderr) });
+    });
+  });
+}
+function parseSuccessEnvelope(output, command) {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`engine_sdk_${command}_envelope_invalid: expected exactly one JSON success envelope`);
+  }
+  let value;
+  try {
+    value = JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error(`engine_sdk_${command}_envelope_invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value) || value.schemaVersion !== undefined || value.command !== `project ${command}` || !Array.isArray(value.artifacts) || value.ok !== true || value.value === null || typeof value.value !== "object" || Array.isArray(value.value)) {
+    throw new Error(`engine_sdk_${command}_envelope_invalid: expected one ${command} success envelope`);
+  }
+  return value;
+}
+function failureDetail(output, command) {
+  const trimmed = output.stdout.trim();
+  if (trimmed.length > 0) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const error = parsed.error;
+        if (error !== undefined)
+          return JSON.stringify(error);
+      }
+    } catch {}
+  }
+  return output.stderr.trim() || output.stdout.trim() || `exit status ${output.status} during ${command}`;
+}
+function assertIdentity(command, envelope, targetRoot) {
+  const value = envelope.value;
+  const commitValid = command === "init" ? value.engineCommit === ENGINE_COMMIT : value.engineCommit === undefined || value.engineCommit === ENGINE_COMMIT;
+  const pnpmValid = command === "init" ? value.pnpm === PNPM_VERSION : value.pnpm === undefined || value.pnpm === PNPM_VERSION;
+  if (value.sdkVersion !== ENGINE_VERSION || !commitValid || !pnpmValid) {
+    throw new Error(`engine_sdk_${command}_identity_mismatch: expected ${ENGINE_VERSION}/${ENGINE_COMMIT}`);
+  }
+  if (targetRoot !== undefined && (value.root !== targetRoot || value.template !== "empty")) {
+    throw new Error(`engine_sdk_${command}_identity_mismatch: created project root/template was not ${targetRoot}/empty`);
+  }
+}
+async function createEmptyGameWithCarrier(targetRoot, options = {}) {
+  const target = emptyTarget(targetRoot);
+  const carrier = resolveGamePluginCarrier(options);
+  const shim = createPnpmShim(carrier.pnpmCliPath);
+  const environment = carrierEnvironment(shim.root);
+  try {
+    const initOutput = await runCarrierProcess(carrier, ["project", "init", "--json"], environment);
+    if (initOutput.status !== 0) {
+      throw new Error(`engine_sdk_init_failed: ${failureDetail(initOutput, "init")}`);
+    }
+    const init = parseSuccessEnvelope(initOutput.stdout, "init");
+    assertIdentity("init", init);
+    const newOutput = await runCarrierProcess(carrier, ["project", "new", "--root", target, "--template", "empty", "--json"], environment);
+    if (newOutput.status !== 0) {
+      throw new Error(`engine_sdk_new_failed: ${failureDetail(newOutput, "new")}`);
+    }
+    const created = parseSuccessEnvelope(newOutput.stdout, "new");
+    assertIdentity("new", created, target);
+    return { carrier, init, created };
+  } finally {
+    shim.cleanup();
+  }
+}
+
+// src/engine/release.ts
+function readManifest(path) {
+  let value;
+  try {
+    value = JSON.parse(readFileSync4(path, "utf8"));
+  } catch (error) {
+    throw new Error(`engine_release_manifest_invalid: cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`engine_release_manifest_invalid: ${path} is not a JSON object`);
+  }
+  return value;
+}
+function confined2(root, candidate) {
+  const rel = relative3(root, candidate);
+  return rel === "" || rel !== ".." && !rel.startsWith(`..${sep2}`) && !isAbsolute2(rel);
+}
+function exactPackage(root, name) {
+  const parts = name.slice(1).split("/");
+  const packageRoot = resolve4(root, "node_modules", `@${parts[0]}`, parts[1]);
+  const manifestPath = resolve4(packageRoot, "package.json");
+  if (!existsSync3(manifestPath) || !lstatSync3(manifestPath).isFile()) {
+    throw new Error(`engine_release_missing: ${name} is not installed under ${root}`);
+  }
+  const canonicalRoot = realpathSync4(packageRoot);
+  const canonicalModules = realpathSync4(resolve4(root, "node_modules"));
+  if (!confined2(canonicalModules, canonicalRoot)) {
+    throw new Error(`engine_release_escape: ${name} resolves outside the game node_modules tree`);
+  }
+  return { root: canonicalRoot, manifest: readManifest(realpathSync4(manifestPath)) };
+}
+function resolveEngineRelease(gameRoot, options = {}) {
+  const canonicalGameRoot = realpathSync4(resolve4(gameRoot));
+  const gameManifest = readManifest(resolve4(canonicalGameRoot, "package.json"));
+  const declared = gameManifest.dependencies?.["@forgeax/engine"];
+  if (declared !== ENGINE_VERSION) {
+    throw new Error(`engine_release_mismatch: game declares @forgeax/engine=${String(declared)}, expected ${ENGINE_VERSION}`);
+  }
+  const engine = exactPackage(canonicalGameRoot, "@forgeax/engine");
+  if (engine.manifest.name !== "@forgeax/engine" || engine.manifest.version !== ENGINE_VERSION) {
+    throw new Error(`engine_release_mismatch: installed Engine must be @forgeax/engine@${ENGINE_VERSION} from ${ENGINE_COMMIT}`);
+  }
+  const carrier = resolveGamePluginCarrier(options);
+  const carrierCommit = carrier.sdkManifest.engineCommit;
+  if (carrierCommit !== ENGINE_COMMIT) {
+    throw new Error(`engine_release_mismatch: SDK carrier does not identify Engine commit ${ENGINE_COMMIT}`);
+  }
+  const declaredCommit = engine.manifest.forgeax?.engineCommit;
+  if (declaredCommit !== undefined && declaredCommit !== carrierCommit) {
+    throw new Error(`engine_release_mismatch: installed Engine declares ${String(declaredCommit)}, expected ${String(carrierCommit)}`);
+  }
+  const cliPath = resolve4(engine.root, "dist", "bin", "forgeax.mjs");
+  if (!existsSync3(cliPath) || !lstatSync3(cliPath).isFile()) {
+    throw new Error(`engine_cli_missing: ${cliPath}`);
+  }
+  const canonicalCli = realpathSync4(cliPath);
+  if (!confined2(engine.root, canonicalCli)) {
+    throw new Error("engine_cli_escape: Engine CLI resolves outside @forgeax/engine");
+  }
+  return {
+    gameRoot: canonicalGameRoot,
+    packageRoot: engine.root,
+    cliPath: canonicalCli,
+    carrierRoot: carrier.root,
+    version: ENGINE_VERSION,
+    commit: ENGINE_COMMIT
+  };
+}
+
+// src/run/engine-preview.ts
+import { createHash as createHash2, randomBytes, randomUUID } from "node:crypto";
+import { spawn, spawnSync as spawnSync2 } from "node:child_process";
+import {
+  appendFileSync as appendFileSync2,
+  chmodSync as chmodSync2,
+  closeSync,
+  existsSync as existsSync4,
+  mkdirSync as mkdirSync3,
+  openSync,
+  readFileSync as readFileSync5,
+  readdirSync as readdirSync3,
+  realpathSync as realpathSync5,
+  renameSync as renameSync2,
+  rmSync as rmSync3,
+  statSync as statSync3,
+  unlinkSync,
+  writeFileSync as writeFileSync3
+} from "node:fs";
+import { dirname as dirname5, join as join4, resolve as resolve5 } from "node:path";
+var STATE_SCHEMA = "forgeax.engine-preview-state/1.0.0";
+var ENVELOPE_LIMIT = 1024 * 1024;
+var LOG_LIMIT = 8 * 1024 * 1024;
+var ENGINE_PREVIEW_TOTAL_DEADLINE_MS = 150000;
+var DEFAULT_READY_DEADLINE_MS = 15000;
+var ENGINE_PREVIEW_CLEANUP_DEADLINE_MS = 5000;
+var HEALTH_PATH = "/.forgeax/preview-health";
+var trackedStates = new Map;
+var liveChildren = new Map;
+var directChildren = new Set;
+function trackDirectChild(child) {
+  directChildren.add(child);
+  child.once("exit", () => directChildren.delete(child));
+}
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 }
 function processAlive(pid) {
   try {
@@ -982,161 +1249,656 @@ function processAlive(pid) {
     return false;
   }
 }
-function acquireStartLock(root) {
-  const path = runtimeLogPaths(root).startLockFile;
-  mkdirSync4(runtimeLogPaths(root).dir, { recursive: true });
-  const token = `${process.pid}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+function processStartIdentity(pid) {
+  if (!Number.isInteger(pid) || pid <= 0)
+    return;
+  try {
+    const stat = readFileSync5(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    const fields = stat.slice(close + 2).split(" ");
+    const startTicks = fields[19];
+    if (startTicks)
+      return `proc:${startTicks}`;
+  } catch {}
+  const result = spawnSync2("ps", ["-o", "lstart=", "-p", String(pid)], {
+    encoding: "utf8",
+    timeout: 2000
+  });
+  const value = result.status === 0 ? result.stdout.trim().replace(/\s+/g, " ") : "";
+  return value ? `ps:${value}` : undefined;
+}
+function previewPaths(projectRoot, gameRoot) {
+  const canonicalProject = realpathSync5(resolve5(projectRoot));
+  const canonicalGame = realpathSync5(resolve5(gameRoot));
+  const gameRootHash = createHash2("sha256").update(canonicalGame).digest("hex");
+  const dir = join4(canonicalProject, ".forgeax", "run", "engine-preview", gameRootHash);
+  return {
+    dir,
+    lock: join4(dir, "lock"),
+    state: join4(dir, "state.json"),
+    stdout: join4(dir, "stdout.log"),
+    stderr: join4(dir, "stderr.log")
+  };
+}
+function preparePaths(paths) {
+  mkdirSync3(paths.dir, { recursive: true, mode: 448 });
+  chmodSync2(paths.dir, 448);
+  for (const path of [paths.stdout, paths.stderr]) {
+    const fd = openSync(path, "a", 384);
+    closeSync(fd);
+    chmodSync2(path, 384);
+  }
+}
+function rotateLog(path, incomingBytes) {
+  let bytes = 0;
+  try {
+    bytes = statSync3(path).size;
+  } catch {}
+  if (bytes + incomingBytes <= LOG_LIMIT)
+    return;
+  const older = `${path}.2`;
+  const previous = `${path}.1`;
+  rmSync3(older, { force: true });
+  if (existsSync4(previous))
+    renameSync2(previous, older);
+  if (existsSync4(path))
+    renameSync2(path, previous);
+}
+function appendLog(path, chunk) {
+  const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+  rotateLog(path, value.byteLength);
+  appendFileSync2(path, value, { mode: 384 });
+  chmodSync2(path, 384);
+}
+function redactingLog(path, secret) {
+  let pending = "";
+  const drain = () => {
+    pending = pending.replaceAll(secret, "[REDACTED]");
+    let retain = Math.min(secret.length - 1, pending.length);
+    while (retain > 0 && !secret.startsWith(pending.slice(-retain)))
+      retain--;
+    const safeLength = pending.length - retain;
+    if (safeLength > 0)
+      appendLog(path, pending.slice(0, safeLength));
+    pending = pending.slice(safeLength);
+  };
+  return {
+    write(chunk) {
+      pending += chunk.toString("utf8");
+      drain();
+    },
+    flush() {
+      if (pending)
+        appendLog(path, pending.replaceAll(secret, "[REDACTED]"));
+      pending = "";
+    }
+  };
+}
+function readState(paths) {
+  try {
+    const state = JSON.parse(readFileSync5(paths.state, "utf8"));
+    if (state.schemaVersion !== STATE_SCHEMA || typeof state.pid !== "number" || typeof state.processStartIdentity !== "string" || typeof state.instanceToken !== "string")
+      return;
+    return state;
+  } catch {
+    return;
+  }
+}
+function writeState(paths, state) {
+  const temp = `${paths.state}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync3(temp, `${JSON.stringify(state, null, 2)}
+`, { mode: 384, flag: "wx" });
+  chmodSync2(temp, 384);
+  renameSync2(temp, paths.state);
+  chmodSync2(paths.state, 384);
+}
+function acquireLock(paths) {
+  preparePaths(paths);
+  const owner = JSON.stringify({
+    pid: process.pid,
+    identity: processStartIdentity(process.pid) ?? "unknown",
+    token: randomUUID()
+  });
   for (let attempt = 0;attempt < 2; attempt++) {
     try {
-      writeFileSync3(path, `${token}
-`, { flag: "wx" });
+      writeFileSync3(paths.lock, `${owner}
+`, { flag: "wx", mode: 384 });
       return {
         acquired: true,
         release() {
           try {
-            if (readFileSync3(path, "utf8").trim() === token)
-              unlinkSync(path);
+            if (readFileSync5(paths.lock, "utf8").trim() === owner)
+              unlinkSync(paths.lock);
           } catch {}
         }
       };
     } catch (error) {
       if (error.code !== "EEXIST")
         throw error;
+      let raw;
       try {
-        const owner = Number.parseInt(readFileSync3(path, "utf8").split(":")[0], 10);
-        if (Number.isFinite(owner) && processAlive(owner)) {
-          return { acquired: false, release() {} };
-        }
-        unlinkSync(path);
+        raw = readFileSync5(paths.lock, "utf8");
       } catch {
         return { acquired: false, release() {} };
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        const pid = Number(parsed.pid);
+        const identity = processStartIdentity(pid);
+        if (processAlive(pid) && identity !== undefined && parsed.identity === identity) {
+          return { acquired: false, release() {} };
+        }
+        unlinkSync(paths.lock);
+      } catch {
+        try {
+          unlinkSync(paths.lock);
+        } catch {
+          return { acquired: false, release() {} };
+        }
       }
     }
   }
   return { acquired: false, release() {} };
 }
-function runtimeLogIsLive(root) {
-  const state = readWatcherState(root);
-  return typeof state?.pid === "number" && processAlive(state.pid);
+function parseEnvelope(stdout, command) {
+  if (Buffer.byteLength(stdout, "utf8") > ENVELOPE_LIMIT + 1) {
+    throw new Error(`${command}_envelope_too_large`);
+  }
+  const lines = stdout.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  let envelope;
+  let envelopeIndex = -1;
+  for (const [index, line] of lines.entries()) {
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`${command}_envelope_invalid: unexpected JSON frame`);
+    }
+    if (envelope !== undefined)
+      throw new Error(`${command}_envelope_invalid: multiple JSON frames`);
+    envelope = parsed;
+    envelopeIndex = index;
+  }
+  if (envelope === undefined)
+    throw new Error(`${command}_envelope_invalid: JSON frame is missing`);
+  if (envelopeIndex !== lines.length - 1) {
+    throw new Error(`${command}_envelope_invalid: diagnostics after JSON frame`);
+  }
+  if (envelope.schemaVersion !== undefined || !Array.isArray(envelope.artifacts) || envelope.command !== `project ${command}` || typeof envelope.ok !== "boolean") {
+    throw new Error(`${command}_envelope_invalid: wrong schema or command`);
+  }
+  if (!envelope.ok) {
+    const error = envelope.error && typeof envelope.error === "object" ? JSON.stringify(envelope.error) : "unknown Engine failure";
+    throw new Error(`${command}_failed: ${error}`);
+  }
+  return envelope;
+}
+async function waitForExit(child, deadlineMs) {
+  if (child.exitCode !== null)
+    return child.exitCode;
+  return await new Promise((resolvePromise) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolvePromise(null);
+    }, Math.max(0, deadlineMs));
+    const exited = (code) => {
+      cleanup();
+      resolvePromise(code ?? 0);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off("exit", exited);
+    };
+    child.once("exit", exited);
+  });
+}
+async function terminateDirectChild(child, cleanupMs) {
+  if (child.exitCode !== null || child.pid === undefined)
+    return;
+  child.kill("SIGTERM");
+  const grace = Math.max(0, Math.floor(cleanupMs * 0.8));
+  if (await waitForExit(child, grace) !== null)
+    return;
+  child.kill("SIGKILL");
+  if (await waitForExit(child, cleanupMs - grace) === null) {
+    throw new Error("preview_stop_failed");
+  }
+}
+async function runBuild(cliPath, gameRoot, paths, deadlineAt, cleanupMs) {
+  const child = spawn(process.execPath, [cliPath, "project", "build", "--json"], {
+    cwd: gameRoot,
+    env: { ...process.env },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  trackDirectChild(child);
+  let stdout = "";
+  child.stdout?.on("data", (chunk) => {
+    stdout += chunk.toString("utf8");
+    appendLog(paths.stdout, chunk);
+    if (Buffer.byteLength(stdout, "utf8") > ENVELOPE_LIMIT + 1)
+      child.kill("SIGTERM");
+  });
+  child.stderr?.on("data", (chunk) => appendLog(paths.stderr, chunk));
+  const exit = await waitForExit(child, deadlineAt - Date.now());
+  if (exit === null) {
+    await terminateDirectChild(child, cleanupMs);
+    throw new Error("engine_build_timeout");
+  }
+  parseEnvelope(stdout, "build");
+  if (exit !== 0)
+    throw new Error(`engine_build_exit_${exit}`);
+}
+function previewIdentity(value, fallback) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("preview_envelope_invalid: value is not an object");
+  }
+  const identity = value;
+  if (typeof identity.root !== "string" || identity.urls === null || typeof identity.urls !== "object" || !Array.isArray(identity.urls.local) || !Array.isArray(identity.urls.network))
+    throw new Error("preview_envelope_invalid: root or urls are missing");
+  const fields = ["engineVersion", "engineCommit", "buildDigest", "previewInstanceId"];
+  for (const field of fields) {
+    if (identity[field] !== undefined && typeof identity[field] !== "string") {
+      throw new Error(`preview_envelope_invalid: ${field} is not a string`);
+    }
+    if (field !== "previewInstanceId" && identity[field] !== undefined && fallback !== undefined && identity[field] !== fallback[field]) {
+      throw new Error(`preview_envelope_invalid: ${field} conflicts with the verified release`);
+    }
+  }
+  const normalized = {
+    root: identity.root,
+    urls: identity.urls,
+    engineVersion: identity.engineVersion ?? fallback?.engineVersion,
+    engineCommit: identity.engineCommit ?? fallback?.engineCommit,
+    buildDigest: identity.buildDigest ?? fallback?.buildDigest,
+    previewInstanceId: identity.previewInstanceId ?? fallback?.previewInstanceId
+  };
+  if (fields.some((field) => typeof normalized[field] !== "string")) {
+    throw new Error("preview_envelope_invalid: identity fields are missing");
+  }
+  return normalized;
+}
+function loopbackUrl(raw) {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === "http:" && url.username === "" && url.password === "" && (host === "localhost" || host === "::1" || host === "127.0.0.1" || host.startsWith("127."));
+  } catch {
+    return false;
+  }
+}
+function selectUrl(identity) {
+  const urls = [...identity.urls.local, ...identity.urls.network];
+  if (urls.length === 0 || urls.some((url) => typeof url !== "string" || !loopbackUrl(url))) {
+    throw new Error("preview_loopback_url_invalid");
+  }
+  return urls.sort((left, right) => left.localeCompare(right))[0];
+}
+async function readPreviewEnvelope(child, logStdout, timeoutMs, fallback) {
+  return await new Promise((resolvePromise, reject) => {
+    let stdout = "";
+    const onRemaining = (chunk) => logStdout(chunk);
+    const timer = setTimeout(() => finish(new Error("engine_preview_readiness_timeout")), timeoutMs);
+    const finish = (error, identity) => {
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      child.stdout?.off("data", onData);
+      child.stdout?.on("data", onRemaining);
+      child.once("exit", () => child.stdout?.off("data", onRemaining));
+      if (error)
+        reject(error);
+      else
+        resolvePromise(identity);
+    };
+    const onExit = (code) => finish(new Error(`engine_preview_exit_${code ?? "signal"}`));
+    const onData = (chunk) => {
+      logStdout(chunk);
+      stdout += chunk.toString("utf8");
+      if (Buffer.byteLength(stdout, "utf8") > ENVELOPE_LIMIT + 1) {
+        finish(new Error("preview_envelope_too_large"));
+        return;
+      }
+      if (!stdout.includes(`
+`))
+        return;
+      try {
+        const envelope = parseEnvelope(stdout, "preview");
+        finish(undefined, previewIdentity(envelope.value, fallback));
+      } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+    child.once("exit", onExit);
+    child.stdout?.on("data", onData);
+  });
+}
+async function fetchHealth(state, selectedUrl, token, timeoutMs) {
+  const controller = new AbortController;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = new URL(HEALTH_PATH, selectedUrl).toString();
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: controller.signal
+    });
+    if (response.status === 404 || response.ok && !response.headers.get("content-type")?.includes("application/json")) {
+      const manifestResponse = await fetch(new URL("forgeax-dist.json", selectedUrl), { signal: controller.signal });
+      if (!manifestResponse.ok)
+        throw new Error(`static manifest HTTP ${manifestResponse.status}`);
+      const manifest = Buffer.from(await manifestResponse.arrayBuffer());
+      if (manifest.byteLength > ENVELOPE_LIMIT)
+        throw new Error("static manifest is too large");
+      const digest = createHash2("sha256").update(manifest).digest("hex");
+      if (digest !== state.buildDigest)
+        throw new Error("preview_static_digest_mismatch");
+      return state;
+    }
+    if (!response.ok)
+      throw new Error(`HTTP ${response.status}`);
+    const health = previewIdentity(await response.json());
+    if (realpathSync5(health.root) !== realpathSync5(state.root) || health.engineVersion !== state.engineVersion || health.engineCommit !== state.engineCommit || health.buildDigest !== state.buildDigest || health.previewInstanceId !== state.previewInstanceId)
+      throw new Error("preview_health_identity_mismatch");
+    return health;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function distDigest(gameRoot) {
+  return createHash2("sha256").update(readFileSync5(join4(gameRoot, "dist", "forgeax-dist.json"))).digest("hex");
+}
+async function verifiedExistingState(paths, desiredDigest, deadlineAt, cleanupMs) {
+  const state = readState(paths);
+  if (!state) {
+    if (existsSync4(paths.state))
+      throw new Error("preview_ownership_unverified: state is malformed");
+    return;
+  }
+  if (!processAlive(state.pid)) {
+    rmSync3(paths.state, { force: true });
+    trackedStates.delete(paths.state);
+    liveChildren.delete(paths.state);
+    return;
+  }
+  if (processStartIdentity(state.pid) !== state.processStartIdentity) {
+    throw new Error("preview_ownership_unverified: process start identity changed");
+  }
+  try {
+    await fetchHealth(state, state.selectedUrl, state.instanceToken, Math.max(1, Math.min(2000, deadlineAt - Date.now())));
+  } catch (error) {
+    throw new Error(`preview_ownership_unverified: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  trackedStates.set(paths.state, state);
+  if (state.root === realpathSync5(state.root) && state.engineVersion === ENGINE_VERSION && state.engineCommit === ENGINE_COMMIT && state.buildDigest === desiredDigest)
+    return state;
+  await stopVerifiedState(paths, state, cleanupMs);
+  return;
+}
+async function stopVerifiedState(paths, state, cleanupMs) {
+  if (!processAlive(state.pid)) {
+    rmSync3(paths.state, { force: true });
+    return;
+  }
+  if (processStartIdentity(state.pid) !== state.processStartIdentity) {
+    throw new Error("preview_ownership_unverified: refusing to signal reused PID");
+  }
+  const started = Date.now();
+  try {
+    await fetchHealth(state, state.selectedUrl, state.instanceToken, Math.min(2000, cleanupMs));
+  } catch (error) {
+    throw new Error(`preview_ownership_unverified: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const child = liveChildren.get(paths.state);
+  if (child?.pid === state.pid)
+    child.kill("SIGTERM");
+  else
+    process.kill(state.pid, "SIGTERM");
+  while (processAlive(state.pid) && Date.now() - started < Math.floor(cleanupMs * 0.8))
+    await sleep(25);
+  if (processAlive(state.pid)) {
+    if (processStartIdentity(state.pid) !== state.processStartIdentity) {
+      throw new Error("preview_ownership_unverified: identity changed before forced stop");
+    }
+    if (child?.pid === state.pid)
+      child.kill("SIGKILL");
+    else
+      process.kill(state.pid, "SIGKILL");
+  }
+  while (processAlive(state.pid) && Date.now() - started < cleanupMs)
+    await sleep(25);
+  if (processAlive(state.pid))
+    throw new Error("preview_stop_failed");
+  rmSync3(paths.state, { force: true });
+  trackedStates.delete(paths.state);
+  liveChildren.delete(paths.state);
+}
+async function startEnginePreview(projectRoot, gameRoot, options = {}) {
+  const totalMs = options.totalDeadlineMs ?? ENGINE_PREVIEW_TOTAL_DEADLINE_MS;
+  const readyMs = options.readyDeadlineMs ?? DEFAULT_READY_DEADLINE_MS;
+  const cleanupMs = options.cleanupDeadlineMs ?? ENGINE_PREVIEW_CLEANUP_DEADLINE_MS;
+  const deadlineAt = Date.now() + totalMs;
+  const release = resolveEngineRelease(gameRoot, options.carrierPluginRoot === undefined ? {} : { pluginRoot: options.carrierPluginRoot });
+  const canonicalProject = realpathSync5(resolve5(projectRoot));
+  const paths = previewPaths(canonicalProject, release.gameRoot);
+  const lock = acquireLock(paths);
+  if (!lock.acquired)
+    throw new Error("preview_busy");
+  try {
+    await runBuild(release.cliPath, release.gameRoot, paths, deadlineAt, cleanupMs);
+    const digest = distDigest(release.gameRoot);
+    const existing = await verifiedExistingState(paths, digest, deadlineAt, cleanupMs);
+    if (existing) {
+      return {
+        identity: existing,
+        selectedUrl: existing.selectedUrl,
+        pid: existing.pid,
+        reused: true,
+        paths
+      };
+    }
+    const token = randomBytes(32).toString("hex");
+    const previewInstanceId = randomUUID();
+    const child = spawn(process.execPath, [release.cliPath, "project", "preview", "--port", "0", "--json"], {
+      cwd: release.gameRoot,
+      detached: true,
+      env: { ...process.env, FORGEAX_PREVIEW_INSTANCE_TOKEN: token },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    trackDirectChild(child);
+    const stdoutLog = redactingLog(paths.stdout, token);
+    const stderrLog = redactingLog(paths.stderr, token);
+    child.stderr?.on("data", (chunk) => stderrLog.write(chunk));
+    child.once("exit", () => {
+      stdoutLog.flush();
+      stderrLog.flush();
+    });
+    if (!child.pid)
+      throw new Error("engine_preview_pid_missing");
+    let identity;
+    try {
+      identity = await readPreviewEnvelope(child, (chunk) => stdoutLog.write(chunk), Math.max(1, Math.min(readyMs, deadlineAt - Date.now())), {
+        engineVersion: release.version,
+        engineCommit: release.commit,
+        buildDigest: digest,
+        previewInstanceId
+      });
+      const selectedUrl = selectUrl(identity);
+      if (realpathSync5(identity.root) !== release.gameRoot || identity.engineVersion !== release.version || identity.engineCommit !== release.commit || identity.buildDigest !== digest)
+        throw new Error("preview_identity_mismatch");
+      await fetchHealth(identity, selectedUrl, token, Math.max(1, Math.min(readyMs, deadlineAt - Date.now())));
+      const startIdentity = processStartIdentity(child.pid);
+      if (!startIdentity)
+        throw new Error("preview_process_identity_unavailable");
+      const state = {
+        ...identity,
+        schemaVersion: STATE_SCHEMA,
+        projectRoot: canonicalProject,
+        selectedUrl,
+        pid: child.pid,
+        processStartIdentity: startIdentity,
+        instanceToken: token,
+        startedAt: new Date().toISOString()
+      };
+      writeState(paths, state);
+      child.unref();
+      trackedStates.set(paths.state, state);
+      liveChildren.set(paths.state, child);
+      child.once("exit", () => liveChildren.delete(paths.state));
+      return { identity, selectedUrl, pid: child.pid, reused: false, paths };
+    } catch (error) {
+      await terminateDirectChild(child, cleanupMs).catch(() => {
+        return;
+      });
+      throw error;
+    }
+  } finally {
+    lock.release();
+  }
+}
+async function stopEnginePreview(projectRoot, gameRoot, options = {}) {
+  const paths = previewPaths(projectRoot, gameRoot);
+  const lock = acquireLock(paths);
+  if (!lock.acquired)
+    throw new Error("preview_busy");
+  try {
+    const state = readState(paths);
+    if (!state) {
+      if (existsSync4(paths.state))
+        throw new Error("preview_ownership_unverified: state is malformed");
+      return { stopped: false, paths };
+    }
+    if (!processAlive(state.pid)) {
+      rmSync3(paths.state, { force: true });
+      trackedStates.delete(paths.state);
+      liveChildren.delete(paths.state);
+      return { stopped: false, paths };
+    }
+    await stopVerifiedState(paths, state, options.cleanupDeadlineMs ?? ENGINE_PREVIEW_CLEANUP_DEADLINE_MS);
+    return { stopped: true, paths };
+  } finally {
+    lock.release();
+  }
+}
+function inspectEnginePreview(projectRoot, gameRoot) {
+  const paths = previewPaths(projectRoot, gameRoot);
+  const state = readState(paths);
+  return {
+    paths,
+    ...state ? { state } : {},
+    processLive: state ? processAlive(state.pid) : false,
+    processIdentityMatches: state ? processStartIdentity(state.pid) === state.processStartIdentity : false
+  };
+}
+async function stopTrackedEnginePreviews() {
+  await Promise.all([...directChildren].map(async (child) => {
+    await terminateDirectChild(child, ENGINE_PREVIEW_CLEANUP_DEADLINE_MS).catch(() => {
+      return;
+    });
+  }));
+  const entries = [...trackedStates.entries()];
+  await Promise.all(entries.map(async ([statePath, state]) => {
+    const paths = {
+      dir: dirname5(statePath),
+      lock: join4(dirname5(statePath), "lock"),
+      state: statePath,
+      stdout: join4(dirname5(statePath), "stdout.log"),
+      stderr: join4(dirname5(statePath), "stderr.log")
+    };
+    const lock = acquireLock(paths);
+    if (!lock.acquired)
+      return;
+    try {
+      await stopVerifiedState(paths, state, ENGINE_PREVIEW_CLEANUP_DEADLINE_MS).catch(() => {
+        return;
+      });
+    } finally {
+      lock.release();
+    }
+  }));
 }
 
 // src/status/collect.ts
-import { resolveInstalledRuntime } from "@forgeax/game-runtime";
 var AGENTS_DOC_CANDIDATES = ["AGENTS.md", "CLAUDE.md"];
 function readAgentsDoc(root) {
   for (const name of AGENTS_DOC_CANDIDATES) {
     try {
-      return readFileSync4(join5(root, name), "utf8");
+      return readFileSync6(join5(root, name), "utf8");
     } catch {}
   }
   return;
 }
 function deriveNextAction(s) {
-  if (!s.project.root) {
-    return "No ForgeaX instance found from this directory. Run `forgeax-game init --game <slug>` here; the plugin creates the project and extracts the bundled ForgeaX Runtime on first run.";
+  if (!s.project.root)
+    return "Open an external released Engine SDK game, then retry.";
+  if (s.games.length === 0)
+    return "Create a game with the released Engine `forgeax new` command.";
+  if (!s.activeGame)
+    return `Select one game with \`forgeax-game use <slug>\` (${s.games.join(", ")}).`;
+  if (!s.engine.installed)
+    return `Install the exact released Engine package in the game. ${s.engine.error ?? ""}`.trim();
+  if (!s.devKit.installed)
+    return "Run `forgeax-game devkit install`, then start a new host session.";
+  if (s.agentsBlock.status !== "current")
+    return "Run `forgeax-game agents update`, then start a new host session.";
+  if (s.preview?.live && s.preview.identityMatches) {
+    return "Engine Preview is live. Edit the game and call `forgeax_run_current_game` to rebuild or reuse it.";
   }
-  if (s.games.length === 0) {
-    return "Project has no games yet. Run `forgeax-game init --game <slug>` to scaffold one.";
-  }
-  if (!s.activeGame) {
-    return `No active game selected. Run \`forgeax-game use <slug>\` (available: ${s.games.join(", ")}).`;
-  }
-  if (!s.devKit.installed) {
-    return "Game development skill is not installed. Run `forgeax-game devkit install`, then start a new session so the host discovers it.";
-  }
-  if (s.devKit.engineSkills < s.devKit.bundledEngineSkills) {
-    return `Engine authoring skills are incomplete (${s.devKit.engineSkills} of ${s.devKit.bundledEngineSkills} installed). Run \`forgeax-game devkit install\`, then start a new session so the host discovers them; without them the model has no authority for how this Engine is meant to be used.`;
-  }
-  if (!s.engineSdk.installed) {
-    return "Bundled Engine SDK is not installed. Run `forgeax-game init` or `forgeax-game upgrade` to materialize the version-matched Engine types, templates, skills, and source.";
-  }
-  if (s.agentsBlock.status === "missing_file" || s.agentsBlock.status === "missing_block") {
-    return "Project routing rules are not installed in AGENTS.md. Run `forgeax-game agents update`, then start a new session so the client re-reads the file.";
-  }
-  if (s.agentsBlock.status === "outdated") {
-    return "Project routing rules in AGENTS.md are stale. Run `forgeax-game agents update`, then start a new session so the client re-reads the file.";
-  }
-  if (!s.runtime.installed) {
-    return "Managed ForgeaX Runtime is not installed. Call `forgeax_run_current_game`; it will verify, cache, and build the selected npm Runtime package preview.";
-  }
-  if (s.runtimeLogs?.live && s.runtimeLogs.state?.previewUrl) {
-    return `Static preview is live for \`.forgeax/games/${s.activeGame}\`. Edit the game and call \`forgeax_run_current_game\` to rebuild it.`;
-  }
-  if (s.capabilities.tier !== "runtime") {
-    return `Ready to edit \`.forgeax/games/${s.activeGame}/\`. To run or preview the game, call \`forgeax_run_current_game\` — it will build and serve a static preview.`;
-  }
-  return `Everything is up. Edit \`.forgeax/games/${s.activeGame}/\` and call \`forgeax_run_current_game\` to reload and preview.`;
+  return "When Preview is needed, call `forgeax_run_current_game` for the bounded Engine build and verified Preview lifecycle. Resolve task prerequisites first; status does not require an empty-template baseline run.";
 }
 async function collectStatus(explicitDir) {
   const project = resolveProject(explicitDir);
-  let capabilities = await probeServices();
-  const installedRuntime = resolveInstalledRuntime();
-  const runtime = installedRuntime ? { installed: true, version: installedRuntime.version, root: installedRuntime.root } : { installed: false };
-  const engineSdk = project.root ? (() => {
-    try {
-      const value = JSON.parse(readFileSync4(join5(project.root, ".forgeax", "engine-sdk.json"), "utf8"));
-      return {
-        installed: true,
-        ...typeof value.engineCommit === "string" ? { commit: value.engineCommit } : {},
-        ...typeof value.sourceRoot === "string" ? { sourceRoot: value.sourceRoot } : {}
-      };
-    } catch {
-      return { installed: false };
-    }
-  })() : { installed: false };
-  if (project.root && capabilities.services.some((service) => service.name === "server" && service.reachable)) {
-    try {
-      await assertServerProjectRoot(project.root);
-      if (capabilities.tier === "runtime")
-        await assertEngineProjectRoot(project.root);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      capabilities = {
-        tier: "local",
-        services: capabilities.services.map((service) => ({
-          ...service,
-          reachable: false,
-          reason
-        }))
-      };
-    }
-  }
   if (!project.root) {
     const base2 = {
       project,
       games: [],
-      capabilities,
       agentsBlock: inspectBlock(undefined, ROUTING_TEXT),
-      devKit: {
-        installed: false,
-        version: DEVKIT_VERSION,
-        engineSkills: 0,
-        bundledEngineSkills: bundledEngineSkillCount()
-      },
-      runtime,
-      engineSdk
+      devKit: { installed: false, version: DEVKIT_VERSION, engineSkills: 0, availableEngineSkills: 0 },
+      engine: { installed: false }
     };
     return { ...base2, nextAction: deriveNextAction(base2) };
   }
   const root = project.root;
   const slug = activeGame(root);
-  const logs = runtimeLogPaths(root);
-  const watcherState = readWatcherState(root);
+  const selectedGame = slug ? gameDir(root, slug) : undefined;
+  let engine = { installed: false };
+  if (selectedGame) {
+    try {
+      const release = resolveEngineRelease(selectedGame);
+      engine = {
+        installed: true,
+        version: release.version,
+        commit: release.commit,
+        cliPath: release.cliPath
+      };
+    } catch (error) {
+      engine = { installed: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  const preview = selectedGame ? (() => {
+    const inspected = inspectEnginePreview(root, selectedGame);
+    return {
+      live: inspected.processLive,
+      identityMatches: inspected.processIdentityMatches,
+      ...inspected.state ? { state: inspected.state } : {},
+      stateFile: inspected.paths.state,
+      stdoutLog: inspected.paths.stdout,
+      stderrLog: inspected.paths.stderr
+    };
+  })() : undefined;
   const base = {
     project,
     ...slug ? { activeGame: slug } : {},
     games: listGames(root),
-    capabilities,
     agentsBlock: inspectBlock(readAgentsDoc(root), ROUTING_TEXT),
     devKit: {
       installed: hasDevKit(root),
       version: DEVKIT_VERSION,
       engineSkills: installedEngineSkills(root).length,
-      bundledEngineSkills: bundledEngineSkillCount()
+      availableEngineSkills: bundledEngineSkillCount(root)
     },
-    runtime,
-    engineSdk,
-    ...watcherState ? { runtimeLogs: { localFile: logs.logFile, live: runtimeLogIsLive(root), state: watcherState } } : {}
+    engine,
+    ...preview ? { preview } : {}
   };
   return { ...base, nextAction: deriveNextAction(base) };
 }
@@ -1144,303 +1906,302 @@ async function collectStatus(explicitDir) {
 // src/status/render.ts
 var BLOCK_EXPLANATION = {
   missing_file: "no AGENTS.md or CLAUDE.md in the project",
-  missing_block: "project doc exists but carries no ForgeaX routing block",
-  outdated: "routing block is present but stale",
+  missing_block: "project doc carries no ForgeaX routing block",
+  outdated: "routing block is stale",
   current: "up to date"
 };
-var TIER_EXPLANATION = {
-  local: "filesystem only — can inspect the project; cannot build, run, or preview",
-  backend: "server up — can scaffold, edit, and statically verify; cannot run the game",
-  runtime: "server and engine up — the game can run and be previewed"
-};
 function renderStatus(s) {
-  const lines = ["# ForgeaX status", ""];
-  lines.push("## Project");
+  const lines = ["# ForgeaX status", "", "## Project"];
   if (s.project.root) {
     lines.push(`- root: ${s.project.root}`);
-    lines.push(`- resolved via: ${s.project.source}`);
     lines.push(`- active game: ${s.activeGame ?? "(none selected)"}`);
-    lines.push(`- games (${s.games.length}): ${s.games.length ? s.games.join(", ") : "(none)"}`);
+    lines.push(`- games (${s.games.length}): ${s.games.join(", ") || "(none)"}`);
   } else {
-    lines.push("- root: (not a ForgeaX project)");
+    lines.push("- root: (not a ForgeaX project or Engine game)");
     lines.push(`- searched upward from: ${s.project.searchedFrom}`);
   }
-  lines.push("");
-  lines.push("## Capability");
-  lines.push(`- tier: ${s.capabilities.tier} — ${TIER_EXPLANATION[s.capabilities.tier]}`);
-  for (const svc of s.capabilities.services) {
-    const detail = svc.reachable ? "up" : `down (${svc.reason ?? "unreachable"})`;
-    lines.push(`- ${svc.name} ${svc.url}: ${detail}`);
-  }
-  lines.push("");
-  lines.push("## Managed Runtime");
-  if (s.runtime.installed) {
-    lines.push(`- status: installed (v${s.runtime.version ?? "unknown"})`);
-    if (s.runtime.root)
-      lines.push(`- root: ${s.runtime.root}`);
+  lines.push("", "## Engine release");
+  if (s.engine.installed) {
+    lines.push(`- version: ${s.engine.version}`);
+    lines.push(`- commit: ${s.engine.commit}`);
+    lines.push(`- CLI: ${s.engine.cliPath}`);
+    lines.push("- owner: released @forgeax/engine + @forgeax/engine-devkit (no legacy Runtime or alternate server)");
   } else {
-    lines.push("- status: not installed (first run verifies and extracts the selected Runtime package automatically)");
+    lines.push(`- status: unavailable${s.engine.error ? ` (${s.engine.error})` : ""}`);
   }
-  lines.push("");
-  lines.push("## Engine SDK");
-  lines.push(`- status: ${s.engineSdk.installed ? "installed" : "missing"}${s.engineSdk.commit ? ` (Engine commit ${s.engineSdk.commit})` : ""}`);
-  lines.push("- development types/examples and Runtime must report the same Engine identity before acceptance");
-  lines.push(`- Engine authoring skills: ${s.devKit.engineSkills} installed of ${s.devKit.bundledEngineSkills} bundled — read these for how the Engine is meant to be used`);
-  if (s.engineSdk.sourceRoot) {
-    lines.push(`- Engine source (escalate here only when a skill and the declarations still leave a choice open): ${s.engineSdk.sourceRoot}`);
-  }
-  lines.push("");
-  lines.push("## Project rules");
+  lines.push("", "## Project rules");
   lines.push(`- AGENTS.md routing block: ${s.agentsBlock.status} — ${BLOCK_EXPLANATION[s.agentsBlock.status]}`);
   lines.push(`- game development kit: ${s.devKit.installed ? "installed" : "missing"} (v${s.devKit.version})`);
-  if (s.agentsBlock.foundVersion !== undefined && s.agentsBlock.foundVersion !== s.agentsBlock.expectedVersion) {
-    lines.push(`- block version: found v${s.agentsBlock.foundVersion}, expected v${s.agentsBlock.expectedVersion}`);
+  lines.push(`- Engine authoring skills: ${s.devKit.engineSkills} installed of ${s.devKit.availableEngineSkills} available from the selected game`);
+  if (s.preview) {
+    lines.push("", "## Engine Preview");
+    lines.push(`- process: ${s.preview.live ? "live" : "not live"}`);
+    lines.push(`- process identity: ${s.preview.identityMatches ? "matches recorded start identity" : "unverified"}`);
+    if (s.preview.state) {
+      lines.push(`- pid: ${s.preview.state.pid}`);
+      lines.push(`- URL: ${s.preview.state.selectedUrl}`);
+      lines.push(`- instance: ${s.preview.state.previewInstanceId}`);
+      lines.push(`- build digest: ${s.preview.state.buildDigest}`);
+    }
+    lines.push(`- state: ${s.preview.stateFile}`);
+    lines.push(`- stdout: ${s.preview.stdoutLog}`);
+    lines.push(`- stderr: ${s.preview.stderrLog}`);
   }
-  lines.push("");
-  if (s.runtimeLogs) {
-    const st = s.runtimeLogs.state;
-    lines.push("## Runtime logs");
-    lines.push(`- log file: ${s.runtimeLogs.localFile}`);
-    lines.push("- read this file with your own file tool; it is not exposed as an MCP tool");
-    if (st?.game)
-      lines.push(`- captured for game: ${st.game}`);
-    if (st?.lastSuccessAt)
-      lines.push(`- last write: ${st.lastSuccessAt}`);
-    if (st?.stoppedAt)
-      lines.push(`- watcher stopped: ${st.stoppedAt} (${st.stopReason ?? "no reason recorded"})`);
-    else if (st?.pid && s.runtimeLogs.live)
-      lines.push(`- detached stack launcher running: pid ${st.pid}`);
-    else if (st?.pid)
-      lines.push(`- detached stack launcher no longer running: pid ${st.pid}; log may be stale`);
-    if (st?.consecutiveFailures)
-      lines.push(`- consecutive poll failures: ${st.consecutiveFailures}`);
-    if (st?.lastError)
-      lines.push(`- last error: ${st.lastError}`);
-    lines.push("");
-  }
-  lines.push("## Next action");
-  lines.push(s.nextAction);
+  lines.push("", "## Next action", s.nextAction);
   return `${lines.join(`
 `)}
 `;
 }
 
-// src/run/run-game.ts
-import { closeSync as closeSync2, existsSync as existsSync3, mkdirSync as mkdirSync6, openSync as openSync2, readFileSync as readFileSync5 } from "node:fs";
-import { join as join6 } from "node:path";
-
-// src/services/launch.ts
-import { spawn } from "node:child_process";
+// src/project/completion.ts
+import { createHash as createHash3, randomUUID as randomUUID2 } from "node:crypto";
 import {
-  ensureRuntime,
-  launcherForRuntime,
-  resolveInstalledRuntime as resolveInstalledRuntime2,
-  runtimeEnvironment
-} from "@forgeax/game-runtime";
-function resolveLauncher(projectRoot, overrides = {}) {
-  const explicit = process.env.FORGEAX_START_COMMAND?.trim();
-  if (explicit) {
-    const [command, ...args] = explicit.split(/\s+/);
-    if (command) {
-      return {
-        kind: "explicit",
-        command,
-        args,
-        cwd: projectRoot,
-        env: runtimeEnvironment(overrides),
-        description: `FORGEAX_START_COMMAND=${explicit}`
-      };
+  chmodSync as chmodSync3,
+  lstatSync as lstatSync4,
+  mkdirSync as mkdirSync4,
+  readFileSync as readFileSync7,
+  readdirSync as readdirSync4,
+  readlinkSync,
+  renameSync as renameSync3,
+  writeFileSync as writeFileSync4
+} from "node:fs";
+import { dirname as dirname6, extname, join as join6, relative as relative4, resolve as resolve6 } from "node:path";
+var BASELINE_SCHEMA = "forgeax.game-authoring-baseline/1.1.0";
+var BASELINE_PATH = [".forgeax", "game-authoring-baseline.json"];
+var AUTHOR_INPUTS = ["forge.json", "package.json", "README.md", "src", "assets"];
+function fileBytesOrEmpty(path) {
+  try {
+    return readFileSync7(path);
+  } catch {
+    return Buffer.alloc(0);
+  }
+}
+function isTestPath(name) {
+  return name.split("/").includes("__tests__") || /(?:^|\/)test(?:s)?\//.test(name) || /\.(?:test|spec)\.[^.]+$/.test(name);
+}
+function authorDigests(root) {
+  const canonicalRoot = resolve6(root);
+  const rows = [];
+  const gameplayRows = [];
+  const testRows = [];
+  const visit = (path) => {
+    let stat;
+    try {
+      stat = lstatSync4(path);
+    } catch {
+      return;
+    }
+    const name = relative4(canonicalRoot, path).split("\\").join("/");
+    if (stat.isSymbolicLink()) {
+      const row = `L\x00${name}\x00${readlinkSync(path)}`;
+      rows.push(row);
+      if (isTestPath(name))
+        testRows.push(row);
+      else if (name.startsWith("src/") || name.startsWith("assets/"))
+        gameplayRows.push(row);
+      return;
+    }
+    if (stat.isDirectory()) {
+      rows.push(`D\x00${name}`);
+      for (const child of readdirSync4(path).sort())
+        visit(join6(path, child));
+      return;
+    }
+    if (stat.isFile()) {
+      const digest = createHash3("sha256").update(readFileSync7(path)).digest("hex");
+      const row = `F\x00${name}\x00${digest}`;
+      rows.push(row);
+      if (isTestPath(name))
+        testRows.push(row);
+      else if (name.startsWith("src/") || name.startsWith("assets/"))
+        gameplayRows.push(row);
+    }
+  };
+  for (const input of AUTHOR_INPUTS)
+    visit(join6(canonicalRoot, input));
+  const hashRows = (value) => createHash3("sha256").update(value.join(`
+`)).digest("hex");
+  return {
+    author: hashRows(rows),
+    gameplay: hashRows(gameplayRows),
+    tests: hashRows(testRows),
+    readme: createHash3("sha256").update(fileBytesOrEmpty(join6(root, "README.md"))).digest("hex")
+  };
+}
+function ensureAuthoringBaseline(gameRoot) {
+  const path = join6(gameRoot, ...BASELINE_PATH);
+  try {
+    const existing = JSON.parse(readFileSync7(path, "utf8"));
+    if (existing.schemaVersion === BASELINE_SCHEMA && [existing.authorDigest, existing.gameplayDigest, existing.testsDigest, existing.readmeDigest].every((digest) => /^[a-f0-9]{64}$/.test(digest)))
+      return path;
+  } catch {}
+  mkdirSync4(join6(gameRoot, ".forgeax"), { recursive: true, mode: 448 });
+  const digests = authorDigests(gameRoot);
+  const forge = JSON.parse(readFileSync7(join6(gameRoot, "forge.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync7(join6(gameRoot, "package.json"), "utf8"));
+  const value = {
+    schemaVersion: BASELINE_SCHEMA,
+    authorDigest: digests.author,
+    gameplayDigest: digests.gameplay,
+    testsDigest: digests.tests,
+    readmeDigest: digests.readme,
+    wasEmptyTemplate: forge.id === "template-empty" || forge.name === "Empty" || pkg.name === "@forgeax/template-game-empty",
+    recordedAt: new Date().toISOString()
+  };
+  const temp = `${path}.${process.pid}.${randomUUID2()}.tmp`;
+  writeFileSync4(temp, `${JSON.stringify(value, null, 2)}
+`, { flag: "wx", mode: 384 });
+  chmodSync3(temp, 384);
+  renameSync3(temp, path);
+  chmodSync3(path, 384);
+  return path;
+}
+function assertGameAuthoringComplete(gameRoot) {
+  const path = join6(gameRoot, ...BASELINE_PATH);
+  let baseline;
+  try {
+    baseline = JSON.parse(readFileSync7(path, "utf8"));
+  } catch {
+    return;
+  }
+  if (baseline.schemaVersion !== BASELINE_SCHEMA || [baseline.authorDigest, baseline.gameplayDigest, baseline.testsDigest, baseline.readmeDigest].some((digest) => !/^[a-f0-9]{64}$/.test(digest))) {
+    throw new Error("game_authoring_baseline_invalid: rerun `forgeax-game init`");
+  }
+  const current = authorDigests(gameRoot);
+  if (current.author === baseline.authorDigest)
+    return;
+  const forge = JSON.parse(readFileSync7(join6(gameRoot, "forge.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync7(join6(gameRoot, "package.json"), "utf8"));
+  const readme = fileBytesOrEmpty(join6(gameRoot, "README.md")).toString("utf8");
+  const stale = [];
+  if (forge.id === "template-empty")
+    stale.push("forge.json id");
+  if (forge.name === "Empty")
+    stale.push("forge.json name");
+  if (pkg.name === "@forgeax/template-game-empty")
+    stale.push("package.json name");
+  if (/^#\s+ForgeaX Empty Game\s*$/m.test(readme))
+    stale.push("README title");
+  if (readme.trim() === "")
+    stale.push("README content");
+  if (/forgeax-empty-game-web\.zip/.test(readme))
+    stale.push("README package output");
+  const headings = readme.match(/^#\s+.+$/gm) ?? [];
+  if (headings.length !== 1)
+    stale.push(`README top-level headings (${headings.length})`);
+  const authoredGameplay = baseline.wasEmptyTemplate && current.gameplay !== baseline.gameplayDigest;
+  if (authoredGameplay && current.tests === baseline.testsDigest)
+    stale.push("gameplay tests");
+  if (authoredGameplay && current.readme === baseline.readmeDigest)
+    stale.push("README content");
+  if (authoredGameplay && hasDirectDocumentBodyMount(readGameplaySource(gameRoot))) {
+    stale.push("Engine Host UI mount (direct document.body mutation)");
+  }
+  if (authoredGameplay && !hasGameplayBehaviorTest(gameRoot)) {
+    stale.push("gameplay behavior tests (export and exercise a named gameplay function)");
+  }
+  for (const testMarker of ["empty game starter", "ForgeaX Empty Game"]) {
+    if (authoredGameplay && readAuthorTests(gameRoot).includes(testMarker)) {
+      stale.push(`template test marker ${JSON.stringify(testMarker)}`);
     }
   }
-  const installed = resolveInstalledRuntime2();
-  if (installed) {
-    const launcher = launcherForRuntime(installed, overrides);
-    return {
-      kind: "installed-runtime",
-      command: launcher.command,
-      args: launcher.args,
-      cwd: launcher.cwd,
-      env: launcher.env,
-      description: `installed ForgeaX runtime ${installed.version} (${installed.root})`
-    };
+  if (stale.length > 0) {
+    throw new Error(`game_completion_incomplete: gameplay changed but completion evidence is stale: ${stale.join(", ")}; finalize identity, Host UI mounting, README/controls, and behavior tests before claiming completion`);
+  }
+}
+function readAuthorTestFiles(root) {
+  const values = [];
+  const visit = (path) => {
+    let stat;
+    try {
+      stat = lstatSync4(path);
+    } catch {
+      return;
+    }
+    if (stat.isDirectory()) {
+      for (const child of readdirSync4(path).sort())
+        visit(join6(path, child));
+      return;
+    }
+    const name = relative4(root, path).split("\\").join("/");
+    if (stat.isFile() && isTestPath(name))
+      values.push({ path, content: readFileSync7(path, "utf8") });
+  };
+  visit(join6(root, "src"));
+  return values;
+}
+function readAuthorTests(root) {
+  return readAuthorTestFiles(root).map((test) => test.content).join(`
+`);
+}
+function readGameplaySource(root) {
+  const values = [];
+  const visit = (path) => {
+    let stat;
+    try {
+      stat = lstatSync4(path);
+    } catch {
+      return;
+    }
+    const name = relative4(root, path).split("\\").join("/");
+    if (stat.isDirectory()) {
+      for (const child of readdirSync4(path).sort())
+        visit(join6(path, child));
+      return;
+    }
+    if (stat.isFile() && !isTestPath(name) && /\.[cm]?[jt]sx?$/.test(name)) {
+      values.push(readFileSync7(path, "utf8"));
+    }
+  };
+  visit(join6(root, "src"));
+  return values.join(`
+`);
+}
+function hasDirectDocumentBodyMount(source) {
+  return /\bdocument\s*\.\s*body\s*\.\s*(?:append|appendChild|prepend|replaceChildren|insertAdjacentElement|insertAdjacentHTML)\s*\(/u.test(source) || /\bdocument\s*\.\s*body\s*\.\s*(?:innerHTML|outerHTML|textContent)\s*=/u.test(source) || /\bdocument\s*\.\s*querySelector\s*\(\s*['"]body['"]\s*\)\s*\??\.\s*(?:append|appendChild|prepend|replaceChildren)\s*\(/u.test(source);
+}
+function sourceModule(testPath, specifier) {
+  if (!specifier.startsWith("."))
+    return;
+  const unresolved = resolve6(dirname6(testPath), specifier);
+  const extension = extname(unresolved);
+  const candidates = extension === ".js" || extension === ".jsx" ? [`${unresolved.slice(0, -extension.length)}.ts`, `${unresolved.slice(0, -extension.length)}.tsx`, unresolved] : [unresolved, `${unresolved}.ts`, `${unresolved}.tsx`, join6(unresolved, "index.ts")];
+  for (const path of candidates) {
+    try {
+      if (!lstatSync4(path).isFile())
+        continue;
+      return { path, content: readFileSync7(path, "utf8") };
+    } catch {}
   }
   return;
 }
-async function ensureRuntimeLauncher(projectRoot, overrides = {}) {
-  if (process.env.FORGEAX_START_COMMAND?.trim())
-    return resolveLauncher(projectRoot, overrides);
-  try {
-    await ensureRuntime();
-  } catch {
-    return resolveLauncher(projectRoot, overrides);
-  }
-  return resolveLauncher(projectRoot, overrides);
-}
-function launchGuidance() {
-  return [
-    "Cannot start the ForgeaX stack: no verified ForgeaX runtime is installed,",
-    "and FORGEAX_START_COMMAND is not set.",
-    "",
-    "Install a supported @forgeax/game-runtime package, then call this tool again.",
-    "",
-    "Advanced override (not recommended for normal installs):",
-    '  export FORGEAX_START_COMMAND="<command that brings up server :18900 and engine :15173>"'
-  ].join(`
-`);
-}
-function startStack(launcher, logFd) {
-  const child = spawn(launcher.command, [...launcher.args], {
-    cwd: launcher.cwd,
-    detached: true,
-    stdio: ["ignore", logFd, logFd],
-    env: launcher.env ?? runtimeEnvironment()
-  });
-  child.unref();
-  return { pid: child.pid };
-}
-
-// src/run/run-game.ts
-import { allocateRuntimePorts, resolveInstalledRuntime as resolveInstalledRuntime3 } from "@forgeax/game-runtime";
-
-// src/run/static-preview.ts
-import { spawn as spawn2, spawnSync as spawnSync2 } from "node:child_process";
-import { closeSync, mkdirSync as mkdirSync5, openSync } from "node:fs";
-import { isAbsolute as isAbsolute2, resolve as resolve3 } from "node:path";
-import {
-  allocatePort,
-  ensureRuntime as ensureRuntime2,
-  installEngineSdk,
-  parsePreviewBuildManifest,
-  parsePreviewHealthIdentity,
-  runtimeEnvironment as runtimeEnvironment2
-} from "@forgeax/game-runtime";
-function runtimeCommand(runtime) {
-  return isAbsolute2(runtime.command) ? runtime.command : resolve3(runtime.root, runtime.command);
-}
-function lastJsonLine(output) {
-  const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  for (let index = lines.length - 1;index >= 0; index -= 1) {
-    try {
-      return JSON.parse(lines[index]);
-    } catch {}
-  }
-  throw new Error(`Runtime returned no JSON result:
-${output}`);
-}
-function buildPreview(runtime, projectRoot, gameRoot, gameId) {
-  const result = spawnSync2(runtimeCommand(runtime), [
-    resolve3(runtime.root, runtime.capabilities.build.script),
-    "--project-root",
-    projectRoot,
-    "--game-root",
-    gameRoot,
-    "--game-id",
-    gameId,
-    "--runtime-version",
-    runtime.version,
-    "--engine-commit",
-    runtime.engineCommit
-  ], {
-    cwd: runtime.root,
-    encoding: "utf8",
-    env: runtimeEnvironment2({ FORGEAX_PROJECT_ROOT: projectRoot }),
-    maxBuffer: 64 * 1024 * 1024
-  });
-  if (result.status !== 0) {
-    throw new Error((result.stderr || result.stdout || `preview build exited ${result.status}`).trim());
-  }
-  const parsed = lastJsonLine(result.stdout);
-  return {
-    manifest: parsePreviewBuildManifest(parsed.manifest),
-    reused: parsed.reused === true
-  };
-}
-async function waitForHealth(url, timeoutMs = 30000) {
-  const deadline = Date.now() + timeoutMs;
-  let lastError = "not ready";
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url);
-      if (response.ok)
-        return parsePreviewHealthIdentity(await response.json());
-      lastError = `HTTP ${response.status}`;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+function hasGameplayBehaviorTest(root) {
+  for (const test of readAuthorTestFiles(root)) {
+    if (!/\b(?:expect|assert)\s*\(/u.test(test.content))
+      continue;
+    const imports = test.content.matchAll(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/gu);
+    for (const imported of imports) {
+      const module = sourceModule(test.path, imported[2]);
+      if (!module)
+        continue;
+      const moduleName = relative4(root, module.path).split("\\").join("/");
+      if (!moduleName.startsWith("src/") || isTestPath(moduleName))
+        continue;
+      const body = test.content.replace(imported[0], "");
+      for (const rawBinding of imported[1].split(",")) {
+        const parts = rawBinding.trim().replace(/^type\s+/u, "").split(/\s+as\s+/u);
+        const exported = parts[0]?.trim();
+        const local = parts.at(-1)?.trim();
+        if (!exported || !local)
+          continue;
+        const exportPattern = new RegExp(`\\bexport\\s+(?:(?:async\\s+)?function\\s+${exported}\\b|const\\s+${exported}\\s*=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*=>)`, "u");
+        const invocationPattern = new RegExp(`\\b${local}\\s*\\(`, "u");
+        if (exportPattern.test(module.content) && invocationPattern.test(body))
+          return true;
+      }
     }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 150));
   }
-  throw new Error(`preview did not become ready: ${lastError}`);
-}
-async function buildAndStartStaticPreview(projectRoot, gameRoot, gameId) {
-  const runtime = await ensureRuntime2();
-  const sdk = installEngineSdk(projectRoot);
-  if (sdk.engineCommit && sdk.engineCommit !== runtime.engineCommit) {
-    throw new Error(`Engine SDK ${sdk.engineCommit} does not match Runtime ${runtime.engineCommit}; reinstall matching packages`);
-  }
-  const build = buildPreview(runtime, projectRoot, gameRoot, gameId);
-  const existing = readWatcherState(projectRoot);
-  if (existing?.pid && existing.outputRoot === build.manifest.outputRoot && existing.previewUrl) {
-    try {
-      process.kill(existing.pid, 0);
-      const healthUrl2 = new URL("__forgeax_health", existing.previewUrl).toString();
-      const health2 = await waitForHealth(healthUrl2, 2000);
-      return {
-        previewUrl: existing.previewUrl,
-        health: health2,
-        runtime,
-        reused: true,
-        pid: existing.pid
-      };
-    } catch {}
-  }
-  if (existing?.pid) {
-    try {
-      process.kill(existing.pid, "SIGTERM");
-    } catch {}
-  }
-  const port = await allocatePort();
-  const previewUrl2 = `http://127.0.0.1:${port}/preview/`;
-  const healthUrl = `${previewUrl2}__forgeax_health`;
-  const paths = runtimeLogPaths(projectRoot);
-  mkdirSync5(paths.dir, { recursive: true });
-  const logFd = openSync(paths.logFile, "a");
-  let child;
-  try {
-    child = spawn2(runtimeCommand(runtime), [
-      resolve3(runtime.root, runtime.capabilities.serve.script),
-      "--output-root",
-      build.manifest.outputRoot,
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(port)
-    ], {
-      cwd: runtime.root,
-      detached: true,
-      stdio: ["ignore", logFd, logFd],
-      env: runtimeEnvironment2({ FORGEAX_PROJECT_ROOT: projectRoot })
-    });
-    child.unref();
-  } finally {
-    closeSync(logFd);
-  }
-  if (!child.pid)
-    throw new Error("preview server did not return a process id");
-  updateWatcherState(projectRoot, {
-    game: gameId,
-    pid: child.pid,
-    startedAt: new Date().toISOString(),
-    stoppedAt: undefined,
-    stopReason: undefined,
-    previewUrl: previewUrl2,
-    outputRoot: build.manifest.outputRoot,
-    buildHash: build.manifest.buildHash,
-    runtimeVersion: runtime.version,
-    engineCommit: runtime.engineCommit
-  });
-  const health = await waitForHealth(healthUrl);
-  updateWatcherState(projectRoot, { lastSuccessAt: new Date().toISOString() });
-  return { previewUrl: previewUrl2, health, runtime, reused: build.reused, pid: child.pid };
+  return false;
 }
 
 // src/run/run-game.ts
@@ -1458,225 +2219,76 @@ var RUN_TOOL_SCHEMA = {
     },
     start_services: {
       type: "boolean",
-      description: "Start the stack if it is not already up. Default true. Set false to check runnability without launching anything."
+      description: "Start Engine Preview when absent. Default true; false performs a read-only availability check."
     }
   },
   additionalProperties: false
 };
-function engineIdentity(root) {
-  let sdkCommit;
-  try {
-    sdkCommit = JSON.parse(readFileSync5(join6(root, ".forgeax", "engine-sdk.json"), "utf8")).engineCommit;
-  } catch {}
-  return { sdkCommit, runtimeVersion: resolveInstalledRuntime3()?.version };
-}
-var START_TIMEOUT_MS = 90000;
-async function runCurrentGame(rawArgs, cwd, options = {}) {
-  const args = rawArgs;
-  const dir = typeof args.target_dir === "string" ? args.target_dir : cwd;
-  const startServices = args.start_services !== false;
-  const project = resolveProject(dir);
-  if (!project.root) {
-    return [
-      `error: no ForgeaX project found searching upward from ${project.searchedFrom}.`,
-      "Run `forgeax-game init --game <slug>` in this directory first, or pass a directory that already contains `.forgeax/` as `target_dir`."
-    ].join(`
-`);
-  }
-  const root = project.root;
-  const slug = resolveSlug(root, typeof args.game === "string" ? args.game : undefined);
-  if ("error" in slug)
-    return slug.error;
-  if (!process.env.FORGEAX_START_COMMAND?.trim() && !options.existingServicesOnly) {
-    return runPackagedPreview(root, slug, startServices);
-  }
-  const lines = [];
-  let caps = await probeServices();
-  if (tierAtLeast(caps.tier, "backend")) {
-    try {
-      await assertServerProjectRoot(root);
-      if (tierAtLeast(caps.tier, "runtime"))
-        await assertEngineProjectRoot(root);
-    } catch (error) {
-      return `error: ${error instanceof Error ? error.message : String(error)}`;
-    }
-  }
-  if (!tierAtLeast(caps.tier, "runtime")) {
-    if (options.existingServicesOnly) {
-      return [
-        `not running: the supervisor-owned Studio stack is at tier "${caps.tier}".`,
-        ...caps.services.filter((service) => !service.reachable).map((service) => `- ${service.name} ${service.url}: down (${service.reason ?? "unreachable"})`)
-      ].join(`
-`);
-    }
-    if (!startServices) {
-      return [
-        `not running: stack is at tier "${caps.tier}" and start_services was false.`,
-        ...caps.services.filter((s) => !s.reachable).map((s) => `- ${s.name} ${s.url}: down`)
-      ].join(`
-`);
-    }
-    const paths2 = runtimeLogPaths(root);
-    const lock = acquireStartLock(root);
-    try {
-      if (lock.acquired) {
-        const ports = await allocateRuntimePorts();
-        const portEnv = {
-          FORGEAX_PROJECT_ROOT: root,
-          FORGEAX_SERVER_PORT: String(ports.server),
-          FORGEAX_ENGINE_PORT: String(ports.engine),
-          FORGEAX_INTERFACE_PORT: String(ports.interface)
-        };
-        Object.assign(process.env, portEnv);
-        const launcher = await ensureRuntimeLauncher(root, portEnv);
-        if (!launcher)
-          return launchGuidance();
-        mkdirSync6(paths2.dir, { recursive: true });
-        const logFd = openSync2(paths2.logFile, "a");
-        try {
-          const { pid } = startStack(launcher, logFd);
-          updateWatcherState(root, {
-            game: slug.slug,
-            pid,
-            startedAt: new Date().toISOString(),
-            stoppedAt: undefined,
-            stopReason: undefined
-          });
-          lines.push(`started stack via ${launcher.description} (pid ${pid ?? "unknown"})`);
-        } finally {
-          closeSync2(logFd);
-        }
-      } else {
-        lines.push("another plugin request is already starting this project stack; waiting for it");
-      }
-      caps = await waitForTier("runtime", START_TIMEOUT_MS);
-      updateWatcherState(root, { lastPollAt: new Date().toISOString() });
-    } finally {
-      lock.release();
-    }
-    if (tierAtLeast(caps.tier, "backend")) {
-      try {
-        await assertServerProjectRoot(root);
-        if (tierAtLeast(caps.tier, "runtime"))
-          await assertEngineProjectRoot(root);
-      } catch (error) {
-        return `error: ${error instanceof Error ? error.message : String(error)}`;
-      }
-    }
-  }
-  const paths = runtimeLogPaths(root);
-  const reachedRuntime = tierAtLeast(caps.tier, "runtime");
-  lines.push(`game: ${slug.slug}`);
-  lines.push(`source: ${slug.dir}`);
-  lines.push(`tier: ${caps.tier}`);
-  for (const s of caps.services) {
-    lines.push(`- ${s.name} ${s.url}: ${s.reachable ? "up" : `down (${s.reason ?? "unreachable"})`}`);
-  }
-  if (reachedRuntime) {
-    lines.push("");
-    lines.push(`preview_url: ${previewUrl(slug.slug)}`);
-    const identity = engineIdentity(root);
-    lines.push(`runtime.version: ${identity.runtimeVersion ?? "unknown"}`);
-    lines.push(`engine_sdk.commit: ${identity.sdkCommit ?? "unknown"}`);
-    let previewIdentity;
-    try {
-      previewIdentity = await fetchEngineRuntimeIdentity();
-    } catch {
-      previewIdentity = undefined;
-    }
-    lines.push(`preview.instance_root: ${previewIdentity?.instanceRootAbs ?? "unknown"}`);
-    lines.push(`preview.runtime_version: ${previewIdentity?.runtimeVersion ?? "unknown"}`);
-    lines.push(`preview.engine_version: ${previewIdentity?.engineVersion ?? "unknown"}`);
-    lines.push(`engine.identity: runtime=${identity.runtimeVersion ?? "unknown"} sdk=${identity.sdkCommit ?? "unknown"} project=${root}`);
-    lines.push("Open that URL to see the game. Edits to the game source hot-reload.");
-  } else {
-    lines.push("");
-    lines.push(`stack did not reach runtime tier within ${Math.round(START_TIMEOUT_MS / 1000)}s. Check the log below for the reason.`);
-  }
-  lines.push("");
-  if (runtimeLogIsLive(root) && existsSync3(paths.logFile)) {
-    lines.push(`runtime_logs.local_file: ${paths.logFile}`);
-    lines.push("Read that file with your own file tool to see vite transform errors, build failures and server logs.");
-  } else if (existsSync3(paths.logFile)) {
-    lines.push(`runtime_logs.local_file: ${paths.logFile} (existing startup log; it may be stale)`);
-    lines.push("The currently running stack was not launched by this live plugin process, so new output is not guaranteed.");
-  } else {
-    lines.push("runtime_logs.local_file: unavailable");
-    lines.push("The stack was already running, so this plugin cannot capture its existing process output retroactively.");
-  }
-  lines.push("It captures stack process output only. Errors thrown inside the running game reach the browser console, not this file.");
-  return lines.join(`
-`);
-}
-async function runPackagedPreview(root, slug, startServices) {
-  const paths = runtimeLogPaths(root);
-  if (!startServices) {
-    const state = readWatcherState(root);
-    return state?.previewUrl && runtimeLogIsLive(root) ? `game: ${slug.slug}
-tier: runtime
-preview_url: ${state.previewUrl}` : "not running: static preview is down and start_services was false.";
-  }
-  const lock = acquireStartLock(root);
-  if (!lock.acquired) {
-    return "another plugin request is already building this game preview; call forgeax_run_current_game again shortly.";
-  }
-  try {
-    const result = await buildAndStartStaticPreview(root, slug.dir, slug.slug);
-    return [
-      `game: ${slug.slug}`,
-      `source: ${slug.dir}`,
-      "tier: runtime",
-      `preview_url: ${result.previewUrl}`,
-      `runtime.version: ${result.runtime.version}`,
-      `engine_sdk.commit: ${result.runtime.engineCommit}`,
-      `preview.instance_root: ${result.health.projectRoot}`,
-      `preview.runtime_version: ${result.health.runtimeVersion}`,
-      `preview.engine_version: ${result.health.engineCommit}`,
-      `preview.build_hash: ${result.health.buildHash}`,
-      `engine.identity: runtime=${result.runtime.version} sdk=${result.runtime.engineCommit} project=${root}`,
-      `build.reused: ${result.reused}`,
-      "",
-      `runtime_logs.local_file: ${paths.logFile}`,
-      "Open that URL to see the prebuilt game preview. Call this tool again after edits to rebuild it."
-    ].join(`
-`);
-  } catch (error) {
-    return [
-      `error: ${error instanceof Error ? error.message : String(error)}`,
-      `runtime_logs.local_file: ${paths.logFile}`
-    ].join(`
-`);
-  } finally {
-    lock.release();
-  }
-}
 function resolveSlug(root, requested) {
   if (requested !== undefined && !SLUG_RE.test(requested)) {
     return { error: `error: invalid game slug: ${JSON.stringify(requested)}.` };
   }
   const games = listGames(root);
   if (games.length === 0) {
-    return { error: "error: this project has no games. Run `forgeax-game init --game <slug>` to scaffold one." };
+    return { error: "error: this project has no Engine game. Create one with the released `forgeax new` command." };
   }
   const slug = requested ?? activeGame(root) ?? (games.length === 1 ? games[0] : undefined);
   if (!slug) {
     return {
-      error: `error: no active game selected and this project has ${games.length} games (${games.join(", ")}). Pass \`game\`, or run \`forgeax-game use <slug>\`.`
+      error: `error: no active game selected and this project has ${games.length} games (${games.join(", ")}). Pass \`game\` or run \`forgeax-game use <slug>\`.`
     };
   }
   const dir = gameDir(root, slug);
-  if (!dir) {
-    return { error: `error: game ${JSON.stringify(slug)} not found. Available: ${games.join(", ")}.` };
+  return dir ? { slug, dir } : { error: `error: game ${JSON.stringify(slug)} not found. Available: ${games.join(", ")}.` };
+}
+async function runCurrentGame(rawArgs, cwd) {
+  const args = rawArgs;
+  const dir = typeof args.target_dir === "string" ? args.target_dir : cwd;
+  const project = resolveProject(dir);
+  if (!project.root) {
+    throw new Error([
+      `error: no released Engine game found searching upward from ${project.searchedFrom}.`,
+      "Create an external game with the released Engine SDK."
+    ].join(`
+`));
   }
-  return { slug, dir };
+  const slug = resolveSlug(project.root, typeof args.game === "string" ? args.game : undefined);
+  if ("error" in slug)
+    throw new Error(slug.error);
+  if (args.start_services === false) {
+    return `game: ${slug.slug}
+source: ${slug.dir}
+not running check requested; no Engine child was launched.`;
+  }
+  assertGameAuthoringComplete(slug.dir);
+  const result = await startEnginePreview(project.root, slug.dir);
+  return [
+    `game: ${slug.slug}`,
+    `source: ${slug.dir}`,
+    "tier: engine-preview",
+    "preview.status: ready",
+    `preview_url: ${result.selectedUrl}`,
+    `engine.version: ${result.identity.engineVersion}`,
+    `engine.commit: ${result.identity.engineCommit}`,
+    `preview.root: ${result.identity.root}`,
+    `preview.instance_id: ${result.identity.previewInstanceId}`,
+    `preview.build_digest: ${result.identity.buildDigest}`,
+    `preview.pid: ${result.pid}`,
+    `preview.reused: ${result.reused}`,
+    `preview.state_file: ${result.paths.state}`,
+    `preview.stdout_log: ${result.paths.stdout}`,
+    `preview.stderr_log: ${result.paths.stderr}`,
+    "This tool verifies Engine build and Preview ownership only; gameplay, input, and visible UI have not been tested by this tool.",
+    "Open only this returned loopback URL. HTTP availability without this exact verified identity is not Preview evidence."
+  ].join(`
+`);
 }
 
 // src/gen/generate.ts
-import { existsSync as existsSync4, mkdirSync as mkdirSync7, readFileSync as readFileSync6, writeFileSync as writeFileSync4 } from "node:fs";
-import { basename, extname, join as join7, relative as relative3 } from "node:path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync5, readFileSync as readFileSync8, writeFileSync as writeFileSync5 } from "node:fs";
+import { basename as basename2, extname as extname2, join as join7, relative as relative5 } from "node:path";
 
 // src/gen/config.ts
-var DEFAULT_LITELLM_BASE_URL = "http://21.214.33.175:4000";
 var DEFAULT_MODELS = {
   textToImage: "gemini-3-pro-image",
   textTo3d: "tripo-3d-text",
@@ -1687,11 +2299,15 @@ function env(name) {
   return value ? value : undefined;
 }
 function resolveLiteLlmConfig() {
-  const baseUrl = (env("FORGEAX_LITELLM_BASE_URL") ?? DEFAULT_LITELLM_BASE_URL).replace(/\/+$/, "");
   const apiKey = env("FORGEAX_LITELLM_API_KEY");
   if (!apiKey) {
     throw new Error("FORGEAX_LITELLM_API_KEY is not set. Export the LiteLLM key so the asset tools can reach the gateway, e.g. `export FORGEAX_LITELLM_API_KEY=sk-...`.");
   }
+  const configuredBaseUrl = env("FORGEAX_LITELLM_BASE_URL");
+  if (!configuredBaseUrl) {
+    throw new Error("FORGEAX_LITELLM_BASE_URL is not set. Set the LiteLLM gateway URL before using the asset generation tools.");
+  }
+  const baseUrl = configuredBaseUrl.replace(/\/+$/, "");
   return {
     baseUrl,
     apiKey,
@@ -1704,7 +2320,7 @@ function resolveLiteLlmConfig() {
 }
 
 // src/gen/cos.ts
-import { createHash as createHash2, createHmac } from "node:crypto";
+import { createHash as createHash4, createHmac } from "node:crypto";
 var DEFAULT_EXPIRES_SEC = 3600;
 var SKEW_SEC = 60;
 function env2(name) {
@@ -1748,7 +2364,7 @@ ${opts.pathname}
 ${paramStr}
 ${headerStr}
 `;
-  const httpStringSha1 = createHash2("sha1").update(httpString).digest("hex");
+  const httpStringSha1 = createHash4("sha1").update(httpString).digest("hex");
   const stringToSign = `sha1
 ${signTime}
 ${httpStringSha1}
@@ -1945,7 +2561,7 @@ function assetsDirFor(cwd, explicitGame) {
   if (!dir)
     throw new Error(`Game ${JSON.stringify(slug)} not found in this project.`);
   const assets = join7(dir, "assets");
-  mkdirSync7(assets, { recursive: true });
+  mkdirSync5(assets, { recursive: true });
   return { dir: assets, root: binding.root, slug };
 }
 function safeStem(preferred, fallback) {
@@ -1955,7 +2571,7 @@ function safeStem(preferred, fallback) {
 }
 function uniquePath(dir, stem, ext) {
   let candidate = join7(dir, `${stem}.${ext}`);
-  for (let i = 1;existsSync4(candidate); i += 1)
+  for (let i = 1;existsSync5(candidate); i += 1)
     candidate = join7(dir, `${stem}-${i}.${ext}`);
   return candidate;
 }
@@ -2027,10 +2643,10 @@ async function generateImageTool(args, cwd) {
     if (HTTP_URL_RE.test(inputImage)) {
       throw new Error("Image-to-image expects a LOCAL image path, not a URL. Download it first, then pass the path.");
     }
-    if (!existsSync4(inputImage))
+    if (!existsSync5(inputImage))
       throw new Error(`Input image not found: ${inputImage}`);
-    const bytes = new Uint8Array(readFileSync6(inputImage));
-    result = await editImage(cfg, { model, prompt, image: bytes, filename: basename(inputImage) });
+    const bytes = new Uint8Array(readFileSync8(inputImage));
+    result = await editImage(cfg, { model, prompt, image: bytes, filename: basename2(inputImage) });
     mode = "image-to-image";
   } else {
     result = await generateImage(cfg, { model, prompt });
@@ -2038,12 +2654,12 @@ async function generateImageTool(args, cwd) {
   }
   const stem = safeStem(typeof args.name === "string" ? args.name : undefined, prompt);
   const outPath = uniquePath(dir, stem, result.ext);
-  writeFileSync4(outPath, result.bytes);
-  const rel = relative3(root, outPath);
+  writeFileSync5(outPath, result.bytes);
+  const rel = relative5(root, outPath);
   return `Saved ${mode} asset to \`${rel}\` (game: ${slug}, model: ${model}, ${result.bytes.length} bytes). Reference it from game code by this path.`;
 }
 function imageContentType(path) {
-  const ext = extname(path).toLowerCase();
+  const ext = extname2(path).toLowerCase();
   if (ext === ".jpg" || ext === ".jpeg")
     return "image/jpeg";
   if (ext === ".webp")
@@ -2053,15 +2669,15 @@ function imageContentType(path) {
 async function resolveImageUrlFor3d(image, slug) {
   if (HTTP_URL_RE.test(image))
     return image;
-  if (!existsSync4(image))
+  if (!existsSync5(image))
     throw new Error(`Input image not found: ${image}`);
   const cos = resolveCosConfig();
   if (!cos) {
     throw new Error("Image-to-3D from a local file needs COS configured (FORGEAX_COS_BUCKET/REGION/SECRET_ID/SECRET_KEY) so the image can be hosted for the backend to fetch. Alternatively pass a public https URL.");
   }
-  const bytes = new Uint8Array(readFileSync6(image));
-  const stem = safeStem(basename(image, extname(image)), "input");
-  const ext = (extname(image).replace(".", "") || "png").toLowerCase();
+  const bytes = new Uint8Array(readFileSync8(image));
+  const stem = safeStem(basename2(image, extname2(image)), "input");
+  const ext = (extname2(image).replace(".", "") || "png").toLowerCase();
   const key = `forgeax/${slug}/${stem}-${Date.now()}.${ext}`;
   return uploadAndPresign(cos, key, bytes, imageContentType(image));
 }
@@ -2070,13 +2686,13 @@ async function generate3dTool(args, cwd) {
   const image = typeof args.image === "string" ? args.image.trim() : "";
   if (!prompt && !image)
     throw new Error("Provide `prompt` (text-to-3D) or `image` (image-to-3D).");
-  const cfg = resolveLiteLlmConfig();
   const targetDir = typeof args.target_dir === "string" ? args.target_dir : cwd;
   const { dir, root, slug } = assetsDirFor(targetDir, typeof args.game === "string" ? args.game : undefined);
+  const imageUrl = image ? await resolveImageUrlFor3d(image, slug) : undefined;
+  const cfg = resolveLiteLlmConfig();
   let result;
   let mode;
-  if (image) {
-    const imageUrl = await resolveImageUrlFor3d(image, slug);
+  if (imageUrl) {
     const model = typeof args.model === "string" && args.model.trim() ? args.model.trim() : cfg.models.imageTo3d;
     result = await generate3dFromImageUrl(cfg, { model, imageUrl, prompt: prompt || undefined, onProgress: logProgress("image-to-3D") });
     mode = "image-to-3D";
@@ -2087,25 +2703,25 @@ async function generate3dTool(args, cwd) {
   }
   const stem = safeStem(typeof args.name === "string" ? args.name : undefined, prompt || "model");
   const outPath = uniquePath(dir, stem, result.ext);
-  writeFileSync4(outPath, result.bytes);
-  const rel = relative3(root, outPath);
+  writeFileSync5(outPath, result.bytes);
+  const rel = relative5(root, outPath);
   return `Saved ${mode} ${result.assetType} to \`${rel}\` (game: ${slug}, ${result.bytes.length} bytes). Reference it from game code by this path.`;
 }
 
 // src/mcp/game-files.ts
-import { createHash as createHash3, randomUUID } from "node:crypto";
+import { createHash as createHash5, randomUUID as randomUUID3 } from "node:crypto";
 import {
-  existsSync as existsSync5,
-  lstatSync as lstatSync2,
-  mkdirSync as mkdirSync8,
-  readFileSync as readFileSync7,
-  readdirSync as readdirSync3,
-  renameSync as renameSync2,
-  rmSync as rmSync2,
+  existsSync as existsSync6,
+  lstatSync as lstatSync5,
+  mkdirSync as mkdirSync6,
+  readFileSync as readFileSync9,
+  readdirSync as readdirSync5,
+  renameSync as renameSync4,
+  rmSync as rmSync4,
   statSync as statSync4,
-  writeFileSync as writeFileSync5
+  writeFileSync as writeFileSync6
 } from "node:fs";
-import { dirname as dirname4, extname as extname2, join as join8, relative as relative4, resolve as resolve4, sep as sep2 } from "node:path";
+import { dirname as dirname7, extname as extname3, join as join8, relative as relative6, resolve as resolve7, sep as sep3 } from "node:path";
 var MAX_TEXT_BYTES = 1024 * 1024;
 var MAX_LISTED_FILES = 500;
 var MAX_LOG_BYTES = 256 * 1024;
@@ -2129,7 +2745,7 @@ var TEXT_EXTENSIONS = new Set([
   ".yml"
 ]);
 function sha256(content) {
-  return createHash3("sha256").update(content).digest("hex");
+  return createHash5("sha256").update(content).digest("hex");
 }
 function selectedGame(cwd, raw) {
   const project = resolveProject(cwd);
@@ -2156,27 +2772,27 @@ function safeSegments(raw) {
   if (segments.some((segment) => segment.startsWith(".") || BLOCKED_SEGMENTS.has(segment))) {
     throw new Error("path targets a hidden or dependency-owned location");
   }
-  if (!TEXT_EXTENSIONS.has(extname2(segments.at(-1)).toLowerCase())) {
+  if (!TEXT_EXTENSIONS.has(extname3(segments.at(-1)).toLowerCase())) {
     throw new Error("path must name a supported UTF-8 text file");
   }
   return segments;
 }
 function confinedPath(gameRoot, raw, allowMissing) {
   const segments = safeSegments(raw);
-  const root = resolve4(gameRoot);
-  const path = resolve4(root, ...segments);
-  const rel = relative4(root, path);
-  if (rel === "" || rel === ".." || rel.startsWith(`..${sep2}`))
+  const root = resolve7(gameRoot);
+  const path = resolve7(root, ...segments);
+  const rel = relative6(root, path);
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep3}`))
     throw new Error("path escapes the game root");
   let cursor = root;
   for (const segment of segments) {
     cursor = join8(cursor, segment);
-    if (!existsSync5(cursor)) {
+    if (!existsSync6(cursor)) {
       if (!allowMissing)
         throw new Error(`file does not exist: ${segments.join("/")}`);
       continue;
     }
-    if (lstatSync2(cursor).isSymbolicLink())
+    if (lstatSync5(cursor).isSymbolicLink())
       throw new Error("path traverses a symbolic link");
   }
   return { path, relativePath: segments.join("/") };
@@ -2184,7 +2800,7 @@ function confinedPath(gameRoot, raw, allowMissing) {
 function listTextFiles(gameRoot) {
   const rows = [];
   const visit = (dir) => {
-    for (const entry of readdirSync3(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of readdirSync5(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (rows.length >= MAX_LISTED_FILES)
         return;
       if (entry.name.startsWith(".") || BLOCKED_SEGMENTS.has(entry.name) || entry.isSymbolicLink())
@@ -2192,8 +2808,8 @@ function listTextFiles(gameRoot) {
       const path = join8(dir, entry.name);
       if (entry.isDirectory())
         visit(path);
-      else if (entry.isFile() && TEXT_EXTENSIONS.has(extname2(entry.name).toLowerCase())) {
-        rows.push({ path: relative4(gameRoot, path).split(sep2).join("/"), bytes: statSync4(path).size });
+      else if (entry.isFile() && TEXT_EXTENSIONS.has(extname3(entry.name).toLowerCase())) {
+        rows.push({ path: relative6(gameRoot, path).split(sep3).join("/"), bytes: statSync4(path).size });
       }
     }
   };
@@ -2204,7 +2820,7 @@ function readGameFile(gameRoot, rawPath) {
   const file = confinedPath(gameRoot, rawPath, false);
   if (!statSync4(file.path).isFile())
     throw new Error(`path is not a file: ${file.relativePath}`);
-  const content = readFileSync7(file.path);
+  const content = readFileSync9(file.path);
   if (content.length > MAX_TEXT_BYTES)
     throw new Error(`file exceeds ${MAX_TEXT_BYTES} bytes`);
   if (content.includes(0))
@@ -2222,18 +2838,18 @@ function readRuntimeLogs(cwd, rawLines) {
     join8(project.root, ".forgeax", "runtime", "stack.log"),
     join8(project.root, ".forgeax", "logs", "runtime", "runtime.log")
   ];
-  const path = candidates.find((candidate) => existsSync5(candidate) && statSync4(candidate).isFile());
+  const path = candidates.find((candidate) => existsSync6(candidate) && statSync4(candidate).isFile());
   if (!path)
-    return { available: false, searched: candidates.map((candidate) => relative4(project.root, candidate)) };
+    return { available: false, searched: candidates.map((candidate) => relative6(project.root, candidate)) };
   const size = statSync4(path).size;
-  const content = readFileSync7(path);
+  const content = readFileSync9(path);
   const tail = content.subarray(Math.max(0, content.length - MAX_LOG_BYTES)).toString("utf8");
   const rows = tail.split(/\r?\n/);
   if (rows.at(-1) === "")
     rows.pop();
   return {
     available: true,
-    path: relative4(project.root, path).split(sep2).join("/"),
+    path: relative6(project.root, path).split(sep3).join("/"),
     bytes: size,
     truncatedBytes: content.length > MAX_LOG_BYTES,
     content: rows.slice(-lines).join(`
@@ -2247,27 +2863,27 @@ function writeGameFile(gameRoot, args) {
   const bytes = Buffer.byteLength(args.content);
   if (bytes > MAX_TEXT_BYTES)
     throw new Error(`content exceeds ${MAX_TEXT_BYTES} bytes`);
-  const exists = existsSync5(file.path);
+  const exists = existsSync6(file.path);
   if (exists) {
     if (!statSync4(file.path).isFile())
       throw new Error(`path is not a file: ${file.relativePath}`);
     if (typeof args.expected_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(args.expected_sha256)) {
       throw new Error("expected_sha256 is required when replacing an existing file");
     }
-    const current = sha256(readFileSync7(file.path));
+    const current = sha256(readFileSync9(file.path));
     if (current !== args.expected_sha256) {
       throw new Error(`file changed since it was read: expected ${args.expected_sha256}, current ${current}`);
     }
   } else if (args.expected_sha256 !== undefined) {
     throw new Error("expected_sha256 must be omitted when creating a new file");
   }
-  mkdirSync8(dirname4(file.path), { recursive: true });
-  const temporary = `${file.path}.${process.pid}.${randomUUID()}.tmp`;
+  mkdirSync6(dirname7(file.path), { recursive: true });
+  const temporary = `${file.path}.${process.pid}.${randomUUID3()}.tmp`;
   try {
-    writeFileSync5(temporary, args.content, { encoding: "utf8", flag: "wx" });
-    renameSync2(temporary, file.path);
+    writeFileSync6(temporary, args.content, { encoding: "utf8", flag: "wx" });
+    renameSync4(temporary, file.path);
   } finally {
-    rmSync2(temporary, { force: true });
+    rmSync4(temporary, { force: true });
   }
   return { path: file.relativePath, bytes, sha256: sha256(args.content), created: !exists };
 }
@@ -2335,6 +2951,108 @@ function gameFileTools() {
     }
   ];
 }
+// package.json
+var package_default = {
+  packageManager: "bun@1.4.0",
+  name: "@forgeax/game",
+  version: "0.3.10",
+  private: false,
+  type: "module",
+  description: "@forgeax/game — an MCP/CLI connector for exact released ForgeaX Engine games and Engine-owned Preview.",
+  main: "./dist/main.js",
+  bin: {
+    "forgeax-game": "dist/main.js",
+    game: "dist/main.js"
+  },
+  engines: {
+    node: ">=22.13.0"
+  },
+  publishConfig: {
+    access: "public",
+    registry: "https://registry.npmjs.org/"
+  },
+  files: [
+    "dist",
+    "assets",
+    "docs/asset3d.md",
+    "docs/plugin-integration-standard.md",
+    "docs/engine-0.2.1-to-0.3.3-migration.md",
+    "README.md"
+  ],
+  scripts: {
+    build: "bun build.mjs",
+    "release:check": "bun scripts/check-package-artifact.ts",
+    acceptance: "bun scripts/accept-packed-consumer.ts",
+    "release:publish": "bun scripts/publish-package.ts",
+    prepack: "bun build.mjs",
+    typecheck: "tsc --noEmit",
+    test: "bun test test/*.test.ts",
+    start: "bun src/main.ts",
+    "mcp:inspect": "npx @modelcontextprotocol/inspector node dist/main.js"
+  },
+  keywords: [
+    "forgeax",
+    "mcp",
+    "model-context-protocol",
+    "game-development",
+    "codex",
+    "claude-code"
+  ],
+  license: "MIT",
+  dependencies: {
+    "@forgeax/engine-sdk": "0.3.3",
+    pnpm: "11.7.0"
+  },
+  devDependencies: {
+    fflate: "0.8.2",
+    "@types/bun": "^1.2.0",
+    typescript: "^5.9.2"
+  },
+  directories: {
+    doc: "docs",
+    test: "test"
+  },
+  author: ""
+};
+
+// src/install/release-manifest.ts
+var RELEASE_IDENTITY_SCHEMA = "forgeax.game.release-identity/1";
+var RELEASE_IDENTITY_URI = "forgeax://release-identity";
+var RELEASE_IDENTITY_MIME = "application/vnd.forgeax.game-release-identity+json";
+var RELEASE_IDENTITY = Object.freeze({
+  schema: RELEASE_IDENTITY_SCHEMA,
+  gamePackage: "@forgeax/game",
+  gameVersion: package_default.version,
+  gameBin: "forgeax-game",
+  engineSdkPackage: ENGINE_SDK_PACKAGE,
+  engineSdkVersion: ENGINE_VERSION,
+  engineSourceCommit: ENGINE_COMMIT,
+  carrierIntegrity: "sha512-G5ovsbdzkWWeMfFy3MxVk0qcAvWnZxJnlypMGgxFUDaKr3Wv9uVuhPV88LZ1A9mhFJJSfrE1d5R3WvHgulygRQ==",
+  sdkManifestDigest: `sha256:${"0".repeat(64)}`,
+  sdkTreeDigest: `sha256:${"0".repeat(64)}`,
+  fullZipDigest: `sha256:${"0".repeat(64)}`,
+  pnpmVersion: PNPM_VERSION,
+  releaseDigest: `sha256:${"0".repeat(64)}`
+});
+var RELEASE_KEYS = Object.freeze([
+  "schema",
+  "gamePackage",
+  "gameVersion",
+  "gameBin",
+  "engineSdkPackage",
+  "engineSdkVersion",
+  "engineSourceCommit",
+  "carrierIntegrity",
+  "sdkManifestDigest",
+  "sdkTreeDigest",
+  "fullZipDigest",
+  "pnpmVersion",
+  "releaseDigest"
+]);
+function releaseIdentityJson(identity = RELEASE_IDENTITY) {
+  return `${JSON.stringify(identity)}
+`;
+}
 
 // src/mcp/forgeax-server.ts
 function publicPreviewResult(result, publicOrigin) {
@@ -2358,9 +3076,9 @@ function publicPreviewResult(result, publicOrigin) {
   });
 }
 function packageVersion() {
-  for (const relative5 of ["../package.json", "../../package.json"]) {
+  for (const relative7 of ["../package.json", "../../package.json"]) {
     try {
-      const version = JSON.parse(readFileSync8(new URL(relative5, import.meta.url), "utf8")).version;
+      const version = JSON.parse(readFileSync10(new URL(relative7, import.meta.url), "utf8")).version;
       if (version)
         return version;
     } catch {}
@@ -2375,18 +3093,26 @@ var TARGET_DIR_PROPERTY = {
 };
 function createForgeaxMcpServer(options = {}) {
   const allowTargetDir = options.allowTargetDir ?? options.root === undefined;
-  const cwd = options.root ? resolve5(options.root) : undefined;
+  const cwd = options.root ? resolve8(options.root) : undefined;
   const { target_dir: _targetDir, ...fixedRunProperties } = RUN_TOOL_SCHEMA.properties;
   const runInputSchema = allowTargetDir ? RUN_TOOL_SCHEMA : { ...RUN_TOOL_SCHEMA, properties: fixedRunProperties };
   return {
     serverInfo: { name: "forgeax", version: packageVersion() },
     instructions: ROUTING_TEXT,
     buildContext: () => ({ cwd: cwd ?? process.cwd() }),
+    shutdown: stopTrackedEnginePreviews,
     resources: [
+      {
+        uri: RELEASE_IDENTITY_URI,
+        name: "ForgeaX game release identity",
+        description: "Immutable package, Engine, carrier, SDK, pnpm, and release digest identity. Readable before a game is bound; performs no discovery or network request.",
+        mimeType: RELEASE_IDENTITY_MIME,
+        read: () => releaseIdentityJson()
+      },
       {
         uri: "forgeax://status",
         name: "ForgeaX status",
-        description: "Preferred entry point. Project binding, capability tier, service health, game development kit and routing-rule freshness, and the single next action. Read-only.",
+        description: "Preferred entry point. Game binding, exact Engine/DevKit/carrier identity, Preview state, development kit and routing-rule freshness, and the single next action. Read-only.",
         mimeType: "text/markdown",
         read: async (ctx) => renderStatus(await collectStatus(ctx.cwd))
       }
@@ -2394,7 +3120,7 @@ function createForgeaxMcpServer(options = {}) {
     tools: [
       {
         name: "forgeax_status_lite",
-        description: "Compatibility fallback for clients that cannot read MCP resources; prefer the `forgeax://status` resource when available. Reports project binding, capability tier, service health, game development kit and routing-rule freshness, and the next action. Read-only — never writes to the workspace.",
+        description: "Compatibility fallback for clients that cannot read MCP resources; prefer the `forgeax://status` resource when available. Reports game binding, exact Engine/DevKit/carrier identity, Preview state, development kit and routing-rule freshness, and the next action. Read-only — never writes to the workspace.",
         inputSchema: {
           type: "object",
           properties: allowTargetDir ? { ...TARGET_DIR_PROPERTY } : {},
@@ -2407,9 +3133,9 @@ function createForgeaxMcpServer(options = {}) {
       },
       {
         name: "forgeax_run_current_game",
-        description: 'Build, preview, reload, or verify the active game. One call covers what the user means by "run it", "let me see it", "reload", or "does it work": it installs the selected Runtime when needed, builds or reuses a static preview, returns a preview URL to open, and reports the Runtime log file. Read an available `runtime_logs.local_file` with your own file tool — log tailing is intentionally not a tool. Call this after a requested game change, not for ordinary edits the user has not asked to see.',
+        description: "Build and preview the active game through the exact released Engine CLI. The call runs the bounded Engine build, starts or reuses one release-aware verified Engine Preview child, and reports its exact Engine/build/instance identity plus state and log paths. Call this after a requested game change.",
         inputSchema: runInputSchema,
-        run: async (args, ctx) => publicPreviewResult(await runCurrentGame(allowTargetDir ? args : { ...args, target_dir: ctx.cwd }, ctx.cwd, { existingServicesOnly: options.existingServicesOnly }), options.publicOrigin)
+        run: async (args, ctx) => publicPreviewResult(await runCurrentGame(allowTargetDir ? args : { ...args, target_dir: ctx.cwd }, ctx.cwd), options.publicOrigin)
       },
       {
         name: "forgeax_generate_image",
@@ -2554,11 +3280,11 @@ async function startHttpMcpServer(spec, options) {
       }
     });
   });
-  await new Promise((resolve6, reject) => {
+  await new Promise((resolve9, reject) => {
     server.once("error", reject);
     server.listen(options.port, options.host, () => {
       server.off("error", reject);
-      resolve6();
+      resolve9();
     });
   });
   const address = server.address();
@@ -2569,27 +3295,39 @@ async function startHttpMcpServer(spec, options) {
     server,
     origin,
     url: `${origin}${endpointPath}`,
-    close: () => new Promise((resolve6, reject) => {
-      server.close((error) => error ? reject(error) : resolve6());
+    close: () => new Promise((resolve9, reject) => {
+      server.close((error) => error ? reject(error) : resolve9());
     })
   };
 }
 
 // src/cli/dispatch.ts
-import { existsSync as existsSync7, readFileSync as readFileSync10, rmSync as rmSync3, writeFileSync as writeFileSync7 } from "node:fs";
-import { basename as basename2, join as join10 } from "node:path";
+import { existsSync as existsSync9, readFileSync as readFileSync14, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join11 } from "node:path";
 
 // src/install/clients.ts
-import { homedir as homedir3 } from "node:os";
-import { join as join9, resolve as resolve6 } from "node:path";
-var HOME = homedir3();
+import { homedir as homedir2 } from "node:os";
+import { join as join9, relative as relative7, resolve as resolve9, sep as sep4 } from "node:path";
+import { lstatSync as lstatSync6, realpathSync as realpathSync6 } from "node:fs";
+function configuredHome() {
+  const configured = process.env.HOME || process.env.USERPROFILE || homedir2();
+  try {
+    return realpathSync6.native(resolve9(configured));
+  } catch {
+    return resolve9(configured);
+  }
+}
+var INSTALL_CLIENT_IDS = ["codex", "cursor", "claude"];
+function userPath(...parts) {
+  return join9(configuredHome(), ...parts);
+}
 var CLIENTS = [
   {
     id: "codex",
     label: "Codex CLI",
     format: "toml",
     scope: "user",
-    path: () => join9(HOME, ".codex", "config.toml"),
+    path: () => userPath(".codex", "config.toml"),
     commandShape: "split",
     postInstallNote: "Restart Codex, then run /mcp to confirm the server is connected."
   },
@@ -2598,7 +3336,7 @@ var CLIENTS = [
     label: "the reference agent CLI",
     format: "json",
     scope: "user",
-    path: () => join9(HOME, ".claude.json"),
+    path: () => userPath(".claude.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Restart the reference agent CLI, then run /mcp to confirm the server is connected."
@@ -2608,7 +3346,7 @@ var CLIENTS = [
     label: "Cursor",
     format: "json",
     scope: "user",
-    path: () => join9(HOME, ".cursor", "mcp.json"),
+    path: () => userPath(".cursor", "mcp.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Reload Cursor, then check Settings > MCP."
@@ -2629,7 +3367,7 @@ var CLIENTS = [
     label: "a peer agent CLI / WorkBuddy",
     format: "json",
     scope: "user",
-    path: () => join9(HOME, ".codebuddy", ".mcp.json"),
+    path: () => userPath(".codebuddy", ".mcp.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Restart a peer agent CLI or WorkBuddy, then run /mcp to confirm the server is connected."
@@ -2639,7 +3377,7 @@ var CLIENTS = [
     label: "Windsurf",
     format: "json",
     scope: "user",
-    path: () => join9(HOME, ".codeium", "windsurf", "mcp_config.json"),
+    path: () => userPath(".codeium", "windsurf", "mcp_config.json"),
     serverMapKey: ["mcpServers"],
     commandShape: "split",
     postInstallNote: "Reload Windsurf to pick up the new server."
@@ -2659,7 +3397,7 @@ var CLIENTS = [
     label: "ZCode",
     format: "json",
     scope: "user",
-    path: () => join9(HOME, ".zcode", "cli", "config.json"),
+    path: () => userPath(".zcode", "cli", "config.json"),
     serverMapKey: ["mcp", "servers"],
     commandShape: "split",
     postInstallNote: "Start a new ZCode session, then run /mcp status to confirm the server is connected."
@@ -2669,7 +3407,7 @@ var CLIENTS = [
     label: "OpenCode",
     format: "json",
     scope: "user",
-    path: () => join9(HOME, ".config", "opencode", "opencode.json"),
+    path: () => userPath(".config", "opencode", "opencode.json"),
     serverMapKey: ["mcp"],
     commandShape: "argv",
     extraEntryFields: { type: "local", enabled: true },
@@ -2677,6 +3415,7 @@ var CLIENTS = [
   }
 ];
 var CLIENT_IDS = CLIENTS.map((c) => c.id);
+var INSTALL_CLIENTS = INSTALL_CLIENT_IDS.map((id) => CLIENTS.find((client) => client.id === id));
 var CLIENT_CHOICES = CLIENTS.flatMap((client) => [
   client.id,
   ...client.aliases ?? []
@@ -2687,14 +3426,17 @@ function findClient(id) {
 var SERVER_KEY = "forgeax";
 function launchSpec(mode) {
   if (mode === "local") {
-    return { command: process.execPath, args: [resolve6(process.argv[1] ?? ""), "mcp"] };
+    return { command: process.execPath, args: [resolve9(process.argv[1] ?? ""), "mcp"] };
   }
-  return { command: "npx", args: ["-y", "-p", "@forgeax/game", "forgeax-game", "mcp"] };
+  return {
+    command: "npx",
+    args: ["-y", "-p", `@forgeax/game@${RELEASE_IDENTITY.gameVersion}`, "forgeax-game", "mcp"]
+  };
 }
 
 // src/install/write-config.ts
-import { copyFileSync as copyFileSync2, existsSync as existsSync6, mkdirSync as mkdirSync9, readFileSync as readFileSync9, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname5 } from "node:path";
+import { copyFileSync as copyFileSync2, existsSync as existsSync7, mkdirSync as mkdirSync7, readFileSync as readFileSync11, writeFileSync as writeFileSync7 } from "node:fs";
+import { basename as basename3, dirname as dirname8, isAbsolute as isAbsolute3, resolve as resolve10 } from "node:path";
 
 // src/install/toml-section.ts
 var HEADER_RE = /^[ \t]*\[([^[\]\r\n]+)\][ \t]*(?:#[^\r\n]*)?\r?$/gm;
@@ -2827,6 +3569,16 @@ ${suffix ? `
 function hasTomlTable(content, header) {
   return [...content.matchAll(HEADER_RE)].some((match) => sameHeader(match[1], header));
 }
+function readTomlTable(content, header) {
+  const headerLines = [...content.matchAll(HEADER_RE)];
+  const ownedIndexes = headerLines.flatMap((match, index) => sameHeader(match[1], header) ? [index] : []);
+  if (ownedIndexes.length !== 1)
+    return;
+  const ownedIndex = ownedIndexes[0];
+  const owned = headerLines[ownedIndex];
+  const next = headerLines[ownedIndex + 1];
+  return content.slice(owned.index, next?.index ?? content.length);
+}
 function hasCompetingTomlDefinition(content, header) {
   const headerLines = [...content.matchAll(HEADER_RE)];
   return hasCompetingInlineOwner(content, header, headerLines);
@@ -2855,42 +3607,384 @@ function removeTomlTable(content, header) {
 }
 
 // src/install/write-config.ts
+var JSON_WHITESPACE = /^[ \t\r\n]*$/;
 function buildEntry(spec, launch) {
   const command = spec.commandShape === "argv" ? { command: [launch.command, ...launch.args] } : { command: launch.command, args: [...launch.args] };
   return { ...command, ...spec.extraEntryFields ?? {} };
 }
-function mergeJsonConfig(existing, spec, entry) {
-  let root = {};
-  if (existing && existing.trim() !== "") {
-    let parsed;
-    try {
-      parsed = JSON.parse(existing);
-    } catch (e) {
-      throw new Error(`${spec.path("")} is not valid JSON (${e.message}). Fix or move the file, then re-run install.`);
-    }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new Error(`${spec.path("")} does not contain a JSON object at the top level.`);
-    }
-    root = parsed;
+
+class JsonRangeParser {
+  source;
+  index = 0;
+  constructor(source) {
+    this.source = source;
   }
-  const mapKey = spec.serverMapKey ?? ["mcpServers"];
-  let cursor = root;
-  for (const key of mapKey) {
-    const next = cursor[key];
-    if (next === undefined) {
-      cursor[key] = {};
-    } else if (typeof next !== "object" || next === null || Array.isArray(next)) {
-      throw new Error(`${spec.path("")} has ${mapKey.join(".")} with an incompatible value; refusing to overwrite existing user data.`);
-    }
-    cursor = cursor[key];
+  parse() {
+    this.skipWhitespace();
+    const value = this.parseValue();
+    this.skipWhitespace();
+    if (this.index !== this.source.length)
+      throw new Error("trailing data after JSON value");
+    return value;
   }
-  const before = JSON.stringify(cursor[SERVER_KEY]);
-  cursor[SERVER_KEY] = entry;
-  const content = `${JSON.stringify(root, null, 2)}
-`;
-  return { content, changed: before !== JSON.stringify(entry) };
+  parseValue() {
+    this.skipWhitespace();
+    const start = this.index;
+    const char = this.source[this.index];
+    if (char === "{")
+      return this.parseObject(start);
+    if (char === "[")
+      return this.parseArray(start);
+    if (char === '"') {
+      this.parseString();
+      return { type: "primitive", start, end: this.index };
+    }
+    if (char === "-" || char !== undefined && /[0-9]/.test(char)) {
+      this.parseNumber();
+      return { type: "primitive", start, end: this.index };
+    }
+    for (const literal of ["true", "false", "null"]) {
+      if (this.source.startsWith(literal, this.index)) {
+        this.index += literal.length;
+        return { type: "primitive", start, end: this.index };
+      }
+    }
+    throw new Error(`unexpected JSON token at offset ${this.index}`);
+  }
+  parseObject(start) {
+    this.index++;
+    const members = [];
+    const seen = new Set;
+    this.skipWhitespace();
+    if (this.source[this.index] === "}") {
+      this.index++;
+      return { type: "object", start, end: this.index, members };
+    }
+    while (this.index < this.source.length) {
+      this.skipWhitespace();
+      const keyStart = this.index;
+      const encodedKey = this.parseString();
+      let key;
+      try {
+        key = JSON.parse(encodedKey);
+      } catch {
+        throw new Error(`invalid JSON object key at offset ${keyStart}`);
+      }
+      if (typeof key !== "string")
+        throw new Error(`JSON object key is not a string at offset ${keyStart}`);
+      if (seen.has(key))
+        throw new Error(`duplicate JSON object key ${JSON.stringify(key)}`);
+      seen.add(key);
+      const keyEnd = this.index;
+      this.skipWhitespace();
+      if (this.source[this.index] !== ":")
+        throw new Error(`missing ':' after JSON key at offset ${this.index}`);
+      this.index++;
+      const value = this.parseValue();
+      members.push({ key, keyStart, keyEnd, value });
+      this.skipWhitespace();
+      const delimiter2 = this.source[this.index];
+      if (delimiter2 === "}") {
+        this.index++;
+        return { type: "object", start, end: this.index, members };
+      }
+      if (delimiter2 !== ",")
+        throw new Error(`missing ',' in JSON object at offset ${this.index}`);
+      this.index++;
+      this.skipWhitespace();
+      if (this.source[this.index] === "}")
+        throw new Error(`trailing comma in JSON object at offset ${this.index}`);
+    }
+    throw new Error("unterminated JSON object");
+  }
+  parseArray(start) {
+    this.index++;
+    this.skipWhitespace();
+    if (this.source[this.index] === "]") {
+      this.index++;
+      return { type: "array", start, end: this.index };
+    }
+    while (this.index < this.source.length) {
+      this.parseValue();
+      this.skipWhitespace();
+      const delimiter2 = this.source[this.index];
+      if (delimiter2 === "]") {
+        this.index++;
+        return { type: "array", start, end: this.index };
+      }
+      if (delimiter2 !== ",")
+        throw new Error(`missing ',' in JSON array at offset ${this.index}`);
+      this.index++;
+      this.skipWhitespace();
+      if (this.source[this.index] === "]")
+        throw new Error(`trailing comma in JSON array at offset ${this.index}`);
+    }
+    throw new Error("unterminated JSON array");
+  }
+  parseString() {
+    const start = this.index;
+    if (this.source[this.index] !== '"')
+      throw new Error(`expected JSON string at offset ${this.index}`);
+    this.index++;
+    while (this.index < this.source.length) {
+      const char = this.source[this.index];
+      if (char === '"') {
+        this.index++;
+        const encoded = this.source.slice(start, this.index);
+        try {
+          JSON.parse(encoded);
+          return encoded;
+        } catch {
+          throw new Error(`invalid JSON string at offset ${start}`);
+        }
+      }
+      if (char === "\\") {
+        this.index += 1;
+        if (this.index >= this.source.length)
+          throw new Error(`unterminated JSON escape at offset ${start}`);
+        if (this.source[this.index] === "u") {
+          if (!/^[0-9a-fA-F]{4}$/.test(this.source.slice(this.index + 1, this.index + 5))) {
+            throw new Error(`invalid JSON unicode escape at offset ${this.index}`);
+          }
+          this.index += 5;
+        } else {
+          this.index += 1;
+        }
+        continue;
+      }
+      if (char.charCodeAt(0) < 32)
+        throw new Error(`control character in JSON string at offset ${this.index}`);
+      this.index++;
+    }
+    throw new Error(`unterminated JSON string at offset ${start}`);
+  }
+  parseNumber() {
+    const remaining = this.source.slice(this.index);
+    const match = remaining.match(/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/);
+    if (!match)
+      throw new Error(`invalid JSON number at offset ${this.index}`);
+    this.index += match[0].length;
+  }
+  skipWhitespace() {
+    while (this.index < this.source.length && /[ \t\r\n]/.test(this.source[this.index]))
+      this.index++;
+  }
 }
-function mergeTomlConfig(existing, entry) {
+function jsonObjectMembers(node, label) {
+  if (node.type !== "object" || !node.members) {
+    throw new Error(`${label} must be a JSON object; refusing to overwrite existing user data`);
+  }
+  return node.members;
+}
+function jsonMember(members, key, label) {
+  const found = members.filter((member) => member.key === key);
+  if (found.length > 1)
+    throw new Error(`${label} contains duplicate ${JSON.stringify(key)} keys`);
+  return found[0];
+}
+function replaceJsonValue(source, value, replacement) {
+  return `${source.slice(0, value.start)}${replacement}${source.slice(value.end)}`;
+}
+function appendJsonMember(source, object, members, key, value) {
+  const encoded = `${JSON.stringify(key)}:${value}`;
+  if (members.length === 0) {
+    return `${source.slice(0, object.start + 1)}${encoded}${source.slice(object.start + 1)}`;
+  }
+  const last = members[members.length - 1];
+  return `${source.slice(0, last.value.end)},${encoded}${source.slice(last.value.end)}`;
+}
+function parseJsonForMerge(existing, path) {
+  try {
+    const root = new JsonRangeParser(existing).parse();
+    return { source: existing, root };
+  } catch (error) {
+    throw new Error(`${path} is not valid JSON (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+function validateTomlSyntax(source) {
+  let quote;
+  const brackets = [];
+  for (let index = 0;index < source.length; index++) {
+    const char = source[index];
+    if (quote === "basic") {
+      if (char === "\\") {
+        index++;
+        continue;
+      }
+      if (char === '"')
+        quote = undefined;
+      continue;
+    }
+    if (quote === "literal") {
+      if (char === "'")
+        quote = undefined;
+      continue;
+    }
+    if (quote === "basic-multiline") {
+      if (char === "\\") {
+        index++;
+        continue;
+      }
+      if (source.startsWith('"""', index)) {
+        quote = undefined;
+        index += 2;
+      }
+      continue;
+    }
+    if (quote === "literal-multiline") {
+      if (source.startsWith("'''", index)) {
+        quote = undefined;
+        index += 2;
+      }
+      continue;
+    }
+    if (char === "#") {
+      const newline = source.indexOf(`
+`, index);
+      if (newline < 0)
+        break;
+      index = newline;
+      continue;
+    }
+    if (char === '"') {
+      if (source.startsWith('"""', index)) {
+        quote = "basic-multiline";
+        index += 2;
+      } else {
+        quote = "basic";
+      }
+      continue;
+    }
+    if (char === "'") {
+      if (source.startsWith("'''", index)) {
+        quote = "literal-multiline";
+        index += 2;
+      } else {
+        quote = "literal";
+      }
+      continue;
+    }
+    if (char === "[" || char === "{") {
+      brackets.push(char);
+      continue;
+    }
+    if (char === "]" || char === "}") {
+      const opener = char === "]" ? "[" : "{";
+      if (brackets.pop() !== opener)
+        throw new Error(`unmatched TOML delimiter ${char} at offset ${index}`);
+    }
+  }
+  if (quote)
+    throw new Error("unterminated TOML string");
+  if (brackets.length)
+    throw new Error("unterminated TOML array or inline table");
+}
+function validTomlTableHeader(line) {
+  const arrayTable = line.startsWith("[[");
+  const openingWidth = arrayTable ? 2 : 1;
+  let quote;
+  for (let index = openingWidth;index < line.length; index++) {
+    const char = line[index];
+    if (quote === "basic") {
+      if (char === "\\") {
+        index++;
+        continue;
+      }
+      if (char === '"')
+        quote = undefined;
+      continue;
+    }
+    if (quote === "literal") {
+      if (char === "'")
+        quote = undefined;
+      continue;
+    }
+    if (char === '"') {
+      quote = "basic";
+      continue;
+    }
+    if (char === "'") {
+      quote = "literal";
+      continue;
+    }
+    const closes = arrayTable ? line.startsWith("]]", index) : char === "]";
+    if (!closes)
+      continue;
+    const body = line.slice(openingWidth, index).trim();
+    const suffix = line.slice(index + openingWidth);
+    return body.length > 0 && /^[ \t]*(?:#.*)?$/.test(suffix);
+  }
+  return false;
+}
+function mergeJsonConfig(existing, spec, entry, serverKey = SERVER_KEY) {
+  const path = spec.path("");
+  const mapKey = spec.serverMapKey ?? ["mcpServers"];
+  const wanted = JSON.stringify(entry);
+  if (!existing || existing.trim() === "") {
+    if (existing && JSON_WHITESPACE.test(existing)) {
+      let nested2 = { [serverKey]: entry };
+      for (let index = mapKey.length - 1;index >= 0; index--) {
+        nested2 = { [mapKey[index]]: nested2 };
+      }
+      return { content: `${existing}${JSON.stringify(nested2)}
+`, changed: true };
+    }
+    let nested = { [serverKey]: entry };
+    for (let index = mapKey.length - 1;index >= 0; index--) {
+      nested = { [mapKey[index]]: nested };
+    }
+    return { content: `${JSON.stringify(nested, null, 2)}
+`, changed: true };
+  }
+  const { source, root } = parseJsonForMerge(existing, path);
+  const rootMembers = jsonObjectMembers(root, `${path} top level`);
+  let container = root;
+  let members = rootMembers;
+  for (let index = 0;index < mapKey.length; index++) {
+    const key = mapKey[index];
+    const found = jsonMember(members, key, path);
+    if (!found) {
+      let nested = { [serverKey]: entry };
+      for (let nestedIndex = mapKey.length - 1;nestedIndex >= index; nestedIndex--) {
+        nested = { [mapKey[nestedIndex]]: nested };
+      }
+      return {
+        content: appendJsonMember(source, container, members, key, JSON.stringify(nested[key])),
+        changed: true
+      };
+    }
+    const nestedMembers = jsonObjectMembers(found.value, `${path}.${mapKey.slice(0, index + 1).join(".")}`);
+    container = found.value;
+    members = nestedMembers;
+  }
+  const mapMembers = members;
+  const owned = jsonMember(mapMembers, serverKey, `${path}.${mapKey.join(".")}`);
+  if (owned) {
+    let before;
+    try {
+      before = JSON.parse(source.slice(owned.value.start, owned.value.end));
+    } catch {
+      throw new Error(`${path}.mcpServers.${serverKey} is not valid JSON`);
+    }
+    if (JSON.stringify(before) === wanted)
+      return { content: existing, changed: false };
+    return { content: replaceJsonValue(source, owned.value, wanted), changed: true };
+  }
+  return {
+    content: appendJsonMember(source, container, mapMembers, serverKey, wanted),
+    changed: true
+  };
+}
+function mergeTomlConfig(existing, entry, serverKey = SERVER_KEY) {
+  if (existing !== undefined && existing.trim() !== "") {
+    validateTomlSyntax(existing);
+    for (const [index, line] of existing.split(/\r?\n/).entries()) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("[") && !validTomlTableHeader(trimmed)) {
+        throw new Error(`line ${index + 1} has an invalid TOML table header`);
+      }
+    }
+  }
   const body = [];
   const command = entry.command;
   if (typeof command === "string")
@@ -2898,18 +3992,55 @@ function mergeTomlConfig(existing, entry) {
   const args = entry.args;
   if (Array.isArray(args))
     body.push(`args = ${encodeTomlStringArray(args)}`);
-  const content = upsertTomlTable(existing ?? "", { header: `mcp_servers.${SERVER_KEY}`, body });
+  const content = upsertTomlTable(existing ?? "", { header: `mcp_servers.${serverKey}`, body });
   return { content, changed: content !== (existing ?? "") };
 }
-function inspectConfig(spec, projectRoot, launch) {
+function jsonServerEntry(parsed, spec, serverKey) {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    return;
+  let cursor = parsed;
+  for (const key of spec.serverMapKey ?? ["mcpServers"]) {
+    if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor))
+      return;
+    cursor = cursor[key];
+  }
+  if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor))
+    return;
+  return cursor[serverKey];
+}
+function gameVersionFromEntryText(entry) {
+  const pinned = entry.match(/@forgeax\/game@([0-9A-Za-z][0-9A-Za-z.+_-]*)/);
+  if (pinned)
+    return pinned[1];
+  if (entry.includes("@forgeax/game"))
+    return "unversioned";
+  return "local/custom";
+}
+function configuredGameVersion(spec, projectRoot, serverKey = SERVER_KEY) {
   const path = spec.path(projectRoot);
-  if (!existsSync6(path))
+  if (!existsSync7(path))
+    return;
+  try {
+    const existing = readFileSync11(path, "utf8");
+    if (spec.format === "toml") {
+      const table = readTomlTable(existing, `mcp_servers.${serverKey}`);
+      return table === undefined ? undefined : gameVersionFromEntryText(table);
+    }
+    const entry = jsonServerEntry(JSON.parse(existing), spec, serverKey);
+    return entry === undefined ? undefined : gameVersionFromEntryText(JSON.stringify(entry));
+  } catch {
+    return;
+  }
+}
+function inspectConfig(spec, projectRoot, launch, serverKey = SERVER_KEY) {
+  const path = spec.path(projectRoot);
+  if (!existsSync7(path))
     return { path, state: "missing" };
   let existing;
   try {
-    existing = readFileSync9(path, "utf8");
+    existing = readFileSync11(path, "utf8");
     if (spec.format === "toml") {
-      const header = `mcp_servers.${SERVER_KEY}`;
+      const header = `mcp_servers.${serverKey}`;
       if (!hasTomlTable(existing, header)) {
         if (hasCompetingTomlDefinition(existing, header)) {
           return {
@@ -2922,24 +4053,14 @@ function inspectConfig(spec, projectRoot, launch) {
       }
       return {
         path,
-        state: mergeTomlConfig(existing, buildEntry(spec, launch)).changed ? "different" : "current"
+        state: mergeTomlConfig(existing, buildEntry(spec, launch), serverKey).changed ? "different" : "current"
       };
     }
     const parsed = JSON.parse(existing);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return { path, state: "invalid", detail: "top level is not a JSON object" };
     }
-    let cursor = parsed;
-    for (const key of spec.serverMapKey ?? ["mcpServers"]) {
-      if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor)) {
-        return { path, state: "not_configured" };
-      }
-      cursor = cursor[key];
-    }
-    if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor)) {
-      return { path, state: "not_configured" };
-    }
-    const entry = cursor[SERVER_KEY];
+    const entry = jsonServerEntry(parsed, spec, serverKey);
     if (entry === undefined)
       return { path, state: "not_configured" };
     return {
@@ -2950,30 +4071,30 @@ function inspectConfig(spec, projectRoot, launch) {
     return { path, state: "invalid", detail: error instanceof Error ? error.message : String(error) };
   }
 }
-function applyConfig(spec, projectRoot, launch) {
+function applyConfig(spec, projectRoot, launch, serverKey = SERVER_KEY) {
   const path = spec.path(projectRoot);
-  const existing = existsSync6(path) ? readFileSync9(path, "utf8") : undefined;
+  const existing = existsSync7(path) ? readFileSync11(path, "utf8") : undefined;
   const entry = buildEntry(spec, launch);
-  const merged = spec.format === "toml" ? mergeTomlConfig(existing, entry) : mergeJsonConfig(existing, spec, entry);
+  const merged = spec.format === "toml" ? mergeTomlConfig(existing, entry, serverKey) : mergeJsonConfig(existing, spec, entry, serverKey);
   if (!merged.changed)
     return { path, changed: false };
-  mkdirSync9(dirname5(path), { recursive: true });
+  mkdirSync7(dirname8(path), { recursive: true });
   let backup;
   if (existing !== undefined) {
     backup = `${path}.bak.latest`;
     copyFileSync2(path, backup);
   }
-  writeFileSync6(path, merged.content);
+  writeFileSync7(path, merged.content);
   return { path, changed: true, ...backup ? { backup } : {} };
 }
-function removeConfig(spec, projectRoot) {
+function removeConfig(spec, projectRoot, serverKey = SERVER_KEY, backupSuffix = ".bak.latest") {
   const path = spec.path(projectRoot);
-  if (!existsSync6(path))
+  if (!existsSync7(path))
     return { path, changed: false };
-  const existing = readFileSync9(path, "utf8");
+  const existing = readFileSync11(path, "utf8");
   let content;
   if (spec.format === "toml") {
-    content = removeTomlTable(existing, `mcp_servers.${SERVER_KEY}`);
+    content = removeTomlTable(existing, `mcp_servers.${serverKey}`);
   } else {
     let parsed;
     try {
@@ -2988,30 +4109,76 @@ function removeConfig(spec, projectRoot) {
         return { path, changed: false };
       cursor = next;
     }
-    if (!(SERVER_KEY in cursor))
+    if (!(serverKey in cursor))
       return { path, changed: false };
-    delete cursor[SERVER_KEY];
+    delete cursor[serverKey];
     content = `${JSON.stringify(parsed, null, 2)}
 `;
   }
   if (content === existing)
     return { path, changed: false };
-  const backup = `${path}.bak.latest`;
+  const backup = `${path}${backupSuffix}`;
   copyFileSync2(path, backup);
-  writeFileSync6(path, content);
+  writeFileSync7(path, content);
   return { path, changed: true, backup };
+}
+function retireAsset3dConfig(spec, projectRoot) {
+  const key = "asset3d-search";
+  const path = spec.path(projectRoot);
+  if (!existsSync7(path))
+    return "absent";
+  try {
+    const text = readFileSync11(path, "utf8");
+    let entry;
+    if (spec.format === "toml") {
+      const table = readTomlTable(text, `mcp_servers.${key}`);
+      if (table === undefined) {
+        return hasCompetingTomlDefinition(text, `mcp_servers.${key}`) ? "preserved" : "absent";
+      }
+      const command2 = table.match(/^command\s*=\s*(".*")\s*$/m)?.[1];
+      const args2 = table.match(/^args\s*=\s*(\[.*\])\s*$/m)?.[1];
+      if (!command2 || !args2)
+        return "preserved";
+      entry = { command: JSON.parse(command2), args: JSON.parse(args2) };
+      const expected = readTomlTable(mergeTomlConfig(undefined, entry, key).content, `mcp_servers.${key}`);
+      if (table.trim() !== expected?.trim() || /^\s*\[.*asset3d-search.*\.\s*[\w"']/m.test(text))
+        return "preserved";
+    } else {
+      entry = jsonServerEntry(JSON.parse(text), spec, key);
+      if (entry === undefined)
+        return "absent";
+    }
+    if (!entry || typeof entry !== "object")
+      return "preserved";
+    const command = spec.commandShape === "argv" && Array.isArray(entry.command) ? entry.command[0] : entry.command;
+    const args = spec.commandShape === "argv" && Array.isArray(entry.command) ? entry.command.slice(1) : entry.args;
+    if (typeof command !== "string" || !Array.isArray(args) || !args.every((x) => typeof x === "string"))
+      return "preserved";
+    const published = command === "npx" && args.length === 6 && args[0] === "-y" && args[1] === "-p" && /^@forgeax\/game@\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(args[2]) && args[3] === "forgeax-game" && args[4] === "asset3d" && args[5] === "mcp";
+    let local = false;
+    if (isAbsolute3(command) && /^(node|node.exe)$/.test(basename3(command)) && args.length === 3 && isAbsolute3(args[0]) && args[1] === "asset3d" && args[2] === "mcp" && basename3(args[0]) === "main.js" && basename3(dirname8(args[0])) === "dist") {
+      const pkg = JSON.parse(readFileSync11(resolve10(dirname8(args[0]), "..", "package.json"), "utf8"));
+      local = pkg.name === "@forgeax/game";
+    }
+    if (!(published || local) || inspectConfig(spec, projectRoot, { command, args }, key).state !== "current")
+      return "preserved";
+    return removeConfig(spec, projectRoot, key, ".asset3d-retired.bak").changed ? "removed" : "absent";
+  } catch {
+    return "preserved";
+  }
 }
 
 // src/install/verify.ts
-import { spawn as spawn3 } from "node:child_process";
+import { spawn as spawn2 } from "node:child_process";
 var REQUIRED_TOOLS = ["forgeax_status_lite", "forgeax_run_current_game"];
 var REQUIRED_RESOURCES = ["forgeax://status"];
+var INSTALL_VERIFY_TIMEOUT_MS = 120000;
 function commandText(launch) {
   return [launch.command, ...launch.args].map((part) => JSON.stringify(part)).join(" ");
 }
 function rpcRequest(child, pending, id, method, params = {}) {
-  return new Promise((resolve7, reject) => {
-    pending.set(id, resolve7);
+  return new Promise((resolve11, reject) => {
+    pending.set(id, resolve11);
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}
 `, (error) => {
       if (!error)
@@ -3034,7 +4201,10 @@ function namesFrom(result, key) {
   });
 }
 async function verifyLaunch(launch, timeoutMs = 30000) {
-  const child = spawn3(launch.command, [...launch.args], {
+  return verifyLaunchInternal(launch, timeoutMs, false);
+}
+async function verifyLaunchInternal(launch, timeoutMs, requireReleaseIdentity) {
+  const child = spawn2(launch.command, [...launch.args], {
     stdio: ["pipe", "pipe", "pipe"],
     env: process.env
   });
@@ -3073,11 +4243,11 @@ async function verifyLaunch(launch, timeoutMs = 30000) {
       }
       if (typeof response.id !== "number")
         continue;
-      const resolve7 = pending.get(response.id);
-      if (!resolve7)
+      const resolve11 = pending.get(response.id);
+      if (!resolve11)
         continue;
       pending.delete(response.id);
-      resolve7(response);
+      resolve11(response);
     }
   });
   const timeout = new Promise((_, reject) => {
@@ -3087,11 +4257,13 @@ async function verifyLaunch(launch, timeoutMs = 30000) {
     timer.unref?.();
   });
   const checked = (async () => {
+    const handshake = [];
     const initialized = await rpcRequest(child, pending, 1, "initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
       clientInfo: { name: "forgeax-game-installer", version: "1" }
     });
+    handshake.push("initialize");
     if (initialized.error)
       throw new Error(`initialize failed: ${initialized.error.message ?? initialized.error.code}`);
     const serverInfo = initialized.result?.serverInfo;
@@ -3103,6 +4275,7 @@ async function verifyLaunch(launch, timeoutMs = 30000) {
       throw new Error(`initialize returned unexpected server ${JSON.stringify(info.name)}`);
     }
     const toolsResponse = await rpcRequest(child, pending, 2, "tools/list");
+    handshake.push("tools/list");
     if (toolsResponse.error) {
       throw new Error(`tools/list failed: ${toolsResponse.error.message ?? toolsResponse.error.code}`);
     }
@@ -3111,6 +4284,7 @@ async function verifyLaunch(launch, timeoutMs = 30000) {
     if (missingTools.length)
       throw new Error(`MCP server is missing tools: ${missingTools.join(", ")}`);
     const resourcesResponse = await rpcRequest(child, pending, 3, "resources/list");
+    handshake.push("resources/list");
     if (resourcesResponse.error) {
       throw new Error(`resources/list failed: ${resourcesResponse.error.message ?? resourcesResponse.error.code}`);
     }
@@ -3119,11 +4293,49 @@ async function verifyLaunch(launch, timeoutMs = 30000) {
     if (missingResources.length) {
       throw new Error(`MCP server is missing resources: ${missingResources.join(", ")}`);
     }
-    return {
+    const base = {
       serverName: String(info.name),
       serverVersion: typeof info.version === "string" ? info.version : "unknown",
       tools,
       resources
+    };
+    if (!requireReleaseIdentity)
+      return base;
+    if (!resources.includes(RELEASE_IDENTITY_URI)) {
+      throw new Error(`MCP server is missing resource: ${RELEASE_IDENTITY_URI}`);
+    }
+    const identityResponse = await rpcRequest(child, pending, 4, "resources/read", {
+      uri: RELEASE_IDENTITY_URI
+    });
+    handshake.push("resources/read");
+    if (identityResponse.error) {
+      throw new Error(`resources/read failed: ${identityResponse.error.message ?? identityResponse.error.code}`);
+    }
+    const contents = identityResponse.result?.contents;
+    if (!Array.isArray(contents) || contents.length !== 1) {
+      throw new Error("release identity resource returned an unexpected content list");
+    }
+    const content = contents[0];
+    if (typeof content !== "object" || content === null) {
+      throw new Error("release identity resource returned a non-object content");
+    }
+    const record = content;
+    if (record.uri !== RELEASE_IDENTITY_URI || record.mimeType !== RELEASE_IDENTITY_MIME) {
+      throw new Error("release identity resource URI or media type mismatched");
+    }
+    if (typeof record.text !== "string")
+      throw new Error("release identity resource did not return JSON text");
+    let identity;
+    try {
+      identity = JSON.parse(record.text);
+    } catch {
+      throw new Error("release identity resource returned invalid JSON");
+    }
+    return {
+      ...base,
+      releaseIdentity: identity,
+      releaseIdentityMimeType: String(record.mimeType),
+      handshake
     };
   })();
   try {
@@ -3139,24 +4351,358 @@ async function verifyLaunch(launch, timeoutMs = 30000) {
   }
 }
 
+// src/devkit/engine-mounts.ts
+import { lstatSync as lstatSync7, readFileSync as readFileSync12, readdirSync as readdirSync6, readlinkSync as readlinkSync2, rmdirSync, unlinkSync as unlinkSync2, writeFileSync as writeFileSync8 } from "node:fs";
+import { dirname as dirname9, join as join10, resolve as resolve11 } from "node:path";
+var HOSTS = {
+  ".agents/skills": ["codex"],
+  ".claude/skills": ["claude"],
+  ".cursor/skills": ["cursor"],
+  ".codebuddy/skills": ["codebuddy", "workbuddy"],
+  ".workbuddy/skills": ["workbuddy"]
+};
+function pruneUnselectedEngineMounts(root, clients) {
+  const manifestPath = join10(root, ".forgeax", "skill-install-manifest.json");
+  const regular = (path) => {
+    try {
+      const stat = lstatSync7(path);
+      return stat.isFile() && !stat.isSymbolicLink();
+    } catch {
+      return false;
+    }
+  };
+  const directory = (path) => {
+    try {
+      const stat = lstatSync7(path);
+      return stat.isDirectory() && !stat.isSymbolicLink();
+    } catch {
+      return false;
+    }
+  };
+  if (!directory(join10(root, ".forgeax")) || !regular(manifestPath))
+    return [];
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync12(manifestPath, "utf8"));
+  } catch {
+    return [];
+  }
+  if (!manifest || manifest.schemaVersion !== "1.0.0" || manifest.sourceRoot !== "skills" || !Array.isArray(manifest.mounts))
+    return [];
+  const removed = [];
+  for (const mount of manifest.mounts) {
+    if (!mount || typeof mount.root !== "string" || !Object.hasOwn(HOSTS, mount.root))
+      continue;
+    const hosts = HOSTS[mount.root];
+    if (!hosts || hosts.some((host) => clients.includes(host)) || !Array.isArray(mount.skills))
+      continue;
+    if (!mount.skills.length || !mount.skills.every((id) => /^forgeax-engine-[a-z0-9-]+$/.test(id)) || new Set(mount.skills).size !== mount.skills.length)
+      continue;
+    const path = join10(root, mount.root);
+    if (!directory(dirname9(path)) || !directory(path))
+      continue;
+    const expected = [".gitignore", ...mount.skills].sort();
+    if (JSON.stringify(readdirSync6(path).sort()) !== JSON.stringify(expected))
+      continue;
+    const ignore = join10(path, ".gitignore");
+    const expectedIgnore = ["# BEGIN FORGEAX MANAGED SKILLS", ...mount.skills.map((id) => `/${id}`), "# END FORGEAX MANAGED SKILLS", ""].join(`
+`);
+    if (!regular(ignore) || readFileSync12(ignore, "utf8") !== expectedIgnore)
+      continue;
+    if (!mount.skills.every((id) => {
+      const link = join10(path, id);
+      return lstatSync7(link).isSymbolicLink() && resolve11(path, readlinkSync2(link)) === resolve11(root, "skills", id);
+    }))
+      continue;
+    for (const id of mount.skills)
+      unlinkSync2(join10(path, id));
+    unlinkSync2(ignore);
+    rmdirSync(path);
+    if (readdirSync6(dirname9(path)).length === 0)
+      rmdirSync(dirname9(path));
+    removed.push(mount.root);
+  }
+  if (removed.length) {
+    manifest.mounts = manifest.mounts.filter((mount) => !mount || !removed.includes(mount.root));
+    writeFileSync8(manifestPath, `${JSON.stringify(manifest, null, 2)}
+`);
+  }
+  return removed;
+}
+
+// src/extensions/manager.ts
+import { createHash as createHash6, randomUUID as randomUUID4 } from "node:crypto";
+import { existsSync as existsSync8, lstatSync as lstatSync8, mkdirSync as mkdirSync8, readFileSync as readFileSync13, readdirSync as readdirSync7, realpathSync as realpathSync7, renameSync as renameSync5, rmSync as rmSync5, rmdirSync as rmdirSync2, writeFileSync as writeFileSync9 } from "node:fs";
+import { dirname as dirname10, isAbsolute as isAbsolute4, relative as relative8, resolve as resolve12, sep as sep5 } from "node:path";
+import { fileURLToPath as fileURLToPath3, pathToFileURL } from "node:url";
+var mounts = {
+  codex: ".agents/skills",
+  claude: ".claude/skills",
+  cursor: ".cursor/skills",
+  trae: ".trae/skills",
+  codebuddy: ".codebuddy/skills",
+  windsurf: ".codeium/windsurf/skills",
+  vscode: ".vscode/skills",
+  zcode: ".zcode/skills",
+  opencode: ".config/opencode/skills"
+};
+var reserved = new Set(["install", "init", "uninstall", "update", "use", "doctor", "preview", "devkit", "agents", "help", "version"]);
+var validId = (id) => /^[a-z][a-z0-9-]{0,63}$/.test(id) && !reserved.has(id);
+var digest = (data) => createHash6("sha256").update(data).digest("hex");
+function safe(root, path) {
+  const target = resolve12(root, path);
+  const rel = relative8(root, target);
+  if (!rel || rel === ".." || rel.startsWith(`..${sep5}`) || isAbsolute4(rel))
+    throw new Error("extension_path_escape");
+  let cursor = root;
+  for (const part of rel.split(sep5)) {
+    cursor = resolve12(cursor, part);
+    try {
+      if (lstatSync8(cursor).isSymbolicLink())
+        throw new Error("extension_symlink_not_allowed");
+    } catch (error) {
+      if (error.code !== "ENOENT")
+        throw error;
+    }
+  }
+  return target;
+}
+function write(path, content) {
+  mkdirSync8(dirname10(path), { recursive: true });
+  const temp = `${path}.${randomUUID4()}.tmp`;
+  writeFileSync9(temp, content, { mode: 384 });
+  renameSync5(temp, path);
+}
+function json2(path) {
+  const bytes = readFileSync13(path);
+  if (bytes.length > 1024 * 1024)
+    throw new Error("extension_state_too_large");
+  return JSON.parse(bytes.toString());
+}
+function extensionRoot() {
+  const here = dirname10(fileURLToPath3(import.meta.url));
+  return [resolve12(here, "../assets/extensions"), resolve12(here, "../../extensions")].find(existsSync8) ?? resolve12(here, "../assets/extensions");
+}
+function discoverExtensions(root = extensionRoot()) {
+  if (!existsSync8(root))
+    return [];
+  const found = [];
+  for (const id of readdirSync7(root)) {
+    if (!validId(id))
+      continue;
+    const directory = safe(root, id);
+    if (!lstatSync8(directory).isDirectory())
+      continue;
+    const value = json2(safe(directory, "extension.json"));
+    if (value.schemaVersion !== 1 || value.id !== id || typeof value.version !== "string" || !/^\d+\.\d+\.\d+$/.test(value.version) || typeof value.cli !== "string" || !value.cli.endsWith(".mjs") || !Array.isArray(value.skills) || !value.skills.length || value.skills.some((s) => typeof s !== "string" || !/^skills\/[a-z][a-z0-9-]*$/.test(s))) {
+      throw new Error(`extension_manifest_invalid: ${id}`);
+    }
+    safe(directory, value.cli);
+    for (const skill of value.skills)
+      safe(directory, skill + "/SKILL.md");
+    found.push({ ...value, directory });
+  }
+  return found;
+}
+function extensionState(root, id) {
+  if (!validId(id))
+    throw new Error("extension_id_invalid");
+  return safe(root, `.forgeax/extensions/${id}`);
+}
+function installation(root, id) {
+  const path = safe(root, `.forgeax/extensions/${id}/install.json`);
+  if (!existsSync8(path))
+    return;
+  const record = json2(path);
+  if (record.schemaVersion !== 1 || record.id !== id || !Array.isArray(record.files))
+    throw new Error("extension_install_invalid");
+  for (const file of record.files) {
+    if (typeof file.path !== "string" || !/^[a-f0-9]{64}$/.test(file.sha256) || !Object.values(mounts).some((mount) => file.path.startsWith(mount + "/")) || !file.path.endsWith("/SKILL.md"))
+      throw new Error("extension_install_invalid");
+    safe(root, file.path);
+  }
+  return record;
+}
+async function load(extension) {
+  let entry = safe(extension.directory, extension.cli);
+  if (!existsSync8(entry) && existsSync8(entry.replace(/\.mjs$/, ".ts")))
+    entry = entry.replace(/\.mjs$/, ".ts");
+  const mod = await import(pathToFileURL(entry).href);
+  if (typeof mod.check !== "function" || typeof mod.run !== "function")
+    throw new Error("extension_cli_invalid");
+  return mod;
+}
+function context(root, id) {
+  return { projectRoot: root, stateDir: extensionState(root, id), packageVersion: RELEASE_IDENTITY.gameVersion };
+}
+function lock(root) {
+  const path = safe(realpathSync7(root), ".forgeax/extension-operation.lock");
+  mkdirSync8(dirname10(path), { recursive: true });
+  try {
+    mkdirSync8(path);
+  } catch {
+    throw new Error("extension_busy: another operation or an interrupted lock requires attention");
+  }
+  return () => rmdirSync2(path);
+}
+var userState = () => resolve12(process.env.FORGEAX_USER_STATE_DIR ?? resolve12(configuredHome(), ".forgeax"));
+var registryPath = () => resolve12(userState(), "extension-projects.json");
+function registeredProjects() {
+  if (!existsSync8(registryPath()))
+    return [];
+  const value = json2(registryPath());
+  if (!Array.isArray(value) || value.some((p) => typeof p !== "string" || !isAbsolute4(p)))
+    throw new Error("extension_registry_invalid");
+  return value;
+}
+function register(root, enabled) {
+  mkdirSync8(userState(), { recursive: true });
+  safe(realpathSync7(userState()), "extension-projects.json");
+  const projects = new Set(registeredProjects());
+  enabled ? projects.add(root) : projects.delete(root);
+  if (projects.size)
+    write(registryPath(), JSON.stringify([...projects]) + `
+`);
+  else if (existsSync8(registryPath()))
+    rmSync5(registryPath());
+}
+async function enableExtension(rootInput, extension, hosts, args, localEntry) {
+  const release = lock(rootInput);
+  try {
+    return await enableUnlocked(rootInput, extension, hosts, args, localEntry);
+  } finally {
+    release();
+  }
+}
+async function enableUnlocked(rootInput, extension, hosts, args, localEntry) {
+  const root = realpathSync7(rootInput);
+  const state = extensionState(root, extension.id);
+  const previous = installation(root, extension.id);
+  if (!hosts.length || hosts.some((host) => !mounts[host]))
+    throw new Error("extension_host_required: select installed agents with --ide");
+  const command = localEntry ? `node '${realpathSync7(localEntry).replaceAll("'", "'\\''")}' ${extension.id}` : `npx -y @forgeax/game@${RELEASE_IDENTITY.gameVersion} ${extension.id}`;
+  const files = hosts.flatMap((host) => extension.skills.map((skill) => {
+    const content = readFileSync13(safe(extension.directory, `${skill}/SKILL.md`), "utf8").replaceAll("{{CLI}}", command);
+    return { path: `${mounts[host]}/${skill.slice("skills/".length)}/SKILL.md`, sha256: digest(content), content };
+  }));
+  for (const file of files) {
+    const target = safe(root, file.path);
+    if (existsSync8(target) && digest(readFileSync13(target)) !== previous?.files.find((f) => f.path === file.path)?.sha256) {
+      throw new Error("extension_skill_conflict: " + file.path);
+    }
+  }
+  const cli = await load(extension);
+  const config = await cli.check(context(root, extension.id), args);
+  const targets = new Map;
+  const remember = (path) => {
+    targets.set(path, existsSync8(path) ? readFileSync13(path) : undefined);
+  };
+  for (const file of files)
+    remember(safe(root, file.path));
+  remember(safe(root, `.forgeax/extensions/${extension.id}/config.json`));
+  remember(safe(root, `.forgeax/extensions/${extension.id}/install.json`));
+  try {
+    write(resolve12(state, "config.json"), JSON.stringify(config) + `
+`);
+    for (const file of files)
+      write(safe(root, file.path), file.content);
+    const record = {
+      schemaVersion: 1,
+      id: extension.id,
+      version: extension.version,
+      packageVersion: RELEASE_IDENTITY.gameVersion,
+      files: [...previous?.files.filter((f) => !files.some((n) => n.path === f.path)) ?? [], ...files.map(({ path, sha256: sha2562 }) => ({ path, sha256: sha2562 }))]
+    };
+    write(resolve12(state, "install.json"), JSON.stringify(record) + `
+`);
+    register(root, true);
+  } catch (error) {
+    for (const [path, old] of targets) {
+      if (old)
+        write(path, old.toString());
+      else if (existsSync8(path))
+        rmSync5(path);
+    }
+    throw error;
+  }
+  return { enabled: true, id: extension.id, version: extension.version, skillFiles: files.length };
+}
+function disableExtension(rootInput, id) {
+  const release = lock(rootInput);
+  try {
+    return disableUnlocked(rootInput, id);
+  } finally {
+    release();
+  }
+}
+function disableUnlocked(rootInput, id) {
+  const root = realpathSync7(rootInput);
+  const previous = installation(root, id);
+  if (!previous)
+    return { disabled: true, id, removed: 0, backups: [] };
+  const backups = [];
+  let removed = 0;
+  for (const file of previous.files) {
+    const path = safe(root, file.path);
+    if (existsSync8(path)) {
+      if (digest(readFileSync13(path)) !== file.sha256) {
+        const backup = safe(root, `.forgeax/extension-backups/${id}/${randomUUID4()}/${file.path}`);
+        mkdirSync8(dirname10(backup), { recursive: true });
+        renameSync5(path, backup);
+        backups.push(backup);
+      } else
+        rmSync5(path);
+      removed++;
+    }
+    try {
+      rmdirSync2(dirname10(path));
+    } catch {}
+  }
+  rmSync5(extensionState(root, id), { recursive: true });
+  const installed = installedExtensions(root);
+  if (!installed.length)
+    register(root, false);
+  return { disabled: true, id, removed, backups };
+}
+function installedExtensions(root) {
+  const dir = safe(root, ".forgeax/extensions");
+  return existsSync8(dir) ? readdirSync7(dir).filter((id) => validId(id) && installation(root, id)) : [];
+}
+function disableAllExtensions(root) {
+  return installedExtensions(root).map((id) => disableExtension(root, id));
+}
+async function runExtension(root, extension, args) {
+  const release = lock(root);
+  try {
+    const record = installation(root, extension.id);
+    if (!record)
+      throw new Error("extension_not_enabled: run " + extension.id + " enable");
+    if (record.version !== extension.version || record.packageVersion !== RELEASE_IDENTITY.gameVersion)
+      throw new Error("extension_version_mismatch: enable with this version");
+    return await (await load(extension)).run(context(root, extension.id), args);
+  } finally {
+    release();
+  }
+}
+
 // src/cli/dispatch.ts
-import {
-  installEngineSdk as installEngineSdk2,
-  loadRuntimeManifest,
-  resolveInstalledRuntime as resolveInstalledRuntime4,
-  runtimeCacheRoot
-} from "@forgeax/game-runtime";
 var HELP = `ForgeaX game development plugin
 
 Usage:
   forgeax-game install [--ide ${CLIENT_CHOICES.join(",")}] [--local]
   forgeax-game uninstall [--ide ...] [--purge]
-  forgeax-game init [--game <slug>] [--ide ...]
+  forgeax-game uninstall --all-projects [--ide ...]
+  forgeax-game <extension> enable [--ide ...] [--local] [extension options]
+  forgeax-game <extension> disable
+  forgeax-game <extension> <operation> [options]
+  forgeax-game init
   forgeax-game use <slug>
   forgeax-game doctor
+  forgeax-game preview stop [--game <slug>] [--target-dir <path>] [--json]
   forgeax-game devkit install
   forgeax-game agents update
   forgeax-game update [--ide ...]
+  forgeax-game version
   forgeax-game help
 
 With no arguments, forgeax-game runs the stdio MCP server.
@@ -3197,70 +4743,36 @@ function parseInstallArgs(args) {
 function requireProject() {
   const project = resolveProject();
   if (!project.root) {
-    throw new Error(`no ForgeaX project found searching upward from ${project.searchedFrom}; run this command inside a directory containing .forgeax/`);
+    throw new Error(`no released Engine game found searching upward from ${project.searchedFrom}; run this command inside a game created by the released Engine SDK`);
   }
   return project.root;
 }
 function updateAgentsFile(root) {
-  const path = join10(root, "AGENTS.md");
-  const existing = existsSync7(path) ? readFileSync10(path, "utf8") : undefined;
+  const path = join11(root, "AGENTS.md");
+  const existing = existsSync9(path) ? readFileSync14(path, "utf8") : undefined;
   const content = upsertBlock(existing, ROUTING_TEXT);
   if (content === existing)
     return { path, changed: false };
-  writeFileSync7(path, content);
+  writeFileSync10(path, content);
   return { path, changed: true };
 }
 function removeAgentsBlock(root) {
-  const path = join10(root, "AGENTS.md");
-  if (!existsSync7(path))
+  const path = join11(root, "AGENTS.md");
+  if (!existsSync9(path))
     return { path, changed: false };
-  const existing = readFileSync10(path, "utf8");
+  const existing = readFileSync14(path, "utf8");
   const content = removeBlock(existing);
   if (content === existing)
     return { path, changed: false };
-  writeFileSync7(path, content);
+  writeFileSync10(path, content);
   return { path, changed: true };
 }
-async function apiWrite(method, path, body) {
-  const controller = new AbortController;
-  const timer = setTimeout(() => controller.abort(), 1e4);
-  try {
-    const response = await fetch(`${serverBaseUrl()}${path}`, {
-      method,
-      headers: body ? { "content-type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal
-    });
-    const text = await response.text();
-    let payload = {};
-    if (text) {
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        payload = { error: text };
-      }
-    }
-    if (!response.ok) {
-      throw new Error(`${path} returned HTTP ${response.status}: ${String(payload.error ?? response.statusText)}`);
-    }
-    return payload;
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`${serverBaseUrl()} did not answer ${path} within 10s`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-var apiPost = (path, body) => apiWrite("POST", path, body);
-var apiPut = (path, body) => apiWrite("PUT", path, body);
 async function installCommand(args) {
   const parsed = parseInstallArgs(args);
   const launch = launchSpec(parsed.mode);
   process.stdout.write(`Verifying ${launch.command} ${launch.args.join(" ")} ...
 `);
-  const verified = await verifyLaunch(launch);
+  const verified = await verifyLaunch(launch, INSTALL_VERIFY_TIMEOUT_MS);
   process.stdout.write(`Handshake OK: ${verified.serverName} ${verified.serverVersion}, ${verified.tools.length} tools, ${verified.resources.length} resource.
 `);
   const project = resolveProject();
@@ -3274,6 +4786,7 @@ async function installCommand(args) {
     }
     try {
       const result = applyConfig(client, project.root ?? process.cwd(), launch);
+      retireAsset3dHost(client, project.root ?? process.cwd());
       process.stdout.write(`${result.changed ? "UPDATED" : "CURRENT"} ${client.label}: ${result.path}${result.backup ? ` (backup: ${result.backup})` : ""}
 `);
       if (client.postInstallNote)
@@ -3298,77 +4811,38 @@ async function installCommand(args) {
   }
   return failures === 0 ? 0 : 1;
 }
-function defaultSlug(root) {
-  const raw = basename2(root).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-  return SLUG_RE.test(raw) ? raw : "my-game";
-}
-var INIT_USAGE = "usage: forgeax-game init [--game <slug>] [--ide codex,claude,cursor,...]";
-function parseInitArgs(args, root) {
-  const rest = [];
-  let slug;
-  for (let i = 0;i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "--game") {
-      const value = args[++i];
-      if (!value)
-        throw new Error(INIT_USAGE);
-      slug = value;
-      continue;
-    }
-    if (arg.startsWith("--game=")) {
-      slug = arg.slice("--game=".length);
-      continue;
-    }
-    rest.push(arg);
-  }
-  const ide = parseIdeSelector(rest, INIT_USAGE);
-  return { slug: slug ?? defaultSlug(root), ...ide ? { ide } : {} };
-}
 async function initCommand(args) {
-  const binding = resolveProject();
-  const root = binding.root ?? process.cwd();
-  const parsedInit = parseInitArgs(args, root);
-  const slug = parsedInit.slug;
-  if (!SLUG_RE.test(slug)) {
-    throw new Error("game slug must be 1-41 lowercase ASCII letters, digits, or hyphens, starting with a letter or digit");
-  }
-  if (gameDir(root, slug))
-    throw new Error(`game ${JSON.stringify(slug)} already exists`);
-  const capabilities = await probeServices();
-  let useServer = capabilities.tier !== "local";
-  if (useServer && !binding.root) {
-    try {
-      await assertServerProjectRoot(root);
-    } catch {
-      useServer = false;
+  if (args.length)
+    throw new Error("usage: forgeax-game init");
+  let binding = resolveProject();
+  if (!binding.root) {
+    await createEmptyGameWithCarrier(process.cwd());
+    binding = resolveProject();
+    if (!binding.root) {
+      throw new Error("engine_sdk_new_succeeded_but_project_unbound: the created directory is not a released Engine game");
     }
   }
-  if (useServer) {
-    if (binding.root)
-      await assertServerProjectRoot(root);
-    if (!binding.root)
-      ensureLocalProject(root);
-    const response = await apiPost("/api/projects", { slug, name: slug, brief: "" });
-    if (!gameDir(root, slug)) {
-      throw new Error(`server created ${JSON.stringify(response.gameDir ?? slug)}, but it is not under ${root}/.forgeax/games; run the CLI against the same instance root as the server`);
-    }
-  } else {
-    const local = initLocalGame(root, slug);
-    process.stdout.write(`Created a local ForgeaX project and game ${slug} at ${local.gameRoot} (no matching server; online scaffold will be used for later games).
-`);
-  }
-  const sdk = installEngineSdk2(root);
-  process.stdout.write(`${sdk.changed ? "UPDATED" : "CURRENT"} bundled Engine SDK: ${sdk.sdkRoot}${sdk.engineCommit ? ` (${sdk.engineCommit})` : ""}
-`);
-  if (sdk.sourceRoot)
-    process.stdout.write(`Engine source available for escalation: ${sdk.sourceRoot}
-`);
+  const root = binding.root;
+  const slug = activeGame(root);
+  const selectedGame2 = slug ? gameDir(root, slug) : undefined;
+  if (!slug || !selectedGame2)
+    throw new Error("no active Engine game is available");
+  const release = resolveEngineRelease(selectedGame2);
+  const baseline = ensureAuthoringBaseline(selectedGame2);
   const agents = updateAgentsFile(root);
-  const selection = selectClients(root, parsedInit.ide);
+  const selection = selectClients(root, undefined);
   reportMissingClients(selection.missing);
   const hosts = selection.selected;
   const devkit = installDevKit(root, hosts);
-  process.stdout.write(`Created and activated game ${slug} at ${gameDir(root, slug)}.
+  const removedMounts = pruneUnselectedEngineMounts(root, hosts);
+  if (removedMounts.length)
+    process.stdout.write(`Removed unused Engine-generated skill mounts: ${removedMounts.join(", ")}.
+`);
+  process.stdout.write(`Bound Engine game ${slug} at ${selectedGame2}.
+`);
+  process.stdout.write(`Engine ${release.version} (${release.commit}).
+`);
+  process.stdout.write(`Authoring baseline: ${baseline}.
 `);
   process.stdout.write(`${agents.changed ? "Updated" : "Kept current"} routing rules in ${agents.path}.
 `);
@@ -3393,9 +4867,50 @@ async function useCommand(args) {
   if (!gameDir(root, slug)) {
     throw new Error(`game ${JSON.stringify(slug)} not found. Available: ${listGames(root).join(", ") || "(none)"}`);
   }
-  await assertServerProjectRoot(root);
-  await apiPut("/api/projects/active", { slug });
+  if (listGames(root).length > 1) {
+    writeFileSync10(join11(root, ".forgeax", "active-game.json"), `${JSON.stringify({ version: 1, slug }, null, 2)}
+`, "utf8");
+  }
   process.stdout.write(`Active game: ${slug}
+`);
+  return 0;
+}
+async function previewCommand(args) {
+  if (args[0] !== "stop") {
+    throw new Error("usage: forgeax-game preview stop [--game <slug>] [--target-dir <path>] [--json]");
+  }
+  let requested;
+  let targetDir;
+  let json3 = false;
+  for (let index = 1;index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "--json") {
+      json3 = true;
+      continue;
+    }
+    if (arg === "--game" || arg === "--target-dir") {
+      const value = args[++index];
+      if (!value)
+        throw new Error(`${arg} requires a value`);
+      if (arg === "--game")
+        requested = value;
+      else
+        targetDir = value;
+      continue;
+    }
+    throw new Error("usage: forgeax-game preview stop [--game <slug>] [--target-dir <path>] [--json]");
+  }
+  const project = resolveProject(targetDir);
+  if (!project.root)
+    throw new Error("no ForgeaX project or Engine game found");
+  const slug = requested ?? activeGame(project.root) ?? listGames(project.root)[0];
+  const selectedGame2 = slug ? gameDir(project.root, slug) : undefined;
+  if (!slug || !selectedGame2)
+    throw new Error("no matching Engine game found");
+  const result = await stopEnginePreview(project.root, selectedGame2);
+  const envelope = { schemaVersion: "1.0.0", command: "preview.stop", ok: true, value: { game: slug, stopped: result.stopped, stateFile: result.paths.state } };
+  process.stdout.write(json3 ? `${JSON.stringify(envelope)}
+` : `${result.stopped ? "Stopped" : "No live"} Engine Preview for ${slug}.
 `);
   return 0;
 }
@@ -3430,13 +4945,34 @@ function configuredClientIds(projectRoot) {
 }
 async function uninstallCommand(args) {
   const purge = args.includes("--purge");
-  const rest = args.filter((arg) => arg !== "--purge");
+  const allProjects = args.includes("--all-projects");
+  const rest = args.filter((arg) => arg !== "--purge" && arg !== "--all-projects");
   const requested = parseIdeSelector(rest, "usage: forgeax-game uninstall [--ide codex,claude,...] [--purge]");
   const binding = resolveProject();
   const root = binding.root;
   const targets = requested ? requested.map((id) => id === "workbuddy" ? "codebuddy" : id) : root ? configuredClientIds(root) : [...CLIENT_IDS];
   const clients = CLIENTS.filter((client) => targets.includes(client.id));
   let failures = 0;
+  const projects = allProjects ? registeredProjects() : root ? [root] : [];
+  for (const project of projects) {
+    try {
+      const removed = disableAllExtensions(project);
+      process.stdout.write(`DISABLED ${removed.length} extensions: ${project}
+`);
+      for (const item of removed)
+        for (const backup of item.backups)
+          process.stdout.write(`BACKUP ${backup}
+`);
+      if (allProjects && project !== root) {
+        removeDevKit(project);
+        removeAgentsBlock(project);
+      }
+    } catch (error) {
+      failures++;
+      process.stderr.write(`FAIL extension cleanup: ${project}: ${error instanceof Error ? error.message : String(error)}
+`);
+    }
+  }
   for (const client of clients) {
     try {
       const result = removeConfig(client, root ?? process.cwd());
@@ -3455,20 +4991,20 @@ async function uninstallCommand(args) {
     const agents = removeAgentsBlock(root);
     process.stdout.write(`${agents.changed ? "REMOVED" : "ABSENT "} routing block: ${agents.path}
 `);
-    process.stdout.write(`KEPT    your games and project metadata: ${join10(root, ".forgeax")}
+    process.stdout.write(`KEPT    your games and project metadata: ${join11(root, ".forgeax")}
 `);
   } else {
     process.stdout.write(`INFO  no ForgeaX project bound; only client configuration was touched.
 `);
   }
-  if (purge) {
-    const cache = runtimeCacheRoot();
-    rmSync3(cache, { recursive: true, force: true });
-    process.stdout.write(`PURGED managed Runtime cache: ${cache}
+  if (purge && root) {
+    const slug = activeGame(root);
+    const selectedGame2 = slug ? gameDir(root, slug) : undefined;
+    if (selectedGame2) {
+      const stopped = await stopEnginePreview(root, selectedGame2);
+      process.stdout.write(`${stopped.stopped ? "STOPPED" : "ABSENT "} Engine Preview: ${stopped.paths.state}
 `);
-  } else {
-    process.stdout.write(`KEPT    managed Runtime cache (use --purge to remove): ${runtimeCacheRoot()}
-`);
+    }
   }
   process.stdout.write(`Restart your agent client so it drops the forgeax MCP server.
 `);
@@ -3544,13 +5080,13 @@ async function doctorCommand(args) {
   if (args.length)
     throw new Error("usage: forgeax-game doctor");
   let warnings = 0;
-  const major = Number.parseInt(process.versions.node.split(".")[0], 10);
-  if (major >= 18)
+  const [major = 0, minor = 0] = process.versions.node.split(".").map((part) => Number.parseInt(part, 10));
+  if (major > 22 || major === 22 && minor >= 13)
     process.stdout.write(`OK Node ${process.versions.node}
 `);
   else {
     warnings++;
-    process.stdout.write(`FAIL Node ${process.versions.node}; Node 18 or newer is required
+    process.stdout.write(`FAIL Node ${process.versions.node}; Node 22.13 or newer is required
 `);
   }
   const project = resolveProject();
@@ -3559,7 +5095,7 @@ async function doctorCommand(args) {
 `);
     if (hasDevKit(project.root)) {
       const engine = installedEngineSkills(project.root);
-      const bundled = bundledEngineSkillCount();
+      const bundled = bundledEngineSkillCount(project.root);
       process.stdout.write(`OK game development skill installed; Engine authoring skills: ${engine.length}
 `);
       if (engine.length < bundled) {
@@ -3573,43 +5109,26 @@ async function doctorCommand(args) {
     }
   } else {
     warnings++;
-    process.stdout.write(`WARN no ForgeaX project found from ${project.searchedFrom}
+    process.stdout.write(`WARN no released Engine game found from ${project.searchedFrom}
 `);
   }
-  const runtime = resolveInstalledRuntime4();
-  if (runtime) {
-    process.stdout.write(`OK managed ForgeaX Runtime ${runtime.version} (${runtime.platform}/${runtime.arch})
-`);
-  } else if (loadRuntimeManifest()) {
-    warnings++;
-    process.stdout.write(`WARN managed Runtime is not installed; first run will download and verify the selected artifact
-`);
-  } else {
-    warnings++;
-    process.stdout.write(`WARN no Runtime manifest found; publish/install assets/runtime-manifest.json or set FORGEAX_RUNTIME_MANIFEST
-`);
-  }
-  let capabilities = await probeServices();
-  if (project.root && capabilities.services.some((service) => service.name === "server" && service.reachable)) {
+  if (project.root) {
+    const slug = activeGame(project.root);
+    const selectedGame2 = slug ? gameDir(project.root, slug) : undefined;
     try {
-      await assertServerProjectRoot(project.root);
-      if (capabilities.tier === "runtime")
-        await assertEngineProjectRoot(project.root);
+      if (!selectedGame2)
+        throw new Error("no active Engine game");
+      const release = resolveEngineRelease(selectedGame2);
+      process.stdout.write(`OK Engine ${release.version} (${release.commit})
+`);
+      const preview = inspectEnginePreview(project.root, selectedGame2);
+      process.stdout.write(`${preview.processLive && preview.processIdentityMatches ? "OK" : "INFO"} Engine Preview ${preview.processLive ? "live" : "not running"} (${preview.paths.state})
+`);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      capabilities = {
-        tier: "local",
-        services: capabilities.services.map((service) => ({ ...service, reachable: false, reason }))
-      };
-    }
-  }
-  process.stdout.write(`Capability tier: ${capabilities.tier}
-`);
-  for (const service of capabilities.services) {
-    if (!service.reachable)
       warnings++;
-    process.stdout.write(`${service.reachable ? "OK" : "WARN"} ${service.name} ${service.url}${service.reason ? `: ${service.reason}` : ""}
+      process.stdout.write(`WARN ${error instanceof Error ? error.message : String(error)}
 `);
+    }
   }
   const root = project.root ?? process.cwd();
   const npxLaunch = launchSpec("npx");
@@ -3636,6 +5155,25 @@ async function doctorCommand(args) {
   return warnings === 0 ? 0 : 1;
 }
 var UPDATE_USAGE = "usage: forgeax-game update [--ide codex,claude,cursor,...]";
+function retireAsset3dHost(client, root) {
+  const state = retireAsset3dConfig(client, root);
+  if (state === "removed")
+    process.stdout.write(`REMOVED ${client.label}: retired asset3d-search MCP; assets now use the project Skill + CLI. Restart the client.
+`);
+  if (state === "preserved")
+    process.stderr.write(`WARN ${client.label}: asset3d-search is not an exact recognized package launcher; preserved for manual review.
+`);
+}
+function versionCommand(args) {
+  if (args.length > 0)
+    throw new Error("usage: forgeax-game version");
+  process.stdout.write(`${RELEASE_IDENTITY.gamePackage} ${RELEASE_IDENTITY.gameVersion}
+`);
+  return 0;
+}
+function formatVersionTransition(previousVersion, currentVersion = RELEASE_IDENTITY.gameVersion) {
+  return previousVersion === currentVersion ? currentVersion : `${previousVersion ?? "unknown"} -> ${currentVersion}`;
+}
 async function updateCommand(args) {
   const requested = parseIdeSelector(args, UPDATE_USAGE);
   const project = resolveProject();
@@ -3660,16 +5198,15 @@ async function updateCommand(args) {
 `);
   await verifyLaunch(launch);
   for (const client of configured) {
+    const previousVersion = configuredGameVersion(client, root);
     const result = applyConfig(client, root, launch);
-    process.stdout.write(`${result.changed ? "UPDATED" : "CURRENT"} ${client.label}: ${result.path}
+    retireAsset3dHost(client, root);
+    process.stdout.write(`${result.changed ? "UPDATED" : "CURRENT"} ${client.label}: ${result.path} (plugin ${formatVersionTransition(previousVersion)})
 `);
   }
   if (project.root) {
-    const sdk = installEngineSdk2(project.root);
     const devkit = installDevKit(project.root, configured.map((client) => client.id));
     const agents = updateAgentsFile(project.root);
-    process.stdout.write(`${sdk.changed ? "UPDATED" : "CURRENT"} bundled Engine SDK: ${sdk.sdkRoot}
-`);
     process.stdout.write(`${devkit.changed ? "UPDATED" : "CURRENT"} game development skills: ${devkit.skillIds.length} in ${devkit.skillsRoot}
 `);
     process.stdout.write(`${devkit.note}
@@ -3681,6 +5218,67 @@ async function updateCommand(args) {
 `);
   }
   return 0;
+}
+async function extensionCommand(id, args) {
+  const pretty = args.includes("--pretty");
+  args = args.filter((arg) => arg !== "--pretty");
+  const [operation, ...rest] = args;
+  const emit = (ok, value) => process.stdout.write(JSON.stringify({
+    schemaVersion: "1.0.0",
+    command: `${id}.${operation}`,
+    ok,
+    ...ok ? { value } : { error: value }
+  }, null, pretty ? 2 : undefined) + `
+`);
+  try {
+    const extension = discoverExtensions().find((item) => item.id === id);
+    if (operation === "help" || operation === "--help") {
+      process.stdout.write(`${id}: enable [--ide ...] [--local], disable, or a business operation documented in its Skill. Add --pretty for readable JSON; values and exit status are unchanged.
+`);
+      return 0;
+    }
+    const root = requireProject();
+    if (operation === "enable") {
+      const options = [];
+      let hosts;
+      let local = false;
+      for (let i = 0;i < rest.length; i++) {
+        const arg = rest[i];
+        if (arg === "--local")
+          local = true;
+        else if (arg === "--ide" || arg.startsWith("--ide=")) {
+          const value = arg === "--ide" ? rest[++i] : arg.slice(6);
+          if (!value)
+            throw new Error("extension_host_required");
+          hosts = value.split(",").map((name) => {
+            const client = findClient(name);
+            if (!client)
+              throw new Error("extension_host_invalid: " + name);
+            return client.id;
+          });
+        } else
+          options.push(arg);
+      }
+      const selected = [...new Set(hosts ?? selectClients(root, undefined).selected)];
+      local ||= selected.some((host) => inspectConfig(findClient(host), root, launchSpec("local")).state === "current");
+      emit(true, await enableExtension(root, extension, selected, options, local ? launchSpec("local").args[0] : undefined));
+    } else if (operation === "disable") {
+      if (rest.some((arg) => arg !== "--json"))
+        throw new Error("extension_arguments_invalid");
+      emit(true, disableExtension(root, id));
+    } else {
+      const value = await runExtension(root, extension, args);
+      const failed = value && typeof value === "object" && "failed" in value && Number(value.failed) > 0;
+      emit(!failed, value);
+      if (failed)
+        return 1;
+    }
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    emit(false, { code: message.split(":")[0], message: message.slice(0, 256) });
+    return 1;
+  }
 }
 async function runCli(argv) {
   const [command, ...args] = argv;
@@ -3695,18 +5293,26 @@ async function runCli(argv) {
       return uninstallCommand(args);
     case "doctor":
       return doctorCommand(args);
+    case "preview":
+      return previewCommand(args);
     case "devkit":
       return devkitCommand(args);
     case "agents":
       return agentsCommand(args);
     case "update":
       return updateCommand(args);
+    case "version":
+    case "--version":
+    case "-v":
+      return versionCommand(args);
     case "help":
     case "--help":
     case "-h":
       process.stdout.write(HELP);
       return 0;
     default:
+      if (command && discoverExtensions().some((extension) => extension.id === command))
+        return extensionCommand(command, args);
       process.stderr.write(`Unknown command: ${command ?? "(none)"}
 
 ${HELP}`);
@@ -3774,7 +5380,7 @@ function parseMcpArgs(args) {
     } else
       throw new Error(`unknown MCP option: ${arg}`);
   }
-  return { transport, host, port, root: resolve7(root), requireAuth, allowedOrigins };
+  return { transport, host, port, root: resolve14(root), requireAuth, allowedOrigins };
 }
 async function runMcp(args) {
   const options = parseMcpArgs(args);

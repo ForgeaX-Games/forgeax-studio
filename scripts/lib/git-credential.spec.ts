@@ -4,10 +4,46 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hardenedGitEnv, NO_CRED_ARGV, resolveCredentialConfig, rewriteCloneUrl } from './git-credential.ts';
+import {
+  deriveRepositoryTransportUrl,
+  hardenedGitEnv,
+  NO_CRED_ARGV,
+  resolveCredentialConfig,
+  rewriteCloneUrl,
+} from './git-credential.ts';
 
 const alwaysTrue = () => true;
 const alwaysFalse = () => false;
+
+describe('deriveRepositoryTransportUrl — inherit parent checkout transport', () => {
+  it('uses SCP-style SSH when the parent was cloned with SCP-style SSH', () => {
+    expect(deriveRepositoryTransportUrl(
+      'https://github.com/ForgeaX-Games/forgeax-ide.git',
+      'git@github.com:ForgeaX-Games/forgeax-studio.git',
+    )).toBe('git@github.com:ForgeaX-Games/forgeax-ide.git');
+  });
+
+  it('uses ssh:// when the parent was cloned with ssh://', () => {
+    expect(deriveRepositoryTransportUrl(
+      'https://github.com/ForgeaX-Games/forgeax-ide.git',
+      'ssh://git@github.com/ForgeaX-Games/forgeax-studio.git',
+    )).toBe('ssh://git@github.com/ForgeaX-Games/forgeax-ide.git');
+  });
+
+  it('uses credential-free HTTPS when the parent was cloned with HTTPS', () => {
+    expect(deriveRepositoryTransportUrl(
+      'git@github.com:ForgeaX-Games/forgeax-ide.git',
+      'https://github.com/ForgeaX-Games/forgeax-studio.git',
+    )).toBe('https://github.com/ForgeaX-Games/forgeax-ide.git');
+  });
+
+  it('leaves non-GitHub repository URLs unchanged', () => {
+    expect(deriveRepositoryTransportUrl(
+      'https://gitlab.example/ForgeaX-Games/forgeax-ide.git',
+      'git@github.com:ForgeaX-Games/forgeax-studio.git',
+    )).toBe('https://gitlab.example/ForgeaX-Games/forgeax-ide.git');
+  });
+});
 
 describe('resolveCredentialConfig — branch table', () => {
   it('parent origin is SSH → noop', () => {

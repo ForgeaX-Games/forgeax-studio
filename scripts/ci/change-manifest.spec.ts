@@ -70,7 +70,7 @@ describe('immutable CI change manifest', () => {
     });
   });
 
-  it('expands a platform change only to that platform and shared dependencies', () => {
+  it('does not admit hosted native platforms on a daily PR path', () => {
     const manifest = buildChangeManifest({
       ...identity,
       draft: false,
@@ -82,8 +82,8 @@ describe('immutable CI change manifest', () => {
       changeClass: 'platform-specific',
       runCommon: true,
       runUniversal: true,
-      runNative: true,
-      platforms: ['darwin-arm64'],
+      runNative: false,
+      platforms: [],
     });
   });
 
@@ -100,7 +100,7 @@ describe('immutable CI change manifest', () => {
         inputDigest: `sha256:${'c'.repeat(64)}`,
       });
       expect(manifest.runtime.changeClass).toBe('full-release');
-      expect(manifest.runtime.platforms).toEqual(['darwin-arm64', 'win32-x64', 'linux-x64']);
+      expect(manifest.runtime.platforms).toEqual(['linux-x64']);
     }
 
     const security = buildChangeManifest({
@@ -110,7 +110,7 @@ describe('immutable CI change manifest', () => {
       inputDigest: `sha256:${'c'.repeat(64)}`,
     });
     expect(security.runtime.changeClass).toBe('packaging-security');
-    expect(security.runtime.platforms).toEqual(['darwin-arm64', 'win32-x64', 'linux-x64']);
+    expect(security.runtime.platforms).toEqual(['linux-x64']);
 
     const push = buildChangeManifest({
       ...identity,
@@ -120,6 +120,26 @@ describe('immutable CI change manifest', () => {
       inputDigest: `sha256:${'c'.repeat(64)}`,
     });
     expect(push.runtime.changeClass).toBe('full-release');
+    expect(push.runtime.platforms).toEqual(['linux-x64']);
+
+    const nightly = buildChangeManifest({
+      ...identity,
+      eventName: 'schedule',
+      draft: false,
+      changedPaths: [],
+      inputDigest: `sha256:${'c'.repeat(64)}`,
+    });
+    expect(nightly.runtime.platforms).toEqual(['darwin-arm64', 'win32-x64', 'linux-x64']);
+
+    const tag = buildChangeManifest({
+      ...identity,
+      eventName: 'push',
+      refType: 'tag',
+      draft: false,
+      changedPaths: [],
+      inputDigest: `sha256:${'c'.repeat(64)}`,
+    });
+    expect(tag.runtime.platforms).toEqual(['darwin-arm64', 'win32-x64', 'linux-x64']);
   });
 
   it('makes inputDigest sensitive to every declared prepared-input identity', () => {

@@ -5,8 +5,10 @@
  * selection, diagnostics, and upgrades belong here because they should not compete
  * for the model's attention on every turn.
  */
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { arch, homedir, platform } from 'node:os';
+import { join, resolve } from 'node:path';
 import { removeBlock, upsertBlock } from '../agents-md/managed-block';
 import {
   bundledEngineSkillCount,
@@ -25,43 +27,41 @@ import {
   type ClientSpec,
   type LaunchSpec,
 } from '../install/clients';
-import { applyConfig, inspectConfig, removeConfig } from '../install/write-config';
-import { verifyLaunch } from '../install/verify';
+import { applyConfig, configuredGameVersion, inspectConfig, removeConfig, retireAsset3dConfig } from '../install/write-config';
+import { RELEASE_IDENTITY } from '../install/release-manifest';
+import { INSTALL_VERIFY_TIMEOUT_MS, verifyLaunch } from '../install/verify';
 import {
   activeGame,
-  ensureLocalProject,
   gameDir,
-  initLocalGame,
   listGames,
   resolveProject,
   SLUG_RE,
 } from '../project/locate';
-import {
-  installEngineSdk,
-  loadRuntimeManifest,
-  resolveInstalledRuntime,
-  runtimeCacheRoot,
-} from '@forgeax/game-runtime';
 import { ROUTING_TEXT } from '../routing';
-import {
-  assertEngineProjectRoot,
-  assertServerProjectRoot,
-  probeServices,
-  serverBaseUrl,
-  type Capabilities,
-} from '../services/probe';
+import { ensureAuthoringBaseline } from '../project/completion';
+import { createEmptyGameWithCarrier } from '../engine/carrier';
+import { resolveEngineRelease } from '../engine/release';
+import { inspectEnginePreview, stopEnginePreview } from '../run/engine-preview';
+import { pruneUnselectedEngineMounts } from '../devkit/engine-mounts';
+import { discoverExtensions, enableExtension, disableExtension, disableAllExtensions, registeredProjects, runExtension } from '../extensions/manager';
 
 const HELP = `ForgeaX game development plugin
 
 Usage:
   forgeax-game install [--ide ${CLIENT_CHOICES.join(',')}] [--local]
   forgeax-game uninstall [--ide ...] [--purge]
-  forgeax-game init [--game <slug>] [--ide ...]
+  forgeax-game uninstall --all-projects [--ide ...]
+  forgeax-game <extension> enable [--ide ...] [--local] [extension options]
+  forgeax-game <extension> disable
+  forgeax-game <extension> <operation> [options]
+  forgeax-game init
   forgeax-game use <slug>
   forgeax-game doctor
+  forgeax-game preview stop [--game <slug>] [--target-dir <path>] [--json]
   forgeax-game devkit install
   forgeax-game agents update
   forgeax-game update [--ide ...]
+  forgeax-game version
   forgeax-game help
 
 With no arguments, forgeax-game runs the stdio MCP server.
@@ -108,7 +108,7 @@ function requireProject(): string {
   const project = resolveProject();
   if (!project.root) {
     throw new Error(
-      `no ForgeaX project found searching upward from ${project.searchedFrom}; run this command inside a directory containing .forgeax/`,
+      `no released Engine game found searching upward from ${project.searchedFrom}; run this command inside a game created by the released Engine SDK`,
     );
   }
   return project.root;
@@ -134,54 +134,12 @@ function removeAgentsBlock(root: string): { path: string; changed: boolean } {
   return { path, changed: true };
 }
 
-async function apiWrite(
-  method: 'POST' | 'PUT',
-  path: string,
-  body?: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const response = await fetch(`${serverBaseUrl()}${path}`, {
-      method,
-      headers: body ? { 'content-type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    let payload: Record<string, unknown> = {};
-    if (text) {
-      try {
-        payload = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        payload = { error: text };
-      }
-    }
-    if (!response.ok) {
-      throw new Error(
-        `${path} returned HTTP ${response.status}: ${String(payload.error ?? response.statusText)}`,
-      );
-    }
-    return payload;
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`${serverBaseUrl()} did not answer ${path} within 10s`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-const apiPost = (path: string, body?: Record<string, unknown>) => apiWrite('POST', path, body);
-const apiPut = (path: string, body?: Record<string, unknown>) => apiWrite('PUT', path, body);
-
 async function installCommand(args: readonly string[]): Promise<number> {
   const parsed = parseInstallArgs(args);
   const launch = launchSpec(parsed.mode);
 
   process.stdout.write(`Verifying ${launch.command} ${launch.args.join(' ')} ...\n`);
-  const verified = await verifyLaunch(launch);
+  const verified = await verifyLaunch(launch, INSTALL_VERIFY_TIMEOUT_MS);
   process.stdout.write(
     `Handshake OK: ${verified.serverName} ${verified.serverVersion}, ${verified.tools.length} tools, ${verified.resources.length} resource.\n`,
   );
@@ -198,6 +156,8 @@ async function installCommand(args: readonly string[]): Promise<number> {
     }
     try {
       const result = applyConfig(client, project.root ?? process.cwd(), launch);
+      retireAsset3dHost(client, project.root ?? process.cwd());
+
       process.stdout.write(
         `${result.changed ? 'UPDATED' : 'CURRENT'} ${client.label}: ${result.path}${result.backup ? ` (backup: ${result.backup})` : ''}\n`,
       );
@@ -227,92 +187,37 @@ async function installCommand(args: readonly string[]): Promise<number> {
   return failures === 0 ? 0 : 1;
 }
 
-function defaultSlug(root: string): string {
-  const raw = basename(root).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
-  return SLUG_RE.test(raw) ? raw : 'my-game';
-}
-
-const INIT_USAGE = 'usage: forgeax-game init [--game <slug>] [--ide codex,claude,cursor,...]';
-
-function parseInitArgs(args: readonly string[], root: string): { slug: string; ide?: readonly string[] } {
-  const rest: string[] = [];
-  let slug: string | undefined;
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-    if (arg === '--game') {
-      const value = args[++i];
-      if (!value) throw new Error(INIT_USAGE);
-      slug = value;
-      continue;
-    }
-    if (arg.startsWith('--game=')) {
-      slug = arg.slice('--game='.length);
-      continue;
-    }
-    rest.push(arg);
-  }
-  const ide = parseIdeSelector(rest, INIT_USAGE);
-  return { slug: slug ?? defaultSlug(root), ...(ide ? { ide } : {}) };
-}
-
 async function initCommand(args: readonly string[]): Promise<number> {
-  const binding = resolveProject();
-  // Empty-directory onboarding intentionally binds to cwd. Once `.forgeax/` is
-  // present, retain the normal walk-up binding and server instance-root safety.
-  const root = binding.root ?? process.cwd();
-  const parsedInit = parseInitArgs(args, root);
-  const slug = parsedInit.slug;
-  if (!SLUG_RE.test(slug)) {
-    throw new Error('game slug must be 1-41 lowercase ASCII letters, digits, or hyphens, starting with a letter or digit');
-  }
-  if (gameDir(root, slug)) throw new Error(`game ${JSON.stringify(slug)} already exists`);
-
-  const capabilities = await probeServices();
-  let useServer = capabilities.tier !== 'local';
-  if (useServer && !binding.root) {
-    // A machine may have another Studio checkout running on the shared port. An
-    // unbound empty cwd must remain self-contained; only use that server when its
-    // identity matches this cwd. Bound projects keep the strict refusal below.
-    try {
-      await assertServerProjectRoot(root);
-    } catch {
-      useServer = false;
+  if (args.length) throw new Error('usage: forgeax-game init');
+  let binding = resolveProject();
+  if (!binding.root) {
+    // `createEmptyGameWithCarrier` checks emptiness before resolving the carrier. This
+    // keeps an unknown non-empty directory byte-for-byte untouched and avoids even
+    // probing a dependency graph for a command that must fail locally.
+    await createEmptyGameWithCarrier(process.cwd());
+    binding = resolveProject();
+    if (!binding.root) {
+      throw new Error('engine_sdk_new_succeeded_but_project_unbound: the created directory is not a released Engine game');
     }
   }
-  if (useServer) {
-    // Preserve the canonical server scaffold whenever an existing project has a
-    // reachable backend. It owns template copying, GUID regeneration, and session
-    // relocation, so the local fallback must never shadow this path.
-    if (binding.root) await assertServerProjectRoot(root);
-    // A healthy server can own a brand-new cwd too; create the instance marker
-    // only after its identity has been checked, then let the server scaffold the
-    // canonical template and active-game binding.
-    if (!binding.root) ensureLocalProject(root);
-    const response = await apiPost('/api/projects', { slug, name: slug, brief: '' });
-    if (!gameDir(root, slug)) {
-      throw new Error(
-        `server created ${JSON.stringify(response.gameDir ?? slug)}, but it is not under ${root}/.forgeax/games; run the CLI against the same instance root as the server`,
-      );
-    }
-  } else {
-    const local = initLocalGame(root, slug);
-    process.stdout.write(
-      `Created a local ForgeaX project and game ${slug} at ${local.gameRoot} (no matching server; online scaffold will be used for later games).\n`,
-    );
-  }
-  const sdk = installEngineSdk(root);
-  process.stdout.write(
-    `${sdk.changed ? 'UPDATED' : 'CURRENT'} bundled Engine SDK: ${sdk.sdkRoot}${sdk.engineCommit ? ` (${sdk.engineCommit})` : ''}\n`,
-  );
-  if (sdk.sourceRoot) process.stdout.write(`Engine source available for escalation: ${sdk.sourceRoot}\n`);
+  const root = binding.root;
+  const slug = activeGame(root);
+  const selectedGame = slug ? gameDir(root, slug) : undefined;
+  if (!slug || !selectedGame) throw new Error('no active Engine game is available');
+  const release = resolveEngineRelease(selectedGame);
+  const baseline = ensureAuthoringBaseline(selectedGame);
   const agents = updateAgentsFile(root);
   // Which hosts to mount is derived from the configs `install` already wrote, so the
   // two commands agree regardless of the order the user ran them in.
-  const selection = selectClients(root, parsedInit.ide);
+  const selection = selectClients(root, undefined);
   reportMissingClients(selection.missing);
   const hosts = selection.selected;
   const devkit = installDevKit(root, hosts);
-  process.stdout.write(`Created and activated game ${slug} at ${gameDir(root, slug)}.\n`);
+  const removedMounts = pruneUnselectedEngineMounts(root, hosts);
+  if (removedMounts.length) process.stdout.write(`Removed unused Engine-generated skill mounts: ${removedMounts.join(', ')}.\n`);
+  process.stdout.write(`Bound Engine game ${slug} at ${selectedGame}.\n`);
+  process.stdout.write(`Engine ${release.version} (${release.commit}).\n`);
+  process.stdout.write(`Authoring baseline: ${baseline}.\n`);
   process.stdout.write(`${agents.changed ? 'Updated' : 'Kept current'} routing rules in ${agents.path}.\n`);
   if (hosts.length === 0) {
     process.stdout.write(
@@ -335,9 +240,47 @@ async function useCommand(args: readonly string[]): Promise<number> {
   if (!gameDir(root, slug)) {
     throw new Error(`game ${JSON.stringify(slug)} not found. Available: ${listGames(root).join(', ') || '(none)'}`);
   }
-  await assertServerProjectRoot(root);
-  await apiPut('/api/projects/active', { slug });
+  if (listGames(root).length > 1) {
+    writeFileSync(
+      join(root, '.forgeax', 'active-game.json'),
+      `${JSON.stringify({ version: 1, slug }, null, 2)}\n`,
+      'utf8',
+    );
+  }
   process.stdout.write(`Active game: ${slug}\n`);
+  return 0;
+}
+
+async function previewCommand(args: readonly string[]): Promise<number> {
+  if (args[0] !== 'stop') {
+    throw new Error('usage: forgeax-game preview stop [--game <slug>] [--target-dir <path>] [--json]');
+  }
+  let requested: string | undefined;
+  let targetDir: string | undefined;
+  let json = false;
+  for (let index = 1; index < args.length; index++) {
+    const arg = args[index]!;
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+    if (arg === '--game' || arg === '--target-dir') {
+      const value = args[++index];
+      if (!value) throw new Error(`${arg} requires a value`);
+      if (arg === '--game') requested = value;
+      else targetDir = value;
+      continue;
+    }
+    throw new Error('usage: forgeax-game preview stop [--game <slug>] [--target-dir <path>] [--json]');
+  }
+  const project = resolveProject(targetDir);
+  if (!project.root) throw new Error('no ForgeaX project or Engine game found');
+  const slug = requested ?? activeGame(project.root) ?? listGames(project.root)[0];
+  const selectedGame = slug ? gameDir(project.root, slug) : undefined;
+  if (!slug || !selectedGame) throw new Error('no matching Engine game found');
+  const result = await stopEnginePreview(project.root, selectedGame);
+  const envelope = { schemaVersion: '1.0.0', command: 'preview.stop', ok: true, value: { game: slug, stopped: result.stopped, stateFile: result.paths.state } };
+  process.stdout.write(json ? `${JSON.stringify(envelope)}\n` : `${result.stopped ? 'Stopped' : 'No live'} Engine Preview for ${slug}.\n`);
   return 0;
 }
 
@@ -380,7 +323,8 @@ function configuredClientIds(projectRoot: string): string[] {
 
 async function uninstallCommand(args: readonly string[]): Promise<number> {
   const purge = args.includes('--purge');
-  const rest = args.filter((arg) => arg !== '--purge');
+  const allProjects = args.includes('--all-projects');
+  const rest = args.filter((arg) => arg !== '--purge' && arg !== '--all-projects');
   const requested = parseIdeSelector(rest, 'usage: forgeax-game uninstall [--ide codex,claude,...] [--purge]');
   const binding = resolveProject();
   const root = binding.root;
@@ -397,6 +341,21 @@ async function uninstallCommand(args: readonly string[]): Promise<number> {
   const clients = CLIENTS.filter((client) => targets.includes(client.id));
 
   let failures = 0;
+  const projects = allProjects ? registeredProjects() : root ? [root] : [];
+  for (const project of projects) {
+    try {
+      const removed = disableAllExtensions(project);
+      process.stdout.write(`DISABLED ${removed.length} extensions: ${project}\n`);
+      for (const item of removed) for (const backup of item.backups) process.stdout.write(`BACKUP ${backup}\n`);
+      if (allProjects && project !== root) {
+        removeDevKit(project);
+        removeAgentsBlock(project);
+      }
+    } catch (error) {
+      failures++;
+      process.stderr.write(`FAIL extension cleanup: ${project}: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  }
   for (const client of clients) {
     try {
       const result = removeConfig(client, root ?? process.cwd());
@@ -419,12 +378,13 @@ async function uninstallCommand(args: readonly string[]): Promise<number> {
     process.stdout.write('INFO  no ForgeaX project bound; only client configuration was touched.\n');
   }
 
-  if (purge) {
-    const cache = runtimeCacheRoot();
-    rmSync(cache, { recursive: true, force: true });
-    process.stdout.write(`PURGED managed Runtime cache: ${cache}\n`);
-  } else {
-    process.stdout.write(`KEPT    managed Runtime cache (use --purge to remove): ${runtimeCacheRoot()}\n`);
+  if (purge && root) {
+    const slug = activeGame(root);
+    const selectedGame = slug ? gameDir(root, slug) : undefined;
+    if (selectedGame) {
+      const stopped = await stopEnginePreview(root, selectedGame);
+      process.stdout.write(`${stopped.stopped ? 'STOPPED' : 'ABSENT '} Engine Preview: ${stopped.paths.state}\n`);
+    }
   }
   process.stdout.write('Restart your agent client so it drops the forgeax MCP server.\n');
   return failures === 0 ? 0 : 1;
@@ -533,11 +493,11 @@ function doctorConfigState(
 async function doctorCommand(args: readonly string[]): Promise<number> {
   if (args.length) throw new Error('usage: forgeax-game doctor');
   let warnings = 0;
-  const major = Number.parseInt(process.versions.node.split('.')[0]!, 10);
-  if (major >= 18) process.stdout.write(`OK Node ${process.versions.node}\n`);
+  const [major = 0, minor = 0] = process.versions.node.split('.').map((part) => Number.parseInt(part, 10));
+  if (major > 22 || (major === 22 && minor >= 13)) process.stdout.write(`OK Node ${process.versions.node}\n`);
   else {
     warnings++;
-    process.stdout.write(`FAIL Node ${process.versions.node}; Node 18 or newer is required\n`);
+    process.stdout.write(`FAIL Node ${process.versions.node}; Node 22.13 or newer is required\n`);
   }
 
   const project = resolveProject();
@@ -547,7 +507,7 @@ async function doctorCommand(args: readonly string[]): Promise<number> {
     );
     if (hasDevKit(project.root)) {
       const engine = installedEngineSkills(project.root);
-      const bundled = bundledEngineSkillCount();
+      const bundled = bundledEngineSkillCount(project.root);
       process.stdout.write(`OK game development skill installed; Engine authoring skills: ${engine.length}\n`);
       if (engine.length < bundled) {
         warnings++;
@@ -561,39 +521,22 @@ async function doctorCommand(args: readonly string[]): Promise<number> {
     }
   } else {
     warnings++;
-    process.stdout.write(`WARN no ForgeaX project found from ${project.searchedFrom}\n`);
+    process.stdout.write(`WARN no released Engine game found from ${project.searchedFrom}\n`);
   }
 
-  const runtime = resolveInstalledRuntime();
-  if (runtime) {
-    process.stdout.write(`OK managed ForgeaX Runtime ${runtime.version} (${runtime.platform}/${runtime.arch})\n`);
-  } else if (loadRuntimeManifest()) {
-    warnings++;
-    process.stdout.write('WARN managed Runtime is not installed; first run will download and verify the selected artifact\n');
-  } else {
-    warnings++;
-    process.stdout.write('WARN no Runtime manifest found; publish/install assets/runtime-manifest.json or set FORGEAX_RUNTIME_MANIFEST\n');
-  }
-
-  let capabilities = await probeServices();
-  if (project.root && capabilities.services.some((service) => service.name === 'server' && service.reachable)) {
+  if (project.root) {
+    const slug = activeGame(project.root);
+    const selectedGame = slug ? gameDir(project.root, slug) : undefined;
     try {
-      await assertServerProjectRoot(project.root);
-      if (capabilities.tier === 'runtime') await assertEngineProjectRoot(project.root);
+      if (!selectedGame) throw new Error('no active Engine game');
+      const release = resolveEngineRelease(selectedGame);
+      process.stdout.write(`OK Engine ${release.version} (${release.commit})\n`);
+      const preview = inspectEnginePreview(project.root, selectedGame);
+      process.stdout.write(`${preview.processLive && preview.processIdentityMatches ? 'OK' : 'INFO'} Engine Preview ${preview.processLive ? 'live' : 'not running'} (${preview.paths.state})\n`);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      capabilities = {
-        tier: 'local',
-        services: capabilities.services.map((service) => ({ ...service, reachable: false, reason })),
-      } satisfies Capabilities;
+      warnings++;
+      process.stdout.write(`WARN ${error instanceof Error ? error.message : String(error)}\n`);
     }
-  }
-  process.stdout.write(`Capability tier: ${capabilities.tier}\n`);
-  for (const service of capabilities.services) {
-    if (!service.reachable) warnings++;
-    process.stdout.write(
-      `${service.reachable ? 'OK' : 'WARN'} ${service.name} ${service.url}${service.reason ? `: ${service.reason}` : ''}\n`,
-    );
   }
 
   const root = project.root ?? process.cwd();
@@ -619,8 +562,29 @@ async function doctorCommand(args: readonly string[]): Promise<number> {
 
 const UPDATE_USAGE = 'usage: forgeax-game update [--ide codex,claude,cursor,...]';
 
+function retireAsset3dHost(client: ClientSpec, root: string): void {
+  const state = retireAsset3dConfig(client, root);
+  if (state === 'removed') process.stdout.write(`REMOVED ${client.label}: retired asset3d-search MCP; assets now use the project Skill + CLI. Restart the client.\n`);
+  if (state === 'preserved') process.stderr.write(`WARN ${client.label}: asset3d-search is not an exact recognized package launcher; preserved for manual review.\n`);
+}
+
+function versionCommand(args: readonly string[]): number {
+  if (args.length > 0) throw new Error('usage: forgeax-game version');
+  process.stdout.write(`${RELEASE_IDENTITY.gamePackage} ${RELEASE_IDENTITY.gameVersion}\n`);
+  return 0;
+}
+
+export function formatVersionTransition(
+  previousVersion: string | undefined,
+  currentVersion = RELEASE_IDENTITY.gameVersion,
+): string {
+  return previousVersion === currentVersion
+    ? currentVersion
+    : `${previousVersion ?? 'unknown'} -> ${currentVersion}`;
+}
+
 /**
- * Re-apply this build's configuration, Engine SDK and skills to installed hosts.
+ * Re-apply this build's configuration and project skills to installed hosts.
  *
  * This refreshes what the *current* package version puts on disk; it does not fetch a
  * newer package. The MCP launcher is `npx -y -p @forgeax/game …`, so which version runs
@@ -653,16 +617,19 @@ async function updateCommand(args: readonly string[]): Promise<number> {
   process.stdout.write('Verifying current published launch command before changing configuration ...\n');
   await verifyLaunch(launch);
   for (const client of configured) {
+    const previousVersion = configuredGameVersion(client, root);
     const result = applyConfig(client, root, launch);
-    process.stdout.write(`${result.changed ? 'UPDATED' : 'CURRENT'} ${client.label}: ${result.path}\n`);
+    retireAsset3dHost(client, root);
+
+    process.stdout.write(
+      `${result.changed ? 'UPDATED' : 'CURRENT'} ${client.label}: ${result.path} (plugin ${formatVersionTransition(previousVersion)})\n`,
+    );
   }
   if (project.root) {
-    const sdk = installEngineSdk(project.root);
     // Act on exactly the hosts this run selected, so `update --ide claude` does not
     // quietly refresh the other seven.
     const devkit = installDevKit(project.root, configured.map((client) => client.id));
     const agents = updateAgentsFile(project.root);
-    process.stdout.write(`${sdk.changed ? 'UPDATED' : 'CURRENT'} bundled Engine SDK: ${sdk.sdkRoot}\n`);
     process.stdout.write(`${devkit.changed ? 'UPDATED' : 'CURRENT'} game development skills: ${devkit.skillIds.length} in ${devkit.skillsRoot}\n`);
     process.stdout.write(`${devkit.note}\n`);
     process.stdout.write(`${agents.changed ? 'UPDATED' : 'CURRENT'} routing rules: ${agents.path}\n`);
@@ -670,6 +637,57 @@ async function updateCommand(args: readonly string[]): Promise<number> {
     process.stdout.write('Skipped AGENTS.md routing update: no ForgeaX project is bound.\n');
   }
   return 0;
+}
+
+async function extensionCommand(id: string, args: string[]): Promise<number> {
+  const pretty = args.includes('--pretty');
+  args = args.filter(arg => arg !== '--pretty');
+  const [operation, ...rest] = args;
+  const emit = (ok: boolean, value: unknown) => process.stdout.write(JSON.stringify({
+    schemaVersion: '1.0.0', command: `${id}.${operation}`, ok, ...(ok ? { value } : { error: value }),
+  }, null, pretty ? 2 : undefined) + '\n');
+  try {
+    const extension = discoverExtensions().find(item => item.id === id)!;
+    if (operation === 'help' || operation === '--help') {
+      process.stdout.write(`${id}: enable [--ide ...] [--local], disable, or a business operation documented in its Skill. Add --pretty for readable JSON; values and exit status are unchanged.\n`);
+      return 0;
+    }
+    const root = requireProject();
+    if (operation === 'enable') {
+      const options: string[] = [];
+      let hosts: string[] | undefined;
+      let local = false;
+      for (let i = 0; i < rest.length; i++) {
+        const arg = rest[i]!;
+        if (arg === '--local') local = true;
+        else if (arg === '--ide' || arg.startsWith('--ide=')) {
+          const value = arg === '--ide' ? rest[++i] : arg.slice(6);
+          if (!value) throw new Error('extension_host_required');
+          hosts = value.split(',').map(name => {
+            const client = findClient(name);
+            if (!client) throw new Error('extension_host_invalid: ' + name);
+            return client.id;
+          });
+        } else options.push(arg);
+      }
+      const selected = [...new Set(hosts ?? selectClients(root, undefined).selected)];
+      local ||= selected.some(host => inspectConfig(findClient(host)!, root, launchSpec('local')).state === 'current');
+      emit(true, await enableExtension(root, extension, selected, options, local ? launchSpec('local').args[0] : undefined));
+    } else if (operation === 'disable') {
+      if (rest.some(arg => arg !== '--json')) throw new Error('extension_arguments_invalid');
+      emit(true, disableExtension(root, id));
+    } else {
+      const value = await runExtension(root, extension, args);
+      const failed = value && typeof value === 'object' && 'failed' in value && Number(value.failed) > 0;
+      emit(!failed, value);
+      if (failed) return 1;
+    }
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    emit(false, { code: message.split(':')[0], message: message.slice(0, 256) });
+    return 1;
+  }
 }
 
 export async function runCli(argv: readonly string[]): Promise<number> {
@@ -685,18 +703,25 @@ export async function runCli(argv: readonly string[]): Promise<number> {
       return uninstallCommand(args);
     case 'doctor':
       return doctorCommand(args);
+    case 'preview':
+      return previewCommand(args);
     case 'devkit':
       return devkitCommand(args);
     case 'agents':
       return agentsCommand(args);
     case 'update':
       return updateCommand(args);
+    case 'version':
+    case '--version':
+    case '-v':
+      return versionCommand(args);
     case 'help':
     case '--help':
     case '-h':
       process.stdout.write(HELP);
       return 0;
     default:
+      if (command && discoverExtensions().some(extension => extension.id === command)) return extensionCommand(command, args);
       process.stderr.write(`Unknown command: ${command ?? '(none)'}\n\n${HELP}`);
       return 2;
   }

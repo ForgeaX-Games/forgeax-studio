@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "2.0.0",
+  "kind": "internal-text-package",
+  "assets": [
+    {
+      "guid": "019fb7ce-1000-7000-8000-000000000001",
+      "kind": "scene",
+      "name": "Counter Inspection",
+      "sourceKey": "world/counter-inspection",
+      "payload": {
+        "kind": "scene",
+        "entities": [
+          {
+            "localId": 0,
+            "components": {
+              "Transform": {
+                "pos": [
+                  0,
+                  1.2,
+                  4
+                ],
+                "quat": [
+                  0,
+                  0,
+                  0,
+                  1
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              },
+              "Camera": {
+                "fov": 0.7853981633974483,
+                "aspect": 1.7777777777777777,
+                "near": 0.1,
+                "far": 100
+              }
+            }
+          },
+          {
+            "localId": 1,
+            "components": {
+              "DirectionalLight": {
+                "direction": [
+                  -0.5,
+                  -1,
+                  -0.3
+                ],
+                "intensity": 2
+              }
+            }
+          }
+        ],
+        "mounts": [
+          {
+            "localId": 2,
+            "source": 0,
+            "memberFirst": 3,
+            "memberCount": 1,
+            "components": {
+              "Transform": {
+                "pos": [
+                  0,
+                  0,
+                  0
+                ],
+                "quat": [
+                  0,
+                  0.258819,
+                  0,
+                  0.965926
+                ],
+                "scale": [
+                  1,
+                  1,
+                  1
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "refs": [
+        "1073cc16-2533-53dc-a63f-cbd45527b75d"
+      ],
+      "artifacts": {}
+    }
+  ]
+}

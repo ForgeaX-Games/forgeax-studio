@@ -184,14 +184,16 @@ export async function generate3dTool(args: Record<string, unknown>, cwd: string)
   const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
   const image = typeof args.image === 'string' ? args.image.trim() : '';
   if (!prompt && !image) throw new Error('Provide `prompt` (text-to-3D) or `image` (image-to-3D).');
-  const cfg = resolveLiteLlmConfig();
   const targetDir = typeof args.target_dir === 'string' ? args.target_dir : cwd;
   const { dir, root, slug } = assetsDirFor(targetDir, typeof args.game === 'string' ? args.game : undefined);
+  // Validate local-image prerequisites before gateway configuration so callers receive the
+  // actionable COS error instead of an unrelated endpoint error.
+  const imageUrl = image ? await resolveImageUrlFor3d(image, slug) : undefined;
+  const cfg = resolveLiteLlmConfig();
 
   let result;
   let mode: string;
-  if (image) {
-    const imageUrl = await resolveImageUrlFor3d(image, slug);
+  if (imageUrl) {
     const model = typeof args.model === 'string' && args.model.trim() ? args.model.trim() : cfg.models.imageTo3d;
     result = await generate3dFromImageUrl(cfg, { model, imageUrl, prompt: prompt || undefined, onProgress: logProgress('image-to-3D') });
     mode = 'image-to-3D';

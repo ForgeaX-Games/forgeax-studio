@@ -6,135 +6,56 @@
  * the launch command. Baking a `cwd` into user-level config is what makes two open
  * projects silently write into each other.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
-/** Game slugs are directory names; keep the same shape the runtime already enforces. */
+/** Game slugs are directory names; preserve the public project identifier shape. */
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
+const GUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 /** How the project directory was determined, surfaced in status for debugging. */
 export type ProjectSource = 'explicit' | 'env' | 'cwd-walkup' | 'none';
 
 export interface ProjectBinding {
-  /** Instance root: the directory containing `.forgeax/`. Undefined when unbound. */
+  /** Canonical external Engine game root. Undefined when unbound. */
   readonly root?: string;
   readonly source: ProjectSource;
   /** Directory we started resolution from, for diagnostics. */
   readonly searchedFrom: string;
 }
 
-export interface LocalProjectInitResult {
-  readonly root: string;
-  readonly gameRoot: string;
-  readonly projectCreated: boolean;
-}
-
-/**
- * Create the smallest useful ForgeaX instance without talking to Studio.
- *
- * The server normally owns this metadata, but a package-only install must still
- * be able to get a new user from an empty directory to an editable game. Existing
- * metadata is never replaced; this keeps the operation safe for partially-created
- * projects and lets a later server run enrich the instance in place.
- */
-export function ensureLocalProject(root: string): { root: string; created: boolean } {
-  const projectRoot = resolve(root);
-  const forgeaxRoot = join(projectRoot, '.forgeax');
-  const created = !existsSync(forgeaxRoot);
-  mkdirSync(join(forgeaxRoot, 'games'), { recursive: true });
-  const metadataPath = join(forgeaxRoot, 'project.json');
-  if (!existsSync(metadataPath)) {
-    const name = projectRoot.split(sep).filter(Boolean).pop() || 'forgeax-project';
-    writeFileSync(
-      metadataPath,
-      `${JSON.stringify({ version: 1, type: 'game', name }, null, 2)}\n`,
-      'utf8',
-    );
-  }
-  return { root: projectRoot, created };
-}
-
-const LOCAL_GAME_MAIN = `/** Minimal ForgeaX game scaffold. Add systems and assets here. */
-export function bootstrap() {
-  // The engine accepts an empty bootstrap; this keeps package-only init offline.
-}
-`;
-
-/** Scaffold and activate a game when no ForgeaX server is available. */
-export function initLocalGame(root: string, slug: string): LocalProjectInitResult {
-  const project = ensureLocalProject(root);
-  const gameRoot = join(project.root, '.forgeax', 'games', slug);
-  if (existsSync(gameRoot)) throw new Error(`game ${JSON.stringify(slug)} already exists`);
-  mkdirSync(gameRoot, { recursive: true });
-  writeFileSync(
-    join(gameRoot, 'forge.json'),
-    `${JSON.stringify(
-      { id: slug, name: slug, schemaVersion: '1.0.0', entry: 'main.ts', physics: '3d' },
-      null,
-      2,
-    )}\n`,
-    'utf8',
-  );
-  writeFileSync(
-    join(gameRoot, 'package.json'),
-    `${JSON.stringify({ name: slug, private: true, type: 'module' }, null, 2)}\n`,
-    'utf8',
-  );
-  writeFileSync(join(gameRoot, 'main.ts'), LOCAL_GAME_MAIN, 'utf8');
-  writeFileSync(
-    join(gameRoot, 'tsconfig.json'),
-    `${JSON.stringify({
-      extends: '../../engine-sdk/tsconfig.json',
-      include: ['**/*.ts'],
-    }, null, 2)}\n`,
-    'utf8',
-  );
-  writeFileSync(
-    join(gameRoot, 'FORGE.md'),
-    `# ${slug}\n\n_(created by the package-local ForgeaX bootstrap)_\n`,
-    'utf8',
-  );
-  writeFileSync(
-    join(project.root, '.forgeax', 'active-game.json'),
-    `${JSON.stringify({ version: 1, slug }, null, 2)}\n`,
-    'utf8',
-  );
-  return { root: project.root, gameRoot, projectCreated: project.created };
-}
-
-function isConfinedToProject(root: string, path: string): boolean {
-  try {
-    const rel = relative(realpathSync(root), realpathSync(path));
-    return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Does this directory hold a ForgeaX *project*, as opposed to any `.forgeax/` directory?
- *
- * The bare directory name is not sufficient evidence. `~/.forgeax/` is this plugin's own
- * user-level state — runtime cache, agent-host sockets — and it exists on any machine
- * that has run ForgeaX once. Treating it as a marker made every directory under $HOME
- * resolve its project root to $HOME, which wrote project files into the home directory
- * and then failed the server's instance-root check. So a project must show a file that
- * only `init` (or Studio) writes.
- */
+/** G0 binds only a released external Engine game, never a Studio project wrapper. */
 function isProjectRoot(dir: string): boolean {
-  if (resolve(dir) === resolve(homedir())) return false;
-  const forgeax = join(dir, '.forgeax');
-  if (!existsSync(forgeax)) return false;
-  return ['project.json', 'active-game.json', 'games'].some((marker) => existsSync(join(forgeax, marker)));
+  return engineGameId(dir) !== undefined;
+}
+
+/** A released Engine game is a complete project for this connector. */
+export function engineGameId(root: string): string | undefined {
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, 'forge.json'), 'utf8')) as {
+      id?: unknown;
+      entry?: unknown;
+      schemaVersion?: unknown;
+      defaultScene?: unknown;
+      roots?: unknown;
+    };
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      dependencies?: Readonly<Record<string, unknown>>;
+    };
+    return typeof manifest.id === 'string' && SLUG_RE.test(manifest.id) &&
+      (manifest.schemaVersion === '3.0.0'
+        ? manifest.roots !== null && typeof manifest.roots === 'object' && !Array.isArray(manifest.roots) &&
+          Object.entries(manifest.roots).every(([realm, guid]) =>
+            ['host', 'frontend', 'engine', 'build'].includes(realm) && typeof guid === 'string' && GUID_RE.test(guid))
+        : manifest.schemaVersion === '2.0.0'
+          ? typeof manifest.defaultScene === 'string' && GUID_RE.test(manifest.defaultScene)
+          : (manifest.schemaVersion === undefined || manifest.schemaVersion === '1.0.0') && typeof manifest.entry === 'string') &&
+      typeof pkg.dependencies?.['@forgeax/engine'] === 'string'
+      ? manifest.id
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Walk up from `start` until a directory looks like a ForgeaX project. */
@@ -175,60 +96,17 @@ export function resolveProject(explicitDir?: string): ProjectBinding {
 
 /** Read the currently active game slug, if one is recorded and well-formed. */
 export function activeGame(root: string): string | undefined {
-  try {
-    const raw = readFileSync(join(root, '.forgeax', 'active-game.json'), 'utf8');
-    const slug = (JSON.parse(raw) as { slug?: unknown }).slug;
-    return typeof slug === 'string' && SLUG_RE.test(slug) ? slug : undefined;
-  } catch {
-    return undefined;
-  }
+  return engineGameId(root);
 }
 
-/**
- * List game slugs. Reads the canonical `.forgeax/games/` plus the legacy top-level
- * `games/` that older instances still use, dropping `_template` and dotfiles.
- */
+/** G0 has exactly one game per external Engine root. */
 export function listGames(root: string): string[] {
-  const found = new Set<string>();
-  for (const base of [join(root, '.forgeax', 'games'), join(root, 'games')]) {
-    let entries;
-    try {
-      entries = readdirSync(base, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (e.name.startsWith('_') || e.name.startsWith('.')) continue;
-      if (e.isDirectory() && isConfinedToProject(root, join(base, e.name))) {
-        found.add(e.name);
-        continue;
-      }
-      // Sample games are mounted as project-internal directory symlinks.
-      // Dirent.isDirectory() is false for a symlink, so follow it while rejecting
-      // broken links and links that escape the instance root.
-      if (e.isSymbolicLink()) {
-        try {
-          const path = join(base, e.name);
-          if (statSync(path).isDirectory() && isConfinedToProject(root, path)) found.add(e.name);
-        } catch {
-          /* broken link — not an available game */
-        }
-      }
-    }
-  }
-  return [...found].sort();
+  const direct = engineGameId(root);
+  return direct ? [direct] : [];
 }
 
-/** Absolute directory for a game, preferring the canonical location. */
+/** Absolute directory for this root's one released Engine game. */
 export function gameDir(root: string, slug: string): string | undefined {
   if (!SLUG_RE.test(slug)) return undefined;
-  for (const base of [join(root, '.forgeax', 'games'), join(root, 'games')]) {
-    const dir = join(base, slug);
-    try {
-      if (statSync(dir).isDirectory() && isConfinedToProject(root, dir)) return dir;
-    } catch {
-      /* try the next base */
-    }
-  }
-  return undefined;
+  return engineGameId(root) === slug ? realpathSync(root) : undefined;
 }

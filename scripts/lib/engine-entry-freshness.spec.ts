@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ENGINE_ENTRY_OUTPUTS,
+  areEngineUmbrellaArtifactsPresent,
   areEnginePrepareArtifactsFresh,
   collectMissingEngineArtifacts,
+  engineUmbrellaArtifactPaths,
   formatMissingEngineArtifacts,
   isEngineEntryDistFresh,
   isValidNodeMjsArtifact,
@@ -142,6 +144,19 @@ describe('engine entry freshness', () => {
   it('accepts the complete prepare cache only with a valid DevKit CLI', () => {
     const { enginePkgDir, sentinel } = prepareFixture();
     expect(areEnginePrepareArtifactsFresh(enginePkgDir, ['app'], sentinel)).toBe(true);
+  });
+
+  it('requires the umbrella engine facade outputs used by game modules', () => {
+    const { enginePkgDir } = prepareFixture();
+    const outputs = engineUmbrellaArtifactPaths(enginePkgDir);
+    for (const output of outputs) {
+      mkdirSync(join(output, '..'), { recursive: true });
+      writeFileSync(output, 'export {};\n');
+    }
+    expect(areEngineUmbrellaArtifactsPresent(enginePkgDir)).toBe(true);
+
+    rmSync(outputs.at(-1)!);
+    expect(areEngineUmbrellaArtifactsPresent(enginePkgDir)).toBe(false);
   });
 
   it('executes the complete-setup artifact boundary for invalid DevKit output', () => {

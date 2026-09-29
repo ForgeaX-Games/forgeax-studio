@@ -7,13 +7,6 @@
  * default — it must come from the environment the host injects, never from source.
  */
 
-/**
- * Default gateway for teams that run the shared ForgeaX LiteLLM proxy. It is an
- * internal address, not a secret, so baking it in keeps `@forgeax/game` turnkey while
- * still letting any deployment point elsewhere with `FORGEAX_LITELLM_BASE_URL`.
- */
-export const DEFAULT_LITELLM_BASE_URL = 'http://21.214.33.175:4000';
-
 /** Verified-available defaults (see docs/evidence). Overridable per call and per env. */
 export const DEFAULT_MODELS = {
   // seedream / gpt-image-2 need gateway creds the proxy does not currently carry;
@@ -47,13 +40,19 @@ function env(name: string): string | undefined {
  * model relaying the error to the user should be able to state the fix.
  */
 export function resolveLiteLlmConfig(): LiteLlmConfig {
-  const baseUrl = (env('FORGEAX_LITELLM_BASE_URL') ?? DEFAULT_LITELLM_BASE_URL).replace(/\/+$/, '');
   const apiKey = env('FORGEAX_LITELLM_API_KEY');
   if (!apiKey) {
     throw new Error(
       'FORGEAX_LITELLM_API_KEY is not set. Export the LiteLLM key so the asset tools can reach the gateway, e.g. `export FORGEAX_LITELLM_API_KEY=sk-...`.',
     );
   }
+  const configuredBaseUrl = env('FORGEAX_LITELLM_BASE_URL');
+  if (!configuredBaseUrl) {
+    throw new Error(
+      'FORGEAX_LITELLM_BASE_URL is not set. Set the LiteLLM gateway URL before using the asset generation tools.',
+    );
+  }
+  const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
   return {
     baseUrl,
     apiKey,

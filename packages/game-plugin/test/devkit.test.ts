@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -11,7 +11,6 @@ import {
   isEngineSkill,
   removeDevKit,
 } from '../src/devkit/install';
-import { prepareAuthoringAssets } from '../scripts/build-authoring-assets';
 
 describe('game development kit', () => {
   test('installs the packaged skill without requiring a harness checkout', () => {
@@ -23,7 +22,10 @@ describe('game development kit', () => {
       expect(result.skillIds).toContain('forgeax-game');
       const primary = join(root, '.agents', 'skills', 'forgeax-game');
       expect(existsSync(join(primary, 'SKILL.md'))).toBeTrue();
-      expect(readFileSync(join(primary, 'SKILL.md'), 'utf8')).toContain('forgeax_run_current_game');
+      const installedSkill = readFileSync(join(primary, 'SKILL.md'), 'utf8');
+      expect(installedSkill).toBe(readFileSync(new URL('../skills/forgeax-game/SKILL.md', import.meta.url), 'utf8'));
+      expect(installedSkill).toContain('forgeax_run_current_game');
+      expect(installedSkill).toContain('art-3d-asset-library');
       expect(existsSync(join(root, '.agents', 'rules', 'forgeax-game.md'))).toBeTrue();
 
       // Skills live only in host mounts now. The plain project-root copies served no
@@ -79,70 +81,43 @@ describe('game development kit', () => {
       rmSync(source, { recursive: true, force: true });
     }
   });
-  // Engine skills arrive from Runtime Common's generated SDK snapshot. In a standalone
-  // clone before dependencies are installed, only the plugin's own skill exists, so
-  // these two content assertions declare the precondition.
-  const engineSnapshotPresent = (): boolean =>
-    bundledSkills().some((skill) => isEngineSkill(skill.id));
-
-  test.skipIf(!engineSnapshotPresent())('discovers Runtime Common Engine skills alongside the plugin skill', () => {
-    const engine = bundledSkills().filter((skill) => isEngineSkill(skill.id));
-    // The ladder's first rung. Without these the model has only type signatures,
-    // which cannot state Engine conventions such as schedule ordering.
-    expect(engine.length).toBeGreaterThan(0);
-    expect(engine.map((skill) => skill.id)).toContain('forgeax-engine-ecs');
-  });
-
-  test.skipIf(!engineSnapshotPresent())('ships an Engine skill index covering every bundled Engine skill', () => {
-    // A guessed skill id fails the lookup silently, so the shipped set must be stated
-    // rather than inferred from package names.
-    const plugin = bundledSkills().find((skill) => skill.id === 'forgeax-game')!;
-    const index = join(plugin.path, 'references', 'engine-skills.md');
-    expect(existsSync(index)).toBeTrue();
-    const text = readFileSync(index, 'utf8');
-    for (const skill of bundledSkills().filter((entry) => isEngineSkill(entry.id))) {
-      expect(text).toContain(skill.id);
-    }
-    // The trap that motivated it: the id does not track the package name.
-    expect(text).toContain('forgeax-engine-render-pipeline');
-  });
-
-  test('builds only the plugin skill and Runtime Common-derived Engine index', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'forgeax-authoring-assets-'));
-    const sdk = join(root, 'common-sdk');
-    const previous = process.env.FORGEAX_ENGINE_SDK;
+  test('discovers Engine-owned authoring skills only from the selected released game', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forgeax-game-engine-owned-skills-'));
     try {
-      mkdirSync(join(root, 'skills', 'forgeax-game', 'references'), { recursive: true });
-      writeFileSync(join(root, 'skills', 'forgeax-game', 'SKILL.md'), '# ForgeaX game\n');
-      mkdirSync(join(root, 'assets', 'engine-sdk'), { recursive: true });
-      writeFileSync(join(root, 'assets', 'engine-sdk', 'stale.txt'), 'duplicate');
-      const engineSkill = join(sdk, 'skills', 'forgeax-engine-ecs');
+      writeFileSync(join(root, 'forge.json'), `${JSON.stringify({ id: 'demo', entry: 'src/main.ts' })}\n`);
+      writeFileSync(join(root, 'package.json'), `${JSON.stringify({ dependencies: { '@forgeax/engine': 'fixture' } })}\n`);
+      const engineSkill = join(root, 'skills', 'forgeax-engine-ecs');
       mkdirSync(engineSkill, { recursive: true });
-      writeFileSync(join(engineSkill, 'SKILL.md'), [
-        '---',
-        'description: ECS authoring guidance.',
-        '---',
-        '# ECS',
-      ].join('\n'));
-      process.env.FORGEAX_ENGINE_SDK = sdk;
-
-      const result = await prepareAuthoringAssets(root);
-      expect(result.skillIds).toEqual(['forgeax-engine-ecs']);
-      expect(existsSync(join(root, 'assets', 'engine-sdk'))).toBeFalse();
-      expect(existsSync(join(root, 'assets', 'skills', 'forgeax-game', 'SKILL.md'))).toBeTrue();
-      expect(
-        readFileSync(join(root, 'assets', 'skills', 'forgeax-game', 'references', 'engine-skills.md'), 'utf8'),
-      ).toContain('forgeax-engine-ecs');
+      writeFileSync(join(engineSkill, 'SKILL.md'), '# ECS\n');
+      expect(bundledSkills(root).map((skill) => skill.id)).toEqual(['forgeax-engine-ecs', 'forgeax-game']);
+      expect(installDevKit(root, ['codex']).skillIds).toEqual(['forgeax-engine-ecs', 'forgeax-game']);
+      expect(existsSync(join(root, '.agents', 'skills', 'forgeax-engine-ecs', 'SKILL.md'))).toBeTrue();
     } finally {
-      if (previous === undefined) delete process.env.FORGEAX_ENGINE_SDK;
-      else process.env.FORGEAX_ENGINE_SDK = previous;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('materializes fresh Engine links without duplicate backup skills', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forgeax-game-fresh-engine-link-'));
+    try {
+      const source = join(root, 'skills', 'forgeax-engine-ecs');
+      const destination = join(root, '.agents', 'skills', 'forgeax-engine-ecs');
+      mkdirSync(source, { recursive: true });
+      writeFileSync(join(source, 'SKILL.md'), '# ECS\n');
+      mkdirSync(join(root, '.agents', 'skills'), { recursive: true });
+      symlinkSync(source, destination, 'dir');
+      expect(installHostDevKit(root, ['codex'], [{ id: 'forgeax-engine-ecs', path: source }]).changed).toBeTrue();
+      expect(lstatSync(destination).isSymbolicLink()).toBeFalse();
+      expect(readFileSync(join(destination, 'SKILL.md'), 'utf8')).toBe('# ECS\n');
+      expect(existsSync(`${destination}.bak.latest`)).toBeFalse();
+      expect(installHostDevKit(root, ['codex'], [{ id: 'forgeax-engine-ecs', path: source }]).changed).toBeFalse();
+    } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
   test('never contributes Studio harness skills from a source checkout', () => {
-    // The repo's skills/ directory also holds Studio-internal skills. Only this
-    // plugin's own skill and the Engine authoring skills may reach a user's host.
+    // Only this plugin's own skill and selected-game Engine skills may reach a host.
     for (const skill of bundledSkills()) {
       expect(skill.id === 'forgeax-game' || isEngineSkill(skill.id)).toBeTrue();
     }

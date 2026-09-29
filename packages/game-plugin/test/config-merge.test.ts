@@ -1,10 +1,18 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findClient, type ClientSpec } from '../src/install/clients';
-import { inspectConfig, mergeJsonConfig } from '../src/install/write-config';
+import {
+  configuredGameVersion,
+  inspectConfig,
+  mergeJsonConfig,
+  mergeTomlConfig,
+} from '../src/install/write-config';
 import { hasTomlTable, upsertTomlTable } from '../src/install/toml-section';
+
+const roots: string[] = [];
+afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
 
 describe('configuration merge', () => {
   test('original-plan clients resolve to their native config shapes', () => {
@@ -75,6 +83,53 @@ describe('configuration merge', () => {
     expect(output).toContain('[mcp_servers.other]\ncommand = "keep"');
   });
 
+  test('Codex hook table keys may contain brackets inside quoted segments', () => {
+    const hookHeader = '[hooks.state."browser@openai-bundled:plugin.json#hooks[0]:stop:0:0"]';
+    const input = `${hookHeader}\ntrusted_hash = "sha256:abc"\n`;
+    const output = mergeTomlConfig(input, {
+      command: 'node',
+      args: ['server.js'],
+    }).content;
+
+    expect(output).toStartWith(input);
+    expect(output).toContain('[mcp_servers.forgeax]\ncommand = "node"');
+    expect(() => mergeTomlConfig('[hooks.state.bad] trailing\n', {
+      command: 'node',
+      args: ['server.js'],
+    })).toThrow(/invalid TOML table header/);
+  });
+
+  test('merges a separately named Asset3D server without replacing forgeax', () => {
+    const input = '[mcp_servers.forgeax]\ncommand = "npx"\n';
+    const output = mergeTomlConfig(input, {
+      command: 'npx',
+      args: ['-y', '@forgeax/game@0.3.5', 'asset3d', 'mcp'],
+    }, 'asset3d-search').content;
+    expect(output).toStartWith(input);
+    expect(output).toContain('[mcp_servers.asset3d-search]');
+    expect(output.match(/\[mcp_servers\.forgeax\]/g)).toHaveLength(1);
+  });
+
+  test('inspects a separately named Asset3D server without treating forgeax as it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forgeax-custom-server-inspect-'));
+    const spec: ClientSpec = {
+      id: 'codex', label: 'Codex', format: 'toml', scope: 'user',
+      path: () => join(root, 'config.toml'), commandShape: 'split',
+    };
+    try {
+      writeFileSync(spec.path(root), '[mcp_servers.forgeax]\ncommand = "npx"\n');
+      expect(inspectConfig(spec, root, {
+        command: 'npx', args: ['asset3d', 'mcp'],
+      }, 'asset3d-search').state).toBe('not_configured');
+      writeFileSync(spec.path(root), '[mcp_servers.asset3d-search]\ncommand = "foreign"\n');
+      expect(inspectConfig(spec, root, {
+        command: 'npx', args: ['asset3d', 'mcp'],
+      }, 'asset3d-search').state).toBe('different');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('TOML replacement refuses competing inline and parent-table definitions', () => {
     expect(() =>
       upsertTomlTable('mcp_servers.forgeax = { command = "custom" }\n', {
@@ -129,6 +184,47 @@ describe('configuration merge', () => {
       expect(inspectConfig(spec, root, { command: 'node', args: ['server.js'] }).state).toBe(
         'current',
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('reads the configured plugin version from TOML and JSON client entries', () => {
+    const root = mkdtempSync(join(tmpdir(), 'forgeax-game-version-inspect-'));
+    const tomlPath = join(root, 'config.toml');
+    const jsonPath = join(root, 'mcp.json');
+    const codex: ClientSpec = {
+      id: 'codex',
+      label: 'Codex',
+      format: 'toml',
+      scope: 'user',
+      path: () => tomlPath,
+      commandShape: 'split',
+    };
+    const cursor: ClientSpec = {
+      id: 'cursor',
+      label: 'Cursor',
+      format: 'json',
+      scope: 'user',
+      path: () => jsonPath,
+      serverMapKey: ['mcpServers'],
+      commandShape: 'split',
+    };
+    writeFileSync(
+      tomlPath,
+      '[mcp_servers.forgeax]\ncommand = "npx"\nargs = ["-y", "-p", "@forgeax/game@0.3.2", "forgeax-game", "mcp"]\n',
+    );
+    writeFileSync(
+      jsonPath,
+      JSON.stringify({
+        mcpServers: {
+          forgeax: { command: process.execPath, args: ['/tmp/game-plugin/dist/main.js', 'mcp'] },
+        },
+      }),
+    );
+    try {
+      expect(configuredGameVersion(codex, root)).toBe('0.3.2');
+      expect(configuredGameVersion(cursor, root)).toBe('local/custom');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

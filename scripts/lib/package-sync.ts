@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   readlinkSync,
+  realpathSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -18,9 +19,9 @@ import {
   type PackageEntry,
 } from './package-manifest.ts';
 import {
+  deriveRepositoryTransportUrl,
   hardenedGitEnv,
   NO_CRED_ARGV,
-  probeGitHubSsh,
   resolveCredentialConfig,
 } from './git-credential.ts';
 
@@ -63,34 +64,36 @@ function git(root: string, args: string[], env: NodeJS.ProcessEnv = process.env)
   return spawnSync('git', [...NO_CRED_ARGV, ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: hardenedGitEnv(env),
+    env: { ...hardenedGitEnv(env), GCM_INTERACTIVE: 'never' },
+    timeout: 120_000,
   });
 }
 
 export function packageGitEnvironment(
-  _root: string,
+  root: string,
   baseEnv: NodeJS.ProcessEnv = process.env,
-  sshProbe: () => boolean = probeGitHubSsh,
 ): NodeJS.ProcessEnv {
-  // `.packages` keeps portable canonical HTTPS URLs even when Studio itself
-  // was cloned over SSH. Resolve credentials for those manifest URLs, not for
-  // the unrelated parent transport; otherwise hardened Git disables the
-  // credential helper and a private package fetch falls through to a bogus
-  // local-branch switch.
-  const credential = resolveCredentialConfig(
-    'https://github.com/ForgeaX-Games/floating-package.git',
-    baseEnv,
-    sshProbe,
-  );
+  const parentOrigin = git(root, ['config', '--get', 'remote.origin.url']).stdout.trim();
+  // The persisted package remote already follows the parent transport. HTTPS
+  // credentials remain process-local; never rewrite an HTTPS parent to SSH or
+  // write an access token into the checkout configuration.
+  const credential = resolveCredentialConfig(parentOrigin, baseEnv, () => false);
   return { ...hardenedGitEnv(baseEnv), ...credential.gitConfig };
+}
+
+export function packageRemoteUrl(root: string, repositoryUrl: string): string {
+  const parentOrigin = git(root, ['config', '--get', 'remote.origin.url']).stdout.trim();
+  return deriveRepositoryTransportUrl(repositoryUrl, parentOrigin);
 }
 
 function detail(result: GitResult): string {
   return `${result.stderr ?? ''}${result.stdout ?? ''}`.trim() || `git exited ${result.status ?? 1}`;
 }
 
-function isGitCheckout(root: string, path: string): boolean {
-  return existsSync(path) && git(root, ['-C', path, 'rev-parse', '--git-dir']).status === 0;
+export function isPackageGitCheckout(root: string, path: string): boolean {
+  if (!existsSync(path)) return false;
+  const top = git(root, ['-C', path, 'rev-parse', '--show-toplevel']);
+  return top.status === 0 && realpathSync(top.stdout.trim()) === realpathSync(path);
 }
 
 function isNonEmpty(path: string): boolean {
@@ -104,17 +107,19 @@ function checkoutPath(root: string, entry: PackageEntry): string {
   return target;
 }
 
-function cloneArgs(entry: PackageEntry, target: string): string[] {
+function cloneArgs(entry: PackageEntry, target: string, remoteUrl: string): string[] {
   if (entry.sparse?.length) {
-    return ['clone', '--quiet', '--filter=blob:none', '--no-checkout', '--no-tags', entry.url, target];
+    return ['clone', '--quiet', '--filter=blob:none', '--no-checkout', '--no-tags', remoteUrl, target];
   }
   if (COMMIT.test(entry.branch)) {
-    return ['clone', '--quiet', '--no-checkout', '--no-tags', entry.url, target];
+    return ['clone', '--quiet', '--no-checkout', '--no-tags', remoteUrl, target];
   }
-  return ['clone', '--quiet', '--branch', entry.branch, '--no-tags', entry.url, target];
+  // --branch also accepts a snapshot tag. Older Git (including CI's 2.34)
+  // removes that requested tag from its ref map when combined with --no-tags.
+  return ['clone', '--quiet', '--branch', entry.branch, remoteUrl, target];
 }
 
-function checkoutClonedEntry(root: string, entry: PackageEntry, target: string, env: NodeJS.ProcessEnv): GitResult | null {
+function checkoutClonedEntry(root: string, entry: PackageEntry, target: string, remoteUrl: string, env: NodeJS.ProcessEnv): GitResult | null {
   if (entry.sparse?.length) {
     const init = git(root, ['-C', target, 'sparse-checkout', 'init', '--no-cone']);
     if (init.status !== 0) return init;
@@ -122,7 +127,7 @@ function checkoutClonedEntry(root: string, entry: PackageEntry, target: string, 
     if (set.status !== 0) return set;
   }
   if (COMMIT.test(entry.branch)) {
-    const fetch = git(root, ['-C', target, 'fetch', '--quiet', '--no-tags', entry.url, entry.branch], env);
+    const fetch = git(root, ['-C', target, 'fetch', '--quiet', '--no-tags', remoteUrl, entry.branch], env);
     if (fetch.status !== 0) return fetch;
     return git(root, ['-C', target, 'checkout', '--quiet', '--detach', 'FETCH_HEAD']);
   }
@@ -130,19 +135,22 @@ function checkoutClonedEntry(root: string, entry: PackageEntry, target: string, 
   return null;
 }
 
-function clonePackage(root: string, entry: PackageEntry, target: string, env: NodeJS.ProcessEnv): GitResult | null {
+function clonePackage(root: string, entry: PackageEntry, target: string, remoteUrl: string, env: NodeJS.ProcessEnv): GitResult | null {
   mkdirSync(dirname(target), { recursive: true });
-  let cloned = git(root, cloneArgs(entry, target), env);
-  if (cloned.status !== 0 && !COMMIT.test(entry.branch)) {
+  let cloned = git(root, cloneArgs(entry, target, remoteUrl), env);
+  if (cloned.status !== 0 && !COMMIT.test(entry.branch) && !existsSync(resolve(root, '.forgeax-public-distribution'))) {
     rmSync(target, { recursive: true, force: true });
-    cloned = git(root, ['clone', '--quiet', '--no-tags', entry.url, target], env);
+    cloned = git(root, ['clone', '--quiet', '--no-tags', remoteUrl, target], env);
     if (cloned.status === 0) {
-      const branch = git(root, ['-C', target, 'switch', '-q', '-c', entry.branch]);
+      const localBranch = git(root, ['-C', target, 'show-ref', '--verify', '--quiet', `refs/heads/${entry.branch}`]);
+      const branch = localBranch.status === 0
+        ? git(root, ['-C', target, 'switch', '-q', entry.branch])
+        : git(root, ['-C', target, 'switch', '-q', '-c', entry.branch]);
       if (branch.status !== 0) return branch;
     }
   }
   if (cloned.status !== 0) return cloned;
-  return checkoutClonedEntry(root, entry, target, env);
+  return checkoutClonedEntry(root, entry, target, remoteUrl, env);
 }
 
 function installLinks(root: string, entry: PackageEntry, target: string): string | null {
@@ -178,17 +186,18 @@ function lstatMaybe(path: string): boolean {
   }
 }
 
-function updatePackage(root: string, entry: PackageEntry, target: string, env: NodeJS.ProcessEnv): PackageSyncResult {
+function updatePackage(root: string, entry: PackageEntry, target: string, remoteUrl: string, env: NodeJS.ProcessEnv): PackageSyncResult {
+  const publicDistribution = existsSync(resolve(root, '.forgeax-public-distribution'));
   const dirty = git(root, ['-C', target, 'status', '--porcelain']);
   if (dirty.status !== 0) return { path: entry.path, action: 'failed', detail: detail(dirty) };
   if (dirty.stdout.trim()) return { path: entry.path, action: 'refused-dirty', detail: 'local changes detected' };
 
   const before = git(root, ['-C', target, 'rev-parse', 'HEAD']);
   if (before.status !== 0) return { path: entry.path, action: 'failed', detail: detail(before) };
-  const fetch = git(root, ['-C', target, 'fetch', '--quiet', '--no-tags', entry.url, entry.branch], env);
+  const fetch = git(root, ['-C', target, 'fetch', '--quiet', '--no-tags', remoteUrl, entry.branch], env);
   if (fetch.status !== 0) {
     const localBranch = git(root, ['-C', target, 'show-ref', '--verify', '--quiet', `refs/heads/${entry.branch}`]);
-    if (!COMMIT.test(entry.branch) && localBranch.status === 0) {
+    if (!publicDistribution && !COMMIT.test(entry.branch) && localBranch.status === 0) {
       const switched = git(root, ['-C', target, 'switch', '--quiet', entry.branch]);
       return switched.status === 0
         ? { path: entry.path, action: 'already-current', detail: 'remote branch absent; switched to local branch' }
@@ -199,7 +208,7 @@ function updatePackage(root: string, entry: PackageEntry, target: string, env: N
 
   let checkout: GitResult;
   let detachedForWorktree = false;
-  if (COMMIT.test(entry.branch)) {
+  if (publicDistribution || COMMIT.test(entry.branch)) {
     checkout = git(root, ['-C', target, 'checkout', '--quiet', '--detach', 'FETCH_HEAD']);
   } else {
     const localBranch = git(root, ['-C', target, 'show-ref', '--verify', '--quiet', `refs/heads/${entry.branch}`]);
@@ -260,7 +269,8 @@ function syncOne(options: SyncPackagesOptions, entry: PackageEntry, gitEnv: Node
     return { path: entry.path, action: 'environment-skipped', detail: entry.skipEnv };
   }
   const target = checkoutPath(options.root, entry);
-  const existsAsGit = isGitCheckout(options.root, target);
+  const remoteUrl = packageRemoteUrl(options.root, entry.url);
+  const existsAsGit = isPackageGitCheckout(options.root, target);
   if (!existsAsGit && isNonEmpty(target)) {
     return entry.optional
       ? { path: entry.path, action: 'external-preserved' }
@@ -270,7 +280,7 @@ function syncOne(options: SyncPackagesOptions, entry: PackageEntry, gitEnv: Node
   if (options.dryRun) return { path: entry.path, action: 'planned', detail: existsAsGit ? options.mode : 'clone' };
 
   if (!existsAsGit) {
-    const clone = clonePackage(options.root, entry, target, gitEnv);
+    const clone = clonePackage(options.root, entry, target, remoteUrl, gitEnv);
     if (clone && clone.status !== 0) {
       rmSync(target, { recursive: true, force: true });
       return { path: entry.path, action: entry.optional ? 'optional-failed' : 'failed', detail: detail(clone) };
@@ -283,6 +293,13 @@ function syncOne(options: SyncPackagesOptions, entry: PackageEntry, gitEnv: Node
     return { path: entry.path, action: 'cloned' };
   }
 
+  const currentOrigin = git(options.root, ['-C', target, 'config', '--get', 'remote.origin.url']);
+  if (currentOrigin.status !== 0) return { path: entry.path, action: 'failed', detail: detail(currentOrigin) };
+  if (currentOrigin.stdout.trim() !== remoteUrl) {
+    const aligned = git(options.root, ['-C', target, 'remote', 'set-url', 'origin', remoteUrl]);
+    if (aligned.status !== 0) return { path: entry.path, action: 'failed', detail: detail(aligned) };
+  }
+
   const mirrorError = applyMirrors(options.root, entry, target);
   if (mirrorError) return { path: entry.path, action: entry.optional ? 'optional-failed' : 'failed', detail: mirrorError };
   if (options.mode === 'ensure') {
@@ -291,7 +308,7 @@ function syncOne(options: SyncPackagesOptions, entry: PackageEntry, gitEnv: Node
       ? { path: entry.path, action: entry.optional ? 'optional-failed' : 'failed', detail: linkError }
       : { path: entry.path, action: 'preserved' };
   }
-  const result = updatePackage(options.root, entry, target, gitEnv);
+  const result = updatePackage(options.root, entry, target, remoteUrl, gitEnv);
   const linkError = result.action === 'failed' || result.action === 'refused-dirty'
     ? null
     : installLinks(options.root, entry, target);

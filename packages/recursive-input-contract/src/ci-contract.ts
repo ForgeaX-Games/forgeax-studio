@@ -268,7 +268,9 @@ export function validateCiManifest(value: unknown): CiManifestValidation {
       }
       if (context.name !== name) errors.push(error('recursive-input.ci.context-set-invalid', `requiredContexts[${index}].name`, `must be ${name}`));
       for (const key of ['source', 'job']) if (typeof context[key] !== 'string' || context[key].length === 0) errors.push(error('recursive-input.ci.context-invalid', `requiredContexts[${index}].${key}`, 'must be a non-empty string'));
-      if (context.reporter !== 'thin-reporter' && context.reporter !== 'direct') errors.push(error('recursive-input.ci.context-invalid', `requiredContexts[${index}].reporter`, 'must be thin-reporter or direct'));
+      if (context.reporter !== 'thin-reporter' && context.reporter !== 'direct') {
+        errors.push(error('recursive-input.ci.context-invalid', `requiredContexts[${index}].reporter`, 'workflow reporters must be thin-reporter or direct'));
+      }
     });
   }
 

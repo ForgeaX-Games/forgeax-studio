@@ -1,17 +1,14 @@
 #!/usr/bin/env bun
-// The only process entry that owns the local ForgeaX service graph.
-// Browser, AnyDev, Tauri dev, and the packaged Tauri app select a startup
-// profile; profile-specific preparation stays behind this entry.
+// Source-development service entry for browser, AnyDev, and Tauri dev.
+// Packaged applications are owned by the independent IDE runtime.
 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runPackagedRuntime } from './lib/packaged-runtime.ts';
 import { publishSourceRuntimeContext } from './lib/source-runtime-context.ts';
 import { StartLock } from './lib/startlock.ts';
 import {
   isStartupProfile,
   resolveStartupEnvironment,
-  startupProcessEnv,
   type StartupProfile,
 } from './lib/startup-environment.ts';
 
@@ -43,11 +40,7 @@ async function main(): Promise<void> {
   // can inherit it.
   const handoffToken = process.env.FORGEAX_START_LOCK_HANDOFF_TOKEN;
   delete process.env.FORGEAX_START_LOCK_HANDOFF_TOKEN;
-  // A desktop bundle's ROOT is read-only app Resources, not a source checkout.
-  // Only source profiles participate in the source run.lock/handoff protocol.
-  const lock = profile === 'desktop-prod'
-    ? null
-    : handoffToken ? StartLock.adopt(ROOT, handoffToken, process.ppid) : StartLock.acquireForRuntime(ROOT);
+  const lock = handoffToken ? StartLock.adopt(ROOT, handoffToken, process.ppid) : StartLock.acquireForRuntime(ROOT);
   try {
     // Source children inherit the one final environment resolved by
     // source-runtime-launcher. Never re-read dotenv here: doing so would let a
@@ -57,18 +50,10 @@ async function main(): Promise<void> {
       profile,
       env: process.env,
     });
-    if (startup.sourceLayout === 'source') {
-      // The launcher already projected this exact environment. Hand the
-      // resolved object to run.ts in-process; do not re-project or serialize it.
-      publishSourceRuntimeContext(startup);
-      await import('./run.ts');
-      return;
-    }
-    Object.assign(process.env, startupProcessEnv(startup));
-    await runPackagedRuntime(startup);
-    lock?.release();
+    publishSourceRuntimeContext(startup);
+    await import('./run.ts');
   } catch (error) {
-    lock?.release();
+    lock.release();
     throw error;
   }
 }

@@ -21,7 +21,7 @@ const VALUE_RULES = [
   ["private-key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/u],
   ["aws-access-key", /\bAKIA[0-9A-Z]{16}\b/u],
   ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/u],
-  ["npm-token", /\bnpm_[A-Za-z0-9_-]{20,}\b/u],
+  ["npm-token", /\bnpm_[A-Za-z0-9]{36}\b/u],
   ["slack-token", /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/u],
   ["openai-token", /\bsk-[A-Za-z0-9_-]{20,}\b/u],
   ["jwt", /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/u],
@@ -29,8 +29,8 @@ const VALUE_RULES = [
   ["credential-query", /https?:\/\/[^\s"']+[?&](?:access[_-]?token|api[_-]?key|token|signature|x-amz-security-token)=[^\s"']+/iu]
 ];
 
-const KEY_ASSIGNMENT = /(?<![\w-])["'`]?(api[_-]?key|access[_-]?token|secret(?:[_-]?key)?|password|credential(?:s)?|session[_-]?token)["'`]?\s*[:=]\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|`([^`\r\n]*)`|([^\s#,}\r\n]+))/iu;
-const AUTH_ASSIGNMENT = /(?<![\w-])["'`]?(authorization|cookie)["'`]?\s*[:=]\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|`([^`\r\n]*)`|([^\s,}\r\n]+))/iu;
+const KEY_ASSIGNMENT = /(?<![\w-])["'`]?(api[_-]?key|access[_-]?token|secret(?:[_-]?key)?|password|credential(?:s)?|session[_-]?token)["'`]?\s*(?::|=(?!=))\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|`([^`\r\n]*)`|([^\s#,}\r\n]+))/iu;
+const AUTH_ASSIGNMENT = /(?<![\w-])["'`]?(authorization|cookie)["'`]?\s*(?::|=(?!=))\s*(?:"([^"\r\n]*)"|'([^'\r\n]*)'|`([^`\r\n]*)`|([^\s,}\r\n]+))/iu;
 
 export function findSensitiveMatches(text, relativePath, { mode = "package" } = {}) {
   assertMode(mode);

@@ -68,4 +68,66 @@ describe('Interface retirement contract', () => {
     expect(audit.readinessBlockers).toContain('Studio still tracks packages/interface as a gitlink');
     expect(audit.readinessBlockers).toContain('Interface package retirement merge evidence is not recorded');
   });
+
+  test('bounds the explicit dependency declarations accepted by IDE #361', () => {
+    // These declare an existing source dependency; they remain deletion blockers.
+    // Do not exclude manifests or build scripts from the scanner to hide them.
+    const declarations = ['package.json', 'product/direct-dependencies.json', 'scripts/check-direct-dependencies.ts'];
+    const budget = baseline.consumers.ide.allowedReferences;
+    for (const path of declarations) {
+      expect(budget[path]).toBe(1);
+      expect(evaluateReferenceRatchet({ [path]: 2 }, budget)).toEqual([
+        `Interface debt increased: ${path} has 2 references (allowed 1)`,
+      ]);
+    }
+    expect(evaluateReferenceRatchet({ 'src/product/new-interface-consumer.ts': 1 }, budget)).toEqual([
+      'new Interface consumer path: src/product/new-interface-consumer.ts (1 reference)',
+    ]);
+  });
+
+  test('rejects retired IDE paths and additional shell imports after builtin ownership', () => {
+    const budget = baseline.consumers.ide.allowedReferences;
+    expect(Object.values(budget).reduce((sum, count) => sum + count, 0)).toBe(11);
+    for (const path of [
+      'packages/extension-gallery/src/index.tsx',
+      'packages/files/src/index.tsx',
+      'src/integration/rest-studio-domain-clients.ts',
+      'src/product/chat-runtime-adapter.tsx',
+    ]) {
+      expect(evaluateReferenceRatchet({ [path]: 1 }, budget)).toEqual([
+        `new Interface consumer path: ${path} (1 reference)`,
+      ]);
+    }
+    for (const [path, allowed] of [['src/main.tsx', 3], ['src/product/studio-composition.tsx', 1], ['src/types/interface-integration.d.ts', 1]] as const) {
+      expect(evaluateReferenceRatchet({ [path]: allowed + 1 }, budget)).toEqual([
+        `Interface debt increased: ${path} has ${allowed + 1} references (allowed ${allowed})`,
+      ]);
+    }
+  });
+
+  test('rejects Editor library regressions while allowing the standalone application budget', () => {
+    // The root-only boundary job does not materialize Editor. Its actual package
+    // manifests and tarball are checked by Editor's standalone-package-boundary
+    // suite; this root contract must enforce the reference budget independently.
+    expect(Object.keys(baseline.consumers.editor.allowedReferences)).toEqual([
+      'apps/standalone/main.tsx', 'apps/standalone/package.json', 'vite.config.ts',
+    ]);
+    expect(evaluateReferenceRatchet({
+      'apps/standalone/main.tsx': 3,
+      'apps/standalone/package.json': 1,
+      'vite.config.ts': 2,
+    }, baseline.consumers.editor.allowedReferences)).toEqual([]);
+    expect(evaluateReferenceRatchet({
+      'package.json': 1,
+      'packages/core/src/regression.ts': 1,
+    }, baseline.consumers.editor.allowedReferences)).toEqual([
+      'new Interface consumer path: package.json (1 reference)',
+      'new Interface consumer path: packages/core/src/regression.ts (1 reference)',
+    ]);
+    expect(evaluateReferenceRatchet({
+      'apps/standalone/main.tsx': 4,
+    }, baseline.consumers.editor.allowedReferences)).toEqual([
+      'Interface debt increased: apps/standalone/main.tsx has 4 references (allowed 3)',
+    ]);
+  });
 });

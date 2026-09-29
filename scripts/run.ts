@@ -6,12 +6,17 @@ import { delimiter, join, resolve } from 'node:path';
 import { clearPidfiles, isAlive, isPortBusy, recordPid, reapPidfiles, runDir, sleep, waitForPort } from './lib/proc.ts';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { managedRuntimePorts } from './lib/managed-runtime-ports.ts';
-import { readinessSummary, waitForRuntime } from './lib/runtime-readiness.ts';
+import { readinessSummary, waitForHttp, waitForRuntime } from './lib/runtime-readiness.ts';
 import { RuntimeStateStore } from './lib/runtime-state.ts';
 import { resolveActiveServerRole, serverRuntimeInvocation } from './lib/server-role.ts';
 import { ServiceSupervisor } from './lib/service-supervisor.ts';
 import { StartLock } from './lib/startlock.ts';
 import { consumeSourceRuntimeContext } from './lib/source-runtime-context.ts';
+import {
+  collectMissingEngineArtifacts,
+  engineUmbrellaArtifactPaths,
+  formatMissingEngineArtifacts,
+} from './lib/engine-entry-freshness.ts';
 import {
   allocateStandaloneRuntimePlugins,
   discoverStandalonePlugins,
@@ -21,6 +26,19 @@ import {
 } from './lib/standalone-plugins.ts';
 
 const ROOT = resolve(process.env.FORGEAX_WORKSPACE_ROOT ?? join(import.meta.dir, '..'));
+const editorDir = join(ROOT, 'packages/editor');
+const engineDir = join(editorDir, 'packages/play-runtime');
+const engineViteCli = join(editorDir, 'node_modules/vite/bin/vite.js');
+const enginePackagesDir = join(editorDir, 'packages/engine/packages');
+const missingEngineRuntimeArtifacts = collectMissingEngineArtifacts(
+  engineUmbrellaArtifactPaths(enginePackagesDir),
+);
+if (missingEngineRuntimeArtifacts.length > 0) {
+  throw new Error(formatMissingEngineArtifacts(
+    missingEngineRuntimeArtifacts,
+    'bun run prepare',
+  ));
+}
 const startup = consumeSourceRuntimeContext();
 const lock = StartLock.consumeRuntimeOwner(ROOT);
 if (!lock) throw new Error('source runtime lock owner is unavailable; start through `bun fx start`');
@@ -28,9 +46,6 @@ if (!lock) throw new Error('source runtime lock owner is unavailable; start thro
 const serverRole = resolveActiveServerRole({ root: ROOT, profile: process.env.FORGEAX_SERVER_PROFILE });
 const serverRuntime = serverRuntimeInvocation(serverRole);
 const ideDir = join(ROOT, 'packages/ide');
-const editorDir = join(ROOT, 'packages/editor');
-const engineDir = join(editorDir, 'packages/play-runtime');
-const engineViteCli = join(editorDir, 'node_modules/vite/bin/vite.js');
 const gameMcpEntry = join(ROOT, 'packages/game-plugin/src/main.ts');
 const extensionDevRoots = process.env.FORGEAX_CORE_ONLY === '1'
   ? []
@@ -78,6 +93,9 @@ let cleanupPromise: Promise<void> | null = null;
 let cleanupFinished = false;
 const supervisor = new ServiceSupervisor({
   onEvent(event) {
+    // Preserve exit codes/signals and restart attempts in the launcher log.
+    // PID state alone cannot explain why a service disappeared.
+    console.info(`[runtime-service] ${JSON.stringify({ at: new Date().toISOString(), ...event })}`);
     if (event.pid) state.setServicePid(event.name, event.pid);
     if (event.status === 'stopped' || event.status === 'failed') state.setServicePid(event.name, 0);
   },
@@ -87,6 +105,18 @@ const supervisor = new ServiceSupervisor({
     void shutdown(1);
   },
 });
+
+// Tauri may kill its hook before that hook can finish asynchronous cleanup.
+// The owner-held pipe also closes on forced termination; keep the detached
+// runtime's existing shutdown transaction responsible for its own children.
+if (process.env.FORGEAX_RUNTIME_PARENT_PIPE === '1') {
+  delete process.env.FORGEAX_RUNTIME_PARENT_PIPE;
+  const parentClosed = () => { void shutdown(0); };
+  if (process.stdin.readableEnded || process.stdin.destroyed) await shutdown(0);
+  process.stdin.once('end', parentClosed);
+  process.stdin.once('close', parentClosed);
+  process.stdin.resume();
+}
 
 const commonEnv: NodeJS.ProcessEnv = {
   ...process.env,
@@ -114,6 +144,11 @@ function launch(
   return pid;
 }
 
+async function duringStartup<T>(operation: Promise<T>): Promise<T> {
+  try { return await operation; }
+  finally { if (stopping) await shutdown(0); }
+}
+
 clearPidfiles(startup.projectRoot);
 mkdirSync(runDir(startup.projectRoot), { recursive: true });
 
@@ -132,8 +167,8 @@ console.log(
 // Keep the supervised server stable; backend source changes take effect after
 // the existing explicit `bun fx restart` lifecycle command.
 launch('server', 'bun', [serverRuntime.entryPath], serverRole.packageDir);
-if (!(await waitForPort(startup.server.port, 10_000))) {
-  state.markFailed(`server did not bind :${startup.server.port} within 10 seconds`);
+if (!(await duringStartup(waitForPort(startup.server.port, startup.startupTimeoutMs)))) {
+  state.markFailed(`server did not bind :${startup.server.port} within ${startup.startupTimeoutMs} ms`);
   await shutdown(1);
 }
 
@@ -161,7 +196,7 @@ if (startup.mcp.enabled) {
     ROOT,
     { ...commonEnv, FORGEAX_MCP_EXISTING_SERVICES: '1' },
   );
-  if (!(await waitForPort(startup.mcp.port, 10_000))) {
+  if (!(await duringStartup(waitForPort(startup.mcp.port, 10_000)))) {
     state.markFailed(`Engine MCP did not bind :${startup.mcp.port} within 10 seconds`);
     await shutdown(1);
   }
@@ -184,7 +219,7 @@ for (const plugin of extensions) {
     VITE_DEV_HTTPS_CERT: existsSync(extensionTlsCert) ? extensionTlsCert : '',
     VITE_DEV_HTTPS_KEY: existsSync(extensionTlsKey) ? extensionTlsKey : '',
   });
-  if (!(await waitForPort(plugin.frontendPort, Math.min(startup.startupTimeoutMs, 30_000)))) {
+  if (!(await duringStartup(waitForPort(plugin.frontendPort, Math.min(startup.startupTimeoutMs, 30_000))))) {
     state.markFailed(
       `standalone extension ${plugin.id} did not bind :${plugin.frontendPort} within 30 seconds`,
     );
@@ -192,13 +227,9 @@ for (const plugin of extensions) {
   }
 }
 
-launch(
-  'interface',
-  'bun',
-  ['run', 'dev:web', '--', '--host', startup.interface.host, '--port', String(startup.interface.port), '--strictPort'],
-  ideDir,
-  { ...commonEnv, FORGEAX_INTEGRATION_ROOT: ROOT },
-);
+// Backport main #1430: play-runtime needs Node for Vite/ESM resolution.
+// Start engine before the IDE shell so cold boot does not run two Vite hosts
+// against overlapping Engine sources concurrently.
 launch(
   'engine',
   'node',
@@ -206,8 +237,34 @@ launch(
   engineDir,
   commonEnv,
 );
+if (!(await duringStartup(waitForPort(startup.engine.port, Math.min(startup.startupTimeoutMs, 120_000))))) {
+  state.markFailed(`engine did not bind :${startup.engine.port} within startup timeout`);
+  await shutdown(1);
+}
 
-const readiness = await waitForRuntime(startup, { onCheck: (result) => state.setReadiness(result) });
+
+// Tauri waits for devUrl to bind. Do not expose that URL until the other
+// required core services are HTTP-ready, even when native compilation is cached.
+if (startup.profile === 'desktop-dev') {
+  const dependencies = await duringStartup(Promise.all([startup.server, startup.engine].map(service =>
+    waitForHttp(`http://127.0.0.1:${service.port}${service.healthPath}`, startup.startupTimeoutMs))));
+  const failure = dependencies.find(result => !result.ready);
+  if (failure) {
+    state.markFailed(`desktop dependency failed readiness: ${failure.url}`);
+    await shutdown(1);
+  }
+}
+launch(
+  'interface',
+  'bun',
+  ['run', 'dev:web', '--', '--host', startup.interface.host, '--port', String(startup.interface.port), '--strictPort'],
+  ideDir,
+  { ...commonEnv, FORGEAX_INTEGRATION_ROOT: ROOT },
+);
+
+const readiness = await duringStartup(waitForRuntime(startup, {
+  onCheck: (result) => { if (!stopping) state.setReadiness(result); },
+}));
 if (!readiness.ready) {
   state.markFailed(`core services failed readiness: ${readinessSummary(readiness)}`, readiness);
   await shutdown(1);

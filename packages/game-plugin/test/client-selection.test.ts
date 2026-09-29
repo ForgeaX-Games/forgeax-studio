@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { ENGINE_COMMIT, ENGINE_VERSION } from '../src/engine/release';
+import { installTestCarrier } from './carrier-fixture';
 
 /**
  * `--ide` semantics across the project-side commands.
@@ -16,15 +18,24 @@ import { join, resolve } from 'node:path';
  */
 const BINARY = resolve(import.meta.dir, '..', 'dist', 'main.js');
 
-function run(args: readonly string[], cwd: string) {
+function run(args: readonly string[], cwd: string, binaryPath = BINARY) {
   const home = join(cwd, 'home');
   mkdirSync(home, { recursive: true });
-  const result = spawnSync(process.execPath, [BINARY, ...args], {
+  const result = spawnSync(process.execPath, [binaryPath, ...args], {
     cwd,
     encoding: 'utf8',
     env: { ...process.env, HOME: home, USERPROFILE: home },
   });
   return { ...result, output: `${result.stdout}${result.stderr}` };
+}
+
+function installedBinary(cwd: string): string {
+  const pluginRoot = installTestCarrier(cwd);
+  const binary = join(pluginRoot, 'dist', 'main.js');
+  mkdirSync(join(pluginRoot, 'dist'), { recursive: true });
+  cpSync(BINARY, binary);
+  cpSync(join(import.meta.dir, '..', 'assets'), join(pluginRoot, 'assets'), { recursive: true });
+  return binary;
 }
 
 function withDir(fn: (dir: string) => void): void {
@@ -36,10 +47,33 @@ function withDir(fn: (dir: string) => void): void {
   }
 }
 
+function existingGame(dir: string): void {
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'forge.json'), `${JSON.stringify({ id: 'existing', entry: 'src/main.ts' })}\n`);
+  writeFileSync(join(dir, 'package.json'), `${JSON.stringify({ dependencies: { '@forgeax/engine': ENGINE_VERSION } })}\n`);
+  writeFileSync(join(dir, 'src', 'main.ts'), 'export const existing = true;\n');
+
+  const engine = join(dir, 'node_modules', '@forgeax', 'engine');
+  mkdirSync(join(engine, 'dist', 'bin'), { recursive: true });
+  writeFileSync(join(engine, 'package.json'), `${JSON.stringify({
+    name: '@forgeax/engine',
+    version: ENGINE_VERSION,
+    forgeax: { engineCommit: ENGINE_COMMIT },
+  })}\n`);
+  writeFileSync(join(engine, 'dist', 'bin', 'forgeax.mjs'), '#!/usr/bin/env node\n');
+
+  const devKit = join(dir, 'node_modules', '@forgeax', 'engine-devkit');
+  mkdirSync(devKit, { recursive: true });
+  writeFileSync(join(devKit, 'package.json'), `${JSON.stringify({
+    name: '@forgeax/engine-devkit',
+    version: ENGINE_VERSION,
+  })}\n`);
+}
+
 describe('client selection', () => {
   test('rejects an unknown client id', () => {
     withDir((dir) => {
-      const result = run(['init', '--ide', 'nosuchide'], dir);
+      const result = run(['install', '--ide', 'nosuchide'], dir);
       expect(result.status).not.toBe(0);
       expect(result.output).toMatch(/unknown client/i);
       expect(result.output).toContain('zcode');
@@ -62,40 +96,27 @@ describe('client selection', () => {
     });
   });
 
-  test('init accepts --game with --ide and reports the uninstalled host', () => {
+  test('init rejects unknown non-empty directories before carrier resolution', () => {
     withDir((dir) => {
-      const result = run(['init', '--game', 'demo', '--ide', 'claude'], dir);
-      expect(result.status).toBe(0);
-      expect(result.output).toMatch(/SKIPPED .*not installed yet/);
-      // The project is still created; only the host mount is withheld.
-      expect(result.output).toMatch(/Created and activated game demo/);
+      const sentinel = join(dir, 'keep.txt');
+      writeFileSync(sentinel, 'keep these bytes\n');
+      const result = run(['init'], dir);
+      expect(result.status).not.toBe(0);
+      expect(result.output).toMatch(/project_target_not_empty/i);
+      expect(readFileSync(sentinel, 'utf8')).toBe('keep these bytes\n');
     });
   });
 
-  test('init recognizes ZCode config and mounts its native project skill', () => {
+  test('init binds an existing exact Engine game without invoking creation', () => {
     withDir((dir) => {
-      const configDir = join(dir, 'home', '.zcode', 'cli');
-      mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, 'config.json'),
-        JSON.stringify({
-          mcp: {
-            servers: {
-              forgeax: {
-                command: 'npx',
-                args: ['-y', '-p', '@forgeax/game', 'forgeax-game', 'mcp'],
-              },
-            },
-          },
-        }),
-      );
-
-      const result = run(['init', '--game', 'demo', '--ide', 'zcode'], dir);
+      existingGame(dir);
+      const before = readFileSync(join(dir, 'forge.json'));
+      const result = run(['init'], dir, installedBinary(dir));
       expect(result.status).toBe(0);
-      expect(result.output).toContain('game development skills for: zcode');
-      expect(existsSync(join(dir, '.zcode', 'skills', 'forgeax-game', 'SKILL.md'))).toBeTrue();
-      expect(existsSync(join(dir, '.zcode', 'rules'))).toBeFalse();
-      expect(readFileSync(join(dir, 'AGENTS.md'), 'utf8')).toContain('ForgeaX game development');
+      expect(result.output).toContain('Bound Engine game existing');
+      expect(readFileSync(join(dir, 'forge.json'))).toEqual(before);
+      expect(readFileSync(join(dir, 'src', 'main.ts'), 'utf8')).toBe('export const existing = true;\n');
+      expect(readFileSync(join(dir, 'package.json'), 'utf8')).toContain(ENGINE_VERSION);
     });
   });
 });

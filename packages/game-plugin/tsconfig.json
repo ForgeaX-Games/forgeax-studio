@@ -17,5 +17,5 @@
     "types": ["bun"],
     "baseUrl": "./src"
   },
-  "include": ["src", "test"]
+  "include": ["src", "extensions", "test"]
 }

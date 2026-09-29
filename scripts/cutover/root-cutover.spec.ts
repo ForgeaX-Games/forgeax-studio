@@ -22,7 +22,7 @@ describe('forgeax-ide root cutover contract', () => {
     expect(packages).toContainEqual({
       path: 'packages/ide',
       url: 'https://github.com/ForgeaX-Games/forgeax-ide.git',
-      branch: 'main',
+      branch: expect.stringMatching(/^[0-9a-f]{40}$/),
     });
     expect(CUTOVER_EVIDENCE).toMatchObject({
       schemaVersion: 1,

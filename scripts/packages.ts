@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -12,7 +12,7 @@ import {
   selectPackageEntries,
   validateBranchName,
 } from './lib/package-manifest.ts';
-import { packageGitEnvironment, syncPackages, type PackageSyncMode } from './lib/package-sync.ts';
+import { isPackageGitCheckout, packageGitEnvironment, syncPackages, type PackageSyncMode } from './lib/package-sync.ts';
 import { NO_CRED_ARGV } from './lib/git-credential.ts';
 
 type CliOptions = {
@@ -100,7 +100,7 @@ function switchBranches(root: string, options: CliOptions): number {
   let failed = 0;
   for (const entry of entries) {
     const checkout = resolve(root, entry.path);
-    if (!existsSync(checkout) || !gitSucceeds(root, ['-C', checkout, 'rev-parse', '--git-dir'], gitEnv)) {
+    if (!isPackageGitCheckout(root, checkout)) {
       process.stdout.write(`[packages] ${entry.path}: checkout absent; local override recorded\n`);
       continue;
     }

@@ -140,20 +140,26 @@ export function readInstallProcessState(pid: number, procRoot = '/proc') {
   };
 }
 
-type InstallOptions = { root: string; cwd: string; args: string[]; env: NodeJS.ProcessEnv; executable?: string };
+type InstallOptions = { root: string; cwd: string; args: string[]; env: NodeJS.ProcessEnv; executable?: string; timeoutMs?: number; killGraceMs?: number };
 type InstallResult = { status: number | null; signal: NodeJS.Signals | null };
 
-/** Opt-in observation only: identical command/env/stdio, no retry or deadline. */
+/** Bound dependency resolution without retrying or altering the install graph. */
 export async function runIdeWorkspaceInstall(options: InstallOptions, diagnostics: { intervalMs?: number; emit?: (line: string) => void } = {}): Promise<InstallResult> {
   const { root, cwd, args, env, executable = 'bun' } = options;
   const spawnOptions = { cwd, env, stdio: 'inherit' as const };
-  if (env.FORGEAX_IDE_INSTALL_DIAGNOSTICS !== '1') return spawnSync(executable, args, spawnOptions);
+  const observing = env.FORGEAX_IDE_INSTALL_DIAGNOSTICS === '1';
+  const timeoutMs = options.timeoutMs ?? 10 * 60_000;
+  const killGraceMs = options.killGraceMs ?? 5_000;
+  if (![timeoutMs, killGraceMs].every(value => Number.isFinite(value) && value > 0 && value <= 2_147_483_647)) {
+    throw new Error('IDE install deadlines must be finite positive timer durations');
+  }
   const started = performance.now();
   const emit = (record: Record<string, unknown>) => {
+    if (!observing && record.event !== 'timeout' && record.event !== 'force-stop') return;
     try { (diagnostics.emit ?? console.log)(`[ide-install] ${JSON.stringify({ ...record, elapsedMs: Math.round(performance.now() - started) })}`); }
     catch { /* Observability must not change the install result. */ }
   };
-  try {
+  if (observing) try {
     const { members, ...inputs } = collectIdeInstallInputs(root, cwd, env);
     emit({ event: 'inputs', ...inputs, memberCount: members.length });
     for (const member of members) emit({ event: 'member', ...member });
@@ -163,27 +169,48 @@ export async function runIdeWorkspaceInstall(options: InstallOptions, diagnostic
     try { child = spawn(executable, args, spawnOptions); }
     catch { emit({ event: 'spawn-failed' }); resolveResult({ status: null, signal: null }); return; }
     let finished = false;
+    let timedOut = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
     let interrupted: NodeJS.Signals | null = null;
-    const interrupt = (signal: NodeJS.Signals) => { interrupted = signal; try { child.kill(signal); } catch { /* The child may already have exited. */ } };
+    const stop = (signal: NodeJS.Signals) => {
+      try { child.kill(signal); } catch { /* The child may already have exited. */ }
+      killTimer ??= setTimeout(() => {
+        if (finished) return;
+        emit({ event: 'force-stop', pid: child.pid ?? null });
+        try { child.kill('SIGKILL'); } catch { /* Already exited. */ }
+      }, killGraceMs);
+    };
+    const interrupt = (signal: NodeJS.Signals) => { interrupted = signal; stop(signal); };
     const terminate = () => interrupt('SIGTERM');
     const cancel = () => interrupt('SIGINT');
     process.on('SIGTERM', terminate);
     process.on('SIGINT', cancel);
     const sample = () => {
+      if (!observing) return;
       if (finished || !child.pid || child.exitCode !== null || child.signalCode !== null) return;
       try { emit({ event: 'waiting', pid: child.pid, process: readInstallProcessState(child.pid), locks: locks(root, cwd) }); }
       catch { emit({ event: 'sample-unavailable' }); }
     };
     const timer = setInterval(sample, diagnostics.intervalMs ?? 30_000);
     timer.unref();
+    const deadline = setTimeout(() => {
+      if (finished) return;
+      timedOut = true;
+      sample();
+      emit({ event: 'timeout', timeoutMs, pid: child.pid ?? null });
+      stop('SIGTERM');
+    }, timeoutMs);
     const finish = (status: number | null, signal: NodeJS.Signals | null) => {
       if (finished) return;
       finished = true;
       clearInterval(timer);
+      clearTimeout(deadline);
+      clearTimeout(killTimer);
       process.off('SIGTERM', terminate);
       process.off('SIGINT', cancel);
-      emit({ event: 'exit', status, signal });
-      resolveResult({ status, signal });
+      const result = { status: timedOut ? 124 : status, signal };
+      emit({ event: 'exit', ...result });
+      resolveResult(result);
       // Preserve cancellation of the wrapper as well as its install child.
       if (interrupted) process.kill(process.pid, interrupted);
     };

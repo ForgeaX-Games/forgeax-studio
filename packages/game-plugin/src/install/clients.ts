@@ -6,7 +6,9 @@
  * here rather than smeared through the installer.
  */
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
+import { lstatSync, realpathSync } from 'node:fs';
+import { RELEASE_IDENTITY } from './release-manifest';
 
 export type ClientId =
   | 'codex'
@@ -47,7 +49,22 @@ export interface ClientSpec {
   readonly postInstallNote?: string;
 }
 
-const HOME = homedir();
+/** Resolve HOME at call time so isolated subprocess/test homes are honoured. */
+export function configuredHome(): string {
+  const configured = process.env.HOME || process.env.USERPROFILE || homedir();
+  try {
+    return realpathSync.native(resolve(configured));
+  } catch {
+    return resolve(configured);
+  }
+}
+
+/** The only user-level targets in the frozen two-command onboarding contract. */
+export const INSTALL_CLIENT_IDS = ['codex', 'cursor', 'claude'] as const;
+
+function userPath(...parts: string[]): string {
+  return join(configuredHome(), ...parts);
+}
 
 export const CLIENTS: readonly ClientSpec[] = [
   {
@@ -55,7 +72,7 @@ export const CLIENTS: readonly ClientSpec[] = [
     label: 'Codex CLI',
     format: 'toml',
     scope: 'user',
-    path: () => join(HOME, '.codex', 'config.toml'),
+    path: () => userPath('.codex', 'config.toml'),
     commandShape: 'split',
     postInstallNote: 'Restart Codex, then run /mcp to confirm the server is connected.',
   },
@@ -64,7 +81,7 @@ export const CLIENTS: readonly ClientSpec[] = [
     label: 'the reference agent CLI',
     format: 'json',
     scope: 'user',
-    path: () => join(HOME, '.claude.json'),
+    path: () => userPath('.claude.json'),
     serverMapKey: ['mcpServers'],
     commandShape: 'split',
     postInstallNote: 'Restart the reference agent CLI, then run /mcp to confirm the server is connected.',
@@ -74,7 +91,7 @@ export const CLIENTS: readonly ClientSpec[] = [
     label: 'Cursor',
     format: 'json',
     scope: 'user',
-    path: () => join(HOME, '.cursor', 'mcp.json'),
+    path: () => userPath('.cursor', 'mcp.json'),
     serverMapKey: ['mcpServers'],
     commandShape: 'split',
     postInstallNote: 'Reload Cursor, then check Settings > MCP.',
@@ -95,7 +112,7 @@ export const CLIENTS: readonly ClientSpec[] = [
     label: 'a peer agent CLI / WorkBuddy',
     format: 'json',
     scope: 'user',
-    path: () => join(HOME, '.codebuddy', '.mcp.json'),
+    path: () => userPath('.codebuddy', '.mcp.json'),
     serverMapKey: ['mcpServers'],
     commandShape: 'split',
     postInstallNote: 'Restart a peer agent CLI or WorkBuddy, then run /mcp to confirm the server is connected.',
@@ -105,7 +122,7 @@ export const CLIENTS: readonly ClientSpec[] = [
     label: 'Windsurf',
     format: 'json',
     scope: 'user',
-    path: () => join(HOME, '.codeium', 'windsurf', 'mcp_config.json'),
+    path: () => userPath('.codeium', 'windsurf', 'mcp_config.json'),
     serverMapKey: ['mcpServers'],
     commandShape: 'split',
     postInstallNote: 'Reload Windsurf to pick up the new server.',
@@ -128,7 +145,7 @@ export const CLIENTS: readonly ClientSpec[] = [
     label: 'ZCode',
     format: 'json',
     scope: 'user',
-    path: () => join(HOME, '.zcode', 'cli', 'config.json'),
+    path: () => userPath('.zcode', 'cli', 'config.json'),
     serverMapKey: ['mcp', 'servers'],
     commandShape: 'split',
     postInstallNote: 'Start a new ZCode session, then run /mcp status to confirm the server is connected.',
@@ -138,7 +155,7 @@ export const CLIENTS: readonly ClientSpec[] = [
     label: 'OpenCode',
     format: 'json',
     scope: 'user',
-    path: () => join(HOME, '.config', 'opencode', 'opencode.json'),
+    path: () => userPath('.config', 'opencode', 'opencode.json'),
     serverMapKey: ['mcp'],
     commandShape: 'argv',
     extraEntryFields: { type: 'local', enabled: true },
@@ -147,6 +164,10 @@ export const CLIENTS: readonly ClientSpec[] = [
 ];
 
 export const CLIENT_IDS: readonly ClientId[] = CLIENTS.map((c) => c.id);
+
+export const INSTALL_CLIENTS: readonly ClientSpec[] = INSTALL_CLIENT_IDS.map((id) =>
+  CLIENTS.find((client) => client.id === id)!,
+);
 
 /** Every spelling accepted by `--ide`, including compatibility names. */
 export const CLIENT_CHOICES: readonly string[] = CLIENTS.flatMap((client) => [
@@ -177,5 +198,35 @@ export function launchSpec(mode: 'npx' | 'local'): LaunchSpec {
   if (mode === 'local') {
     return { command: process.execPath, args: [resolve(process.argv[1] ?? ''), 'mcp'] };
   }
-  return { command: 'npx', args: ['-y', '-p', '@forgeax/game', 'forgeax-game', 'mcp'] };
+  return {
+    command: 'npx',
+    args: ['-y', '-p', `@forgeax/game@${RELEASE_IDENTITY.gameVersion}`, 'forgeax-game', 'mcp'],
+  };
+}
+
+
+/**
+ * Check a user target without following a symlink in the target or any existing
+ * ancestor.  This is intentionally kept in the install package so callers can
+ * perform the complete all-target preflight before taking any lock.
+ */
+export function targetWithinHome(target: string, home = configuredHome()): boolean {
+  const canonicalHome = resolve(home);
+  const candidate = resolve(target);
+  const rel = relative(canonicalHome, candidate);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || rel.startsWith(sep)) return false;
+
+  let current = canonicalHome;
+  for (const component of rel.split(sep).filter(Boolean)) {
+    current = join(current, component);
+    try {
+      const stat = lstatSync(current);
+      if (stat.isSymbolicLink()) return false;
+      if (!stat.isDirectory() && current !== candidate) return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') break;
+      return false;
+    }
+  }
+  return true;
 }

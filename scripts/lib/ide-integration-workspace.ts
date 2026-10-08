@@ -6,6 +6,7 @@ export const IDE_INTEGRATION_WORKSPACES = [
   '../../packages/ide',
   '../../packages/ide/packages/*',
   '../../packages/app-shell',
+  '../../packages/extension-platform',
   '../../packages/editor',
   '../../packages/agent-host',
   '../../packages/orchestrator',
@@ -79,10 +80,7 @@ export const IDE_INTEGRATION_OVERRIDES = {
   'happy-dom': '20.11.0',
   // Keep all consumers on the same candidate AppShell source and contracts.
   '@forgeax/app-shell': 'workspace:*',
-  // Optional extension workspaces still depend on legacy platform/checker
-  // transitive versions. Bun's flat Windows source workspace can otherwise
-  // expose those stale packages to IDE Vite config and Interface source.
-  '@forgeax/extension-platform': '0.7.0',
+  '@forgeax/extension-platform': 'workspace:*',
   'npm-run-path': '6.0.0',
 } as const;
 

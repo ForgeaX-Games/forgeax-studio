@@ -1,6 +1,6 @@
 {
   "name": "forgeax-studio",
-  "version": "0.3.31-alpha.6",
+  "version": "0.3.31",
   "packageManager": "bun@1.4.2",
   "private": true,
   "type": "module",

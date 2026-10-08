@@ -34,9 +34,14 @@ describe('scripts/prepare.ts contracts', () => {
     expect(src.indexOf("ensureManagedPackage('app-shell', true)")).toBeLessThan(
       src.indexOf('writeIdeIntegrationWorkspaceManifest(ideSourceWorkspaceDir)'),
     );
+    expect(src.indexOf("ensureManagedPackage('extension-platform', true)")).toBeGreaterThan(-1);
+    expect(src.indexOf("ensureManagedPackage('extension-platform', true)")).toBeLessThan(
+      src.indexOf('writeIdeIntegrationWorkspaceManifest(ideSourceWorkspaceDir)'),
+    );
     expect(IDE_INTEGRATION_WORKSPACES).toContain('../../packages/ide');
     expect(IDE_INTEGRATION_WORKSPACES).toContain('../../packages/ide/packages/*');
     expect(src).toContain("ok('@forgeax/ide integration workspace dependencies ready')");
+    expect(src).toContain("['run', '--cwd', 'packages/extension-platform', 'tsup', '--config', 'tsup.config.ts']");
     expect(src).not.toContain("join(ROOT, 'scripts/build-extensions.ts')");
     expect(src).not.toContain("join(ROOT, 'packages/marketplace/extensions')");
     expect(src).not.toContain('FORGEAX_SKIP_PLUGINS');
@@ -68,6 +73,12 @@ describe('scripts/prepare.ts contracts', () => {
     );
     expect(src).toContain("'[1c/5] Installing IDE integration workspace dependencies'");
     expect(src).toContain("ok('@forgeax/ide integration workspace dependencies ready')");
+    expect(src.indexOf("['run', '--cwd', 'packages/extension-platform', 'tsup', '--config', 'tsup.config.ts']")).toBeGreaterThan(
+      src.indexOf("ok('@forgeax/ide integration workspace dependencies ready')"),
+    );
+    expect(src.indexOf("['run', '--cwd', 'packages/extension-platform', 'tsup', '--config', 'tsup.config.ts']")).toBeLessThan(
+      src.indexOf("['run', '--cwd', 'packages/app-shell', 'build']"),
+    );
   });
   it('installs every package consumed from source by the IDE as one workspace', () => {
     const src = prepareSource();
@@ -76,6 +87,7 @@ describe('scripts/prepare.ts contracts', () => {
       '../../packages/ide',
       '../../packages/ide/packages/*',
       '../../packages/cli',
+      '../../packages/extension-platform',
       '../../packages/interface',
     ]));
     expect(src).toContain('writeIdeIntegrationWorkspaceManifest(ideSourceWorkspaceDir)');

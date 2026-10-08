@@ -24,6 +24,7 @@ function fixture(): { root: string; workspaceDir: string } {
   for (const workspace of [
     '../../packages/ide',
     '../../packages/app-shell',
+    '../../packages/extension-platform',
     '../../packages/editor',
     '../../packages/agent-host',
     '../../packages/orchestrator',
@@ -42,6 +43,7 @@ function fixture(): { root: string; workspaceDir: string } {
     mkdirSync(packageDir, { recursive: true });
     writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ private: true,
       ...(workspace.endsWith('/app-shell') ? { name: '@forgeax/app-shell', version: '0.103.0' } : {}),
+      ...(workspace.endsWith('/extension-platform') ? { name: '@forgeax/extension-platform', version: '0.7.0' } : {}),
     }));
   }
   for (const name of ['app', 'interface', 'play-runtime', 'without-manifest']) {
@@ -115,6 +117,7 @@ describe('IDE integration workspace manifest', () => {
     expect(manifest.workspaces).toEqual(ideIntegrationWorkspaces(resolve(workspaceDir, '../..')));
     expect(manifest.workspaces).toContain('../../packages/ide/packages/*');
     expect(manifest.workspaces).toContain('../../packages/agent-host');
+    expect(manifest.workspaces).toContain('../../packages/extension-platform');
     expect(manifest.workspaces).toContain('../../packages/orchestrator');
     expect(manifest.workspaces).toContain('../../packages/platform-io');
     expect(manifest.workspaces).toContain('../../packages/cli');
@@ -137,7 +140,7 @@ describe('IDE integration workspace manifest', () => {
       '@happy-dom/global-registrator': '20.11.0',
       'happy-dom': '20.11.0',
       '@forgeax/app-shell': 'workspace:*',
-      '@forgeax/extension-platform': '0.7.0',
+      '@forgeax/extension-platform': 'workspace:*',
       'npm-run-path': '6.0.0',
     });
   });
@@ -203,6 +206,7 @@ describe('IDE integration workspace manifest', () => {
     expect(manifest.workspaces).toEqual(ideIntegrationRootWorkspaces(root));
     expect(manifest.workspaces).toContain('packages/ide/packages/*');
     expect(manifest.workspaces).toContain('packages/agent-host');
+    expect(manifest.workspaces).toContain('packages/extension-platform');
     expect(manifest.workspaces).toContain('packages/orchestrator');
     expect(manifest.workspaces).toContain('packages/server');
     expect(manifest.workspaces).toContain('packages/platform-io');
@@ -222,7 +226,7 @@ describe('IDE integration workspace manifest', () => {
       '@happy-dom/global-registrator': '20.11.0',
       'happy-dom': '20.11.0',
       '@forgeax/app-shell': 'workspace:*',
-      '@forgeax/extension-platform': '0.7.0',
+      '@forgeax/extension-platform': 'workspace:*',
       'npm-run-path': '6.0.0',
     });
   });

@@ -499,8 +499,9 @@ if (process.env.FORGEAX_SKIP_GAMES === '1' || publicDistribution) {
 {
   ensureManagedPackage('ide', true);
   ensureManagedPackage('app-shell', true);
+  ensureManagedPackage('extension-platform', true);
   // Root setup files are needed before the floating IDE and nested Engine are
-  // available. Now that both are materialized, reject any stale CI/local pins
+  // available. Now that these sources are materialized, reject stale CI/local pins
   // before installing the product workspace.
   Object.assign(env, ensureEngineToolchain(ROOT, provisionEngineToolchain, env));
   applyToolchainEnvironment(env);
@@ -540,6 +541,9 @@ const ideSourceWorkspaceDir = join(ROOT, '.forgeax/ide-source-workspace');
     if ((r.status ?? 1) !== 0) fail(`@forgeax/ide integration workspace dependency installation exited ${r.status ?? 1}`);
     ensureIdeIntegrationPackageLinks(ROOT);
     ok('@forgeax/ide integration workspace dependencies ready');
+    if (!run('bun', ['run', '--cwd', 'packages/extension-platform', 'tsup', '--config', 'tsup.config.ts'], { cwd: ROOT, env: gitEnv })) {
+      fail('@forgeax/extension-platform source build failed');
+    }
     if (!run('bun', ['run', '--cwd', 'packages/app-shell', 'build'], { cwd: ROOT, env: gitEnv })) {
       fail('@forgeax/app-shell source build failed');
     }

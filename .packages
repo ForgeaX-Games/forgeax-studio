@@ -2,28 +2,28 @@
   {
     "path": "packages/agents",
     "url": "https://github.com/ForgeaX-Games/forgeax-agents.git",
-    "branch": "v0.3.31-alpha.6-oss.20260930.4353"
+    "branch": "v0.3.31-alpha.6-oss.20261008.4364"
   },
   {
     "path": "packages/app-shell",
     "url": "https://github.com/ForgeaX-Games/forgeax-app-shell.git",
-    "branch": "v0.3.31-alpha.6-oss.20260930.4353"
+    "branch": "v0.3.31-alpha.6-oss.20261008.4364"
   },
   {
     "path": "packages/extension-platform",
     "url": "https://github.com/ForgeaX-Games/forgeax-extension-platform.git",
-    "branch": "v0.3.31-alpha.6-oss.20260930.4353"
+    "branch": "v0.3.31-alpha.6-oss.20261008.4364"
   },
   {
     "path": "packages/games",
     "url": "https://github.com/ForgeaX-Games/forgeax-games.git",
-    "branch": "v0.3.31-alpha.6-oss.20260930.4353",
+    "branch": "v0.3.31-alpha.6-oss.20261008.4364",
     "optional": true,
     "skipEnv": "FORGEAX_SKIP_GAMES"
   },
   {
     "path": "packages/ide",
     "url": "https://github.com/ForgeaX-Games/forgeax-ide.git",
-    "branch": "v0.3.31-alpha.6-oss.20260930.4353"
+    "branch": "v0.3.31-alpha.6-oss.20261008.4364"
   }
 ]
